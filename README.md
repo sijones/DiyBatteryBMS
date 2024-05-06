@@ -1,6 +1,6 @@
 This is the new V2 version, although some bugs and performance issues are noted, this will be the version for the future.
 
-VE.Direct2MQTTCANBUS takes data from a Victron Smart Shunt and sends it to a inverter over CAN allowing for "DIY LifePO4" Batteries to be integrated.
+DiyBatteryBMS takes data from a Victron Smart Shunt and sends it to a inverter over CAN allowing for "DIY LifePO4" Batteries to be integrated.
 
 The data is also sent over MQTT and allows commands to be sent back to control Charge/Discharge/Force Charge.
 
@@ -20,6 +20,12 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 - Supports single MQTT server
 - OneWire temperature sensors will be supported in a future version
 - OTA (Over The Air Update)<br> use your browser and go to http://IPADDRESS/update and upload the lastest binary - please note the donation button does not donate to me.
+
+## Features to come:
+- Voltage Limited Charging, automatically reducing charge current to keep the voltage stable
+- MQTT to CAN BUS support, use esphome BMS intgrations to feed the data in and send to the inverter.
+- Multi Inverter support
+- Maybe -> Temperature monitoring of batteries and inverter to run heaters and fans.
 
 ## Limitations
 - VE.Direct2MQTT is only listening to messages of the VE.Direct device<br>It understands only the "ASCII" part of the protocol that is only good to receive a set of values. You can't request any special data or change any parameters of the VE.Direct device.<br>
