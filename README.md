@@ -1,4 +1,4 @@
-This is the new V2 version, testing and finizising new features.
+This is the new V2 version, although some bugs and performance issues are noted, this will be the version for the future.
 
 VE.Direct2MQTTCANBUS takes data from a Victron Smart Shunt and sends it to a inverter over CAN allowing for "DIY LifePO4" Batteries to be integrated.
 
