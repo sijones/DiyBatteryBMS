@@ -1,0 +1,43 @@
+# Home Assistant MQTT config for VE.DirectMQTTCANBUS, allows switch control of charge discharge
+# and force charging of the batteries - useful for off peak charging
+
+switch:
+  - platform: mqtt # Again, it's an MQTT device
+    name: "PylonTech Protocol" # Choose an easy-to-recognize name
+    unique_id: "PylontechProtocol"
+    state_topic: "SMARTBMS/Param/EnablePYLONTECH" # Topic to read the current state
+    command_topic: "SMARTBMS/set/EnablePYLONTECH" # Topic to publish commands
+    qos: 1
+    payload_on: "ON" # or "on", depending on your MQTT device
+    payload_off: "OFF" # or "off", depending on your MQTT device
+    retain: true # or false if you want to wait for changes
+
+  - platform: mqtt # Again, it's an MQTT device
+    name: "Force Charge" # Choose an easy-to-recognize name
+    unique_id: "ForceCharge"
+    state_topic: "SMARTBMS/Param/ForceCharge" # Topic to read the current state
+    command_topic: "SMARTBMS/set/ForceCharge" # Topic to publish commands
+    qos: 1
+    payload_on: "ON" # or "on", depending on your MQTT device
+    payload_off: "OFF" # or "off", depending on your MQTT device
+    retain: true # or false if you want to wait for changes
+
+  - platform: mqtt # Again, it's an MQTT device
+    name: "Discharge Enable" # Choose an easy-to-recognize name
+    unique_id: "DischargeEnable"
+    state_topic: "SMARTBMS/Param/DischargeEnable" # Topic to read the current state
+    command_topic: "SMARTBMS/set/DischargeEnable" # Topic to publish commands
+    qos: 1
+    payload_on: "ON" # or "on", depending on your MQTT device
+    payload_off: "OFF" # or "off", depending on your MQTT device
+    retain: true # or false if you want to wait for changes
+
+  - platform: mqtt # Again, it's an MQTT device
+    name: "Charge Enable" # Choose an easy-to-recognize name
+    unique_id: "ChargeEnable"
+    state_topic: "SMARTBMS/Param/ChargeEnable" # Topic to read the current state
+    command_topic: "SMARTBMS/set/ChargeEnable" # Topic to publish commands
+    qos: 1
+    payload_on: "ON" # or "on", depending on your MQTT device
+    payload_off: "OFF" # or "off", depending on your MQTT device
+    retain: true # or false if you want to wait for changes

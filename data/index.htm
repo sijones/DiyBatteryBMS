@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html charset="UTF-8" lang="en">
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.1/jquery.min.js"></script> -->
+    <link href="bootstrap/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+    <script src="bootstrap/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+    <title>DIY SMART BMS</title>
+  </head>
+  <body>
+
+    <div class="container-sm">
+      <h2>DIY Battery Integration BMS</h2>
+      <h5>Victron to CAN (PylonTech Protocol) Inverter Software</h5>
+      <hr><br>
+    <div class="d-flex p-2 bd-highlight">
+      <div class="col-sm-2">
+        <div class="nav flex-column nav-pills me-3" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+          <button class="nav-link active" id="v-pills-home-tab" data-bs-toggle="pill" data-bs-target="#v-pills-home" type="button" role="tab" aria-controls="v-pills-home" aria-selected="true">Home</button>
+          <button class="nav-link" id="v-pills-bms-tab" data-bs-toggle="pill" data-bs-target="#v-pills-bms" type="button" role="tab" aria-controls="v-pills-bms" aria-selected="false">BMS</button>
+          <button class="nav-link" id="v-pills-settings-tab" data-bs-toggle="pill" data-bs-target="#v-pills-settings" type="button" role="tab" aria-controls="v-pills-settings" aria-selected="false">Settings</button>
+          <button class="nav-link" id="v-pills-wifimqtt-tab" data-bs-toggle="pill" data-bs-target="#v-pills-wifimqtt" type="button" role="tab" aria-controls="v-pills-wifimqtt" aria-selected="false">Wifi/MQTT</button>
+        </div>
+      </div>
+      <div class="col-sm-10">
+      <div class="tab-content" id="v-pills-tabContent">
+        <div class="tab-pane fade show active" id="v-pills-home" role="tabpanel" aria-labelledby="v-pills-home-tab">
+          
+          <!-- Home Content -->
+             <!-- Battery Status Header -->
+              <div class="row">
+                <div class="col-sm-8">
+                  <p class="text-center"><label id="lblbattstatus" class="display-6">Battery Status</label></p>
+                </div>
+              </div>
+            
+             <!-- Battery SOC -->
+              <div class="row">
+                <div class="col-sm-8">
+                  <p class="text-center"><label id="battsoc" class="display-4">%</label></p>
+                </div>
+              </div>
+            
+              <!-- Battery Voltage and Current (Real Time) -->
+                <div class="row">
+                  <div class="col-sm-4">
+                    <div class="d-flex bd-highlight">
+                      <div class="p-2 w-100 bd-highlight">Battery Voltage:</div>
+                      <div class="p-2 flex-shrink-1 bd-highlight"><label id="battvoltage">V</label></div>
+                    </div>
+                  </div>
+                  
+                  <div class="col-sm-4">
+                    <div class="d-flex bd-highlight">
+                        <div class="p-2 w-100 bd-highlight">Battery Current:</div>
+                        <div class="p-2 flex-shrink-1 bd-highlight"><label id="battcurrent">A</label></div>
+                      </div>
+                  </div>             
+                </div>
+                <!-- Real Time Charge and Discharge Current -->
+                <div class="row">
+                  <div class="col-sm-4">
+                    <div class="d-flex bd-highlight">
+                      <div class="p-2 w-100 bd-highlight">Charge Limit:</div>
+                      <div class="p-2 flex-shrink-1 bd-highlight"><label id="chargecurrent">A</label></div>
+                    </div>
+                  </div>
+                  
+                  <div class="col-sm-4">
+                    <div class="d-flex bd-highlight">
+                        <div class="p-2 w-100 bd-highlight">Discharge Limit:</div>
+                        <div class="p-2 flex-shrink-1 bd-highlight"><label id="dischargecurrent">A</label></div>
+                      </div>
+                  </div>             
+                </div>
+        </div> <!-- End of Real Time Content -->
+
+        <!-- BMS Settings Content -->
+        <div class="tab-pane fade" id="v-pills-bms" role="tabpanel" aria-labelledby="v-pills-bms-tab">
+              <div class="row">
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                    <div class="p-2 w-100 bd-highlight"><label for="chargevoltage" class="label">Charge Voltage (mV): </label></div>
+                    <div class="p-2 flex-shrink-1 bd-highlight">
+                      <input class="form-control" type="number" id="chargevoltage" onblur="SendJSONUpdate('chargevoltage')"></div>
+                    </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                  <div class="p-2 w-100 bd-highlight"><label for="dischargevoltage" class="label">Discharge Voltage (mV): </label></div>
+                  <div class="p-2 flex-shrink-1 bd-highlight">
+                    <input class="form-control" type="number" id="dischargevoltage" onblur="SendJSONUpdate('dischargevoltage')"></div>
+                </div>
+              </div>
+              </div>
+            
+              <div class="row">
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                    <div class="p-2 w-100 bd-highlight"><label for="maxchargecurrent" class="label">Max Charge (mA): </label></div>
+                    <div class="p-2 flex-shrink-1 bd-highlight">
+                      <input class="form-control" type="number" id="maxchargecurrent" onblur="SendJSONUpdate('maxchargecurrent')"></div>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                  <div class="p-2 w-100 bd-highlight"><label for="maxdischargecurrent" class="label">Max Discharge (mA): </label></div>
+                  <div class="p-2 flex-shrink-1 bd-highlight">
+                    <input class="form-control" type="number" id="maxdischargecurrent" onblur="SendJSONUpdate('maxdischargecurrent')"></div>
+                </div>
+                </div>
+              </div>
+            
+              <div class="row">
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                  <div class="p-2 w-100 bd-highlight"><label for="batterycapacity" class="label">Battery Capacity (mA): </label></div> 
+                  <div class="p-2 flex-shrink-1 bd-highlight">
+                    <input class="form-control" type="number" id="batterycapacity" onblur="SendJSONUpdate('batterycapacity')"></div>
+                  </div>
+                </div>
+                <div class="col-sm-6"></div>
+              </div>
+            
+              <div class="row">
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                  <div class="p-2 w-100 bd-highlight"><label for="lowsoclimit" class="form-label">Low SOC (Stop Discharge): </label></div>
+                  <div class="p-2 flex-shrink-1 bd-highlight">
+                    <input class="form-control" type="number" id="lowsoclimit"  onblur="SendJSONUpdate('lowsoclimit')"></div>
+                </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                  <div class="p-2 w-100 bd-highlight"><label for="highsoclimit" class="form-label">High SOC (Stop Charge): </label></div>
+                  <div class="p-2 flex-shrink-1 bd-highlight">
+                    <input class="form-control" type="number" id="highsoclimit" onblur="SendJSONUpdate('highsoclimit')"></div>
+                </div>
+                </div>
+              </div>
+            
+              <div class="row">
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                  <div class="p-2 w-100 bd-highlight"><label for="slowchargesoc1" class="form-label">Slow Charge SOC 1</label></div>
+                  <div class="p-2 flex-shrink-1 bd-highlight">
+                    <input class="form-control" type="number" id="slowchargesoc1"  onblur="SendJSONUpdate('slowchargesoc1')"></div>
+                </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                  <div class="p-2 w-100 bd-highlight"><label for="slowchargesoc1div" class="form-label">Slow Charge 1 (divider)</label></div>
+                  <div class="p-2 flex-shrink-1 bd-highlight">
+                    <input class="form-control" type="number" id="slowchargesoc1div" onblur="SendJSONUpdate('slowchargesoc1div')"></div>
+                </div>
+                </div>
+              </div>
+           
+            <div class="row">
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight"><label for="slowchargesoc2" class="form-label">Slow Charge SOC 2</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight">
+                  <input class="form-control" type="number" id="slowchargesoc2" onblur="SendJSONUpdate('slowchargesoc2')"></div>
+              </div>
+              </div>
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight"><label for="slowchargesoc2div" class="label">Slow Charge 2 (divider)</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight">
+                  <input class="form-control" type="number" id="slowchargesoc2div" onblur="SendJSONUpdate('slowchargesoc2div')"></div>
+              </div>
+              </div>
+            </div>
+          <p>
+            <div>
+              <button type="button" class="btn btn-success pull-right" id="SavetoEEPROM" onclick="saveAll();">Save to EEPROM</button>
+              <button type="button" class="btn btn-warning pull-right" id="FactoryReset" onclick="eraseAll();">Factory Reset</button>
+            </div>
+          </p>
+          </div> <!-- End of BMS Content -->
+
+          <!-- Settings Content -->
+          <div class="tab-pane fade" id="v-pills-settings" role="tabpanel" aria-labelledby="v-pills-settings-tab">
+
+            <div class="row">
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight form-check form-switch"><label for="canbusenabled" class="form-check-label">CAN Bus Enabled:</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="canbusenabled" onclick="SendJSONUpdate('canbusenabled')"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight"><label for="canbuscspin" class="label">CAN Bus Chip Select Pin:</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight">
+                  <input class="form-control" type="number" id="canbuscspin" onblur="SendJSONUpdate('canbuscspin')"></div>
+              </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight"><label for="victronrxpin" class="label">Victron RX Pin:</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight">
+                  <input class="form-control" type="number" id="victronrxpin" onblur="SendJSONUpdate('victronrxpin')"></div>
+              </div>
+              </div>
+
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight"><label for="victrontxpin" class="label">Victron TX Pin:</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight">
+                  <input class="form-control" type="number" id="victrontxpin" onblur="SendJSONUpdate('victrontxpin')"></div>
+              </div>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight form-check form-switch"><label for="pylontechenabled" class="form-check-label">PylonTech Protocol Enabled:</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="pylontechenabled" onclick="SendJSONUpdate('pylontechenabled')"></div>
+              </div>
+              </div>
+            </div>
+            <p>
+              <div class="d-flex flex-row bd-highlight mb-3">
+                <div class="p-2 bd-highlight">
+                  <button type="button" class="btn btn-warning pull-right" id="FactoryReset" onclick="eraseAll();">Factory Reset</button>
+                  <button type="button" class="btn btn-danger pull-right" id="Reboot" onclick="rebootBMS();">Reboot & Apply</button>
+                </div>
+              </div>
+            </p>
+          </div> <!-- End of Settings Content -->
+
+          <!-- Wifi and MQTT Config -->
+          <div class="tab-pane fade" id="v-pills-wifimqtt" role="tabpanel" aria-labelledby="v-pills-wifimqtt-tab">
+            <!-- Wifi SSID and Password Row -->
+            <div class="d-flex flex-row bd-highlight mb-3">
+              <div class="p-2 w-40 bd-highlight">
+                <label class="form-label" for="wifissid">Wifi Network:</label>
+              </div>
+              <div class="p-2 bd-highlight">
+                    <select class="form-control" name="wifissid" id="wifissid" onclick="" onblur="SendJSONUpdate('wifissid')"></select>
+              </div>
+              <div class="p-2 bd-highlight">
+                    <button type="button" class="btn btn-success pull-right" id="GetWifiList" onclick="GetWifiList();">Scan</button>
+              </div>
+            </div>
+            <div class="d-flex flex-row bd-highlight mb-3">
+              <div class="p-2 w-40 bd-highlight ">
+                <label class="form-label" for="wifipass">Wifi Password:</label>
+              </div>
+              <div class="p-2 flex-shrink-1 bd-highlight ">
+                <input class="form-control" type="password" id="wifipass" onblur="SendJSONUpdate('wifipass')">
+              </div>
+            </div>
+            
+            <!-- Wifi Hostname -->
+            <div class="d-flex flex-row bd-highlight mb-3">
+              <div class="p-2 w-40 bd-highlight">
+                  <label class="form-label" for="wifihostname">mDNS Hostname:</label>
+              </div>
+              <div class="p-2 flex-shrink-1 bd-highlight ">
+                  <input class="form-control" type="textbox" id="wifihostname" onblur="SendJSONUpdate('wifihostname')">
+              </div>
+            </div>
+
+
+            <!-- MQTT Server IP, Port and Client id -->
+            <div class="d-flex flex-row bd-highlight mb-3">
+              <div class="p-2 w-40 bd-highlight"><label class="form-label" for="mqttserverip">MQTT Server IP:</label>
+                  <input class="form-control" type="textbox" id="mqttserverip" onblur="SendJSONUpdate('mqttserverip')"></div>
+                <div class="p-2 w-40 bd-highlight"><label class="form-label" for="mqttport">MQTT Port:</label>
+                  <input class="form-control" type="number" id="mqttport" onblur="SendJSONUpdate('mqttport')"></div>
+            </div>
+            <div class="d-flex flex-row bd-highlight mb-3">
+                <div class="p-2 w-40 bd-highlight"><label class="form-label" for="mqttclientid">MQTT Client id:</label>
+                  <input class="form-control" type="textbox" id="mqttclientid" onblur="SendJSONUpdate('mqttclientid')"></div>
+            </div>
+
+            <!-- MQTT Prefix and Parameter -->
+            <div class="d-flex flex-row bd-highlight mb-3">
+              <div class="p-2 w-40 bd-highlight"><label class="form-label" for="mqtttopic">MQTT Topic:</label>
+                <input class="form-control" type="textbox" id="mqtttopic" onblur="SendJSONUpdate('mqtttopic')">
+              </div>
+              <div class="p-2 w-40 bd-highlight"><label class="form-label" for="mqttparameter">MQTT Parameter:</label>
+                <input class="form-control" type="textbox" id="mqttparameter" onblur="SendJSONUpdate('mqttparameter')">
+              </div>
+            </div>
+
+            <!-- MQTT Username and Password -->
+            <br />
+            MQTT Authentication (Optional)
+            <div class="d-flex flex-row bd-highlight mb-3">
+              <div class="p-2 w-40 bd-highlight"><label class="form-label" for="mqttuser">MQTT Username:</label>
+              <input class="form-control" type="textbox" id="mqttuser" onblur="SendJSONUpdate('mqttuser')"></div>
+              <div class="p-2 w-40 bd-highlight"><label class="form-label" for="mqttpass">MQTT Password:</label>
+              <input class="form-control" type="password" id="mqttpass" onblur="SendJSONUpdate('mqttpass')"></div>
+            </div>
+            <br/>
+            Wifi and MQTT Refresh Rate (Sending interval)
+            <div class="d-flex flex-row bd-highlight mb-3">
+              <div class="p-2 w-40 bd-highlight"><label class="form-label" for="velooptime">Every (secs):</label>
+                <input class="form-control" type="number" id="velooptime" onblur="SendJSONUpdate('velooptime')"></div>
+            </div>
+            <br />
+            <div class="d-flex flex-row bd-highlight mb-3">
+              <button type="button" class="btn btn-danger pull-right" id="Reboot" onclick="rebootBMS();">Reboot & Apply</button>
+            </div>
+
+
+        </div> <!-- End of Wifi and MQTT Config -->
+
+      </div>
+    </div> <!-- Div Col 9 -->
+      <div class="d-flex align-items-baseline flex-row bd-highlight mb-3">
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var gateway = `ws://${window.location.hostname}/ws`; 
+    var websocket;
+
+    window.addEventListener('load', onLoad);
+    function initWebSocket() {
+      console.log('Trying to open a WebSocket connection...');
+      websocket = new WebSocket(gateway);
+      websocket.onopen    = onOpen;
+      websocket.onclose   = onClose;
+      websocket.onmessage = onMessage; // <-- add this line
+    }
+    function onOpen(event) {
+      console.log('Connection opened');
+      setTimeout(GetWifiList, 500);
+    }
+    function onClose(event) {
+      console.log('Connection closed');
+      setTimeout(initWebSocket, 2000);
+    }
+    function onMessage(event) {
+      console.log(event.data);
+      const obj = JSON.parse(event.data);
+
+      if(obj.hasOwnProperty('BMS') && obj.BMS)
+      {
+        if(obj.hasOwnProperty('chargevoltage')) document.getElementById('chargevoltage').value=obj.chargevoltage;
+        if(obj.hasOwnProperty('dischargevoltage')) document.getElementById('dischargevoltage').value=obj.dischargevoltage;
+        if(obj.hasOwnProperty('maxchargecurrent')) document.getElementById('maxchargecurrent').value=obj.maxchargecurrent;
+        if(obj.hasOwnProperty('maxdischargecurrent')) document.getElementById('maxdischargecurrent').value=obj.maxdischargecurrent;
+        if(obj.hasOwnProperty('batterycapacity')) document.getElementById('batterycapacity').value=obj.batterycapacity;
+        if(obj.hasOwnProperty('lowsoclimit')) document.getElementById('lowsoclimit').value=obj.lowsoclimit;
+        if(obj.hasOwnProperty('highsoclimit')) document.getElementById('highsoclimit').value=obj.highsoclimit;
+        if(obj.hasOwnProperty('velooptime')) document.getElementById('velooptime').value=obj.velooptime;
+        if(obj.hasOwnProperty('canbusenabled')) document.getElementById('canbusenabled').checked=obj.canbusenabled;
+        
+      }
+      if(obj.hasOwnProperty('RealTime') && obj.RealTime)
+      {
+        if(obj.hasOwnProperty('battsoc')) document.getElementById('battsoc').innerHTML=obj.battsoc+'%' ;
+        if(obj.hasOwnProperty('battvoltage')) document.getElementById('battvoltage').innerHTML=(obj.battvoltage*0.01).toFixed(2) +'V';
+        if(obj.hasOwnProperty('battcurrent')) document.getElementById('battcurrent').innerHTML=(obj.battcurrent*0.1).toFixed(2)+'A';
+        if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').innerHTML=(obj.chargecurrent*0.001).toFixed(0)+'A';
+        if(obj.hasOwnProperty('dischargecurrent')) document.getElementById('dischargecurrent').innerHTML=(obj.dischargecurrent*0.001).toFixed(0)+'A';
+        if(obj.hasOwnProperty('pylontechenabled')) document.getElementById('pylontechenabled').checked=obj.pylontechenabled;
+      }
+
+
+      if(obj.hasOwnProperty('wifissid')) document.getElementById('wifissid').value=obj.wifissid;
+      if(obj.hasOwnProperty('wifipass')) document.getElementById('wifipass').value=obj.wifipass;
+      if(obj.hasOwnProperty('wifihostname')) document.getElementById('wifihostname').value=obj.wifihostname;
+      if(obj.hasOwnProperty('canbuscspin')) document.getElementById('canbuscspin').value=obj.canbuscspin;
+      if(obj.hasOwnProperty('victronrxpin')) document.getElementById('victronrxpin').value=obj.victronrxpin;
+      if(obj.hasOwnProperty('victrontxpin')) document.getElementById('victrontxpin').value=obj.victrontxpin;
+      if(obj.hasOwnProperty('mqttport')) document.getElementById('mqttport').value=obj.mqttport;
+      if(obj.hasOwnProperty('mqttserverip')) document.getElementById('mqttserverip').value=obj.mqttserverip;
+
+      if(obj.hasOwnProperty('mqttclientid')) document.getElementById('mqttclientid').value=obj.mqttclientid;
+      if(obj.hasOwnProperty('mqtttopic')) document.getElementById('mqtttopic').value=obj.mqtttopic;
+      if(obj.hasOwnProperty('mqttparameter')) document.getElementById('mqttparameter').value=obj.mqttparameter;
+
+      if(obj.hasOwnProperty('mqttuser')) document.getElementById('mqttuser').value=obj.mqttuser;
+      if(obj.hasOwnProperty('mqttpass')) document.getElementById('mqttpass').value=obj.mqttpass;
+      if(obj.hasOwnProperty('slowchargesoc1')) document.getElementById('slowchargesoc1').value=obj.slowchargesoc1;
+      if(obj.hasOwnProperty('slowchargesoc2')) document.getElementById('slowchargesoc2').value=obj.slowchargesoc2;
+      if(obj.hasOwnProperty('slowchargesoc1div')) document.getElementById('slowchargesoc1div').value=obj.slowchargesoc1div;
+      if(obj.hasOwnProperty('slowchargesoc2div')) document.getElementById('slowchargesoc2div').value=obj.slowchargesoc2div;
+      
+      
+      // handle any WS messages or errors
+      if(obj.hasOwnProperty('Message'))
+        alert(obj.Message);
+      if(obj.hasOwnProperty('ERROR'))
+        alert(obj.ERROR);
+        
+    }
+
+    function onLoad(event) {
+      initWebSocket();
+    }
+
+    function initButton() {
+    }
+
+    function isNumber(n){
+      return Number(n)=== n;
+    }
+
+    function saveAll(){
+      console.log('Sending Save All command');
+      var jsonobj = '{"saveall" : true}';
+      websocket.send(jsonobj);
+    }
+
+    function eraseAll(){
+      console.log('Sending Erase All (EEPROM) command');
+      var jsonobj = '{"eraseall" : true}';
+      websocket.send(jsonobj);
+    }
+
+    function rebootBMS(){
+      console.log('Sending Reboot command');
+      var jsonobj = '{"reboot" : true}';
+      websocket.send(jsonobj);
+    }
+
+    function SendJSONUpdate(textboxid) {
+      //var boxvalue = document.getElementById(textboxid).value;
+      var jsonobj;
+
+      if (document.getElementById(textboxid).value == null)
+      {
+        console.log('getElementById returned null.');
+        return;
+      }
+       
+      if('wifissid' == textboxid) {
+        selectElement = document.getElementById(textboxid);
+        jsonobj = '{"' + textboxid + '" : ' + selectElement.options[selectElement.selectedIndex].value + '}'; }
+      else if (document.getElementById(textboxid).value == 'on' || document.getElementById(textboxid).value == 'off')
+        jsonobj = '{"' + textboxid + '" : ' + document.getElementById(textboxid).checked + '}';
+      else if(isNumber(document.getElementById(textboxid).value))
+        jsonobj = '{"' + textboxid + '" : ' + document.getElementById(textboxid).value + '}';
+      else
+        jsonobj = '{"' + textboxid + '" : "' + document.getElementById(textboxid).value + '"}';
+
+        
+      var jsonString = JSON.stringify(jsonobj);
+      console.log('Sending to Websocket: ' + JSON.parse(jsonString));
+      websocket.send(JSON.parse(jsonString));
+    }
+
+    function GetWifiList()
+    {
+      console.log("Getting Wifi List");
+      var serverurl = `http://${window.location.hostname}/scan`; 
+    
+      //  GET request using fetch()
+      fetch(serverurl)
+   
+          // Converting received data to JSON
+        .then(response => response.json())
+        .then(json => {
+        
+            var select = document.getElementById("wifissid");
+            var previous = '';
+
+            document.getElementById('wifissid').innerHTML = '';
+
+            // Loop through each data and add a table row
+            json.forEach(user => {
+                var el = document.createElement("option");
+                if (user.ssid != previous){
+                    previous = user.ssid;
+                    el.textContent = user.ssid;
+                    el.value = user.ssid;
+                    el.className = "dropdown-item";
+                    select.appendChild(el);
+                    console.log('Adding Option: ' + user.ssid); 
+                }
+                else
+                    console.log('Ignoring duplicate SSID: ' + user.ssid);
+                });
+        });
+
+    }
+    
+
+
+  </script>
+  
+  </body>
+</html>
