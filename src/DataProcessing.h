@@ -1,14 +1,12 @@
 void VEDataProcess()
 {
 
-  log_d("Called...");
-
  for (int i = 0; i < veHandle.FrameLength(); i++) {
     bool dataValid = false;
     String key = veHandle.veName[i];
     String value = veHandle.veValue[i];
     String parsedValue = "";
-    log_i("Handling Key: %s - Value: %s",key,value);
+    //log_i("Handling Key: %s - Value: %s",key,value);
     
     if (value.startsWith("-"))
       parsedValue = "-";
@@ -39,6 +37,7 @@ void VEDataProcess()
        // taskENTER_CRITICAL(&MainMutex);
         Inverter.BattCurrentmA((int32_t) (parsedValue.toInt() *0.01 ));
         Lcd.Data.BattAmps.setValue(Inverter.BattCurrentmA());
+        
        // taskEXIT_CRITICAL(&MainMutex);
       }
     }

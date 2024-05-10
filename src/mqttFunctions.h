@@ -18,6 +18,8 @@ String sPass;
 String sServer;
 String sSubscribe;
 String sTopic;
+String sTopicData;
+char buffer[10];
 
 bool mqttPublish(String topic, String payload, bool retain)
 {
@@ -51,6 +53,7 @@ bool sendUpdateMQTTData()
 // Send VE data from passive mode to MQTT
 //
 bool sendVE2MQTT() {
+  /*
   for (int i = 0; i < veHandle.FrameLength(); i++) {
     String key = veHandle.veName[i];
     if (key.length() == 0)
@@ -66,7 +69,20 @@ bool sendVE2MQTT() {
         log_e("Sending MQTT message failed: %s: %s", topic.c_str(), value.c_str());
         }
     } 
-  } 
+  } */
+
+  // Send Voltage
+  sprintf (buffer, "%u", Inverter.BattVoltage());
+  mqttPublish((sTopic + "/V").c_str(),buffer,false);
+  // Send Current
+  sprintf (buffer, "%i", Inverter.BattCurrentmA());
+  mqttPublish((sTopic + "/I").c_str(),buffer,false);
+  // Send SOC
+  sprintf (buffer, "%i", Inverter.BattSOC());
+  mqttPublish((sTopic + "/SOC").c_str(),buffer,false);
+
+  // Publish Json with more details in.
+  mqttPublish(sTopicData.c_str(),generateDatatoJSON(false).c_str(),false);
   return true;
 }
 
@@ -112,17 +128,6 @@ void onMqttConnect(bool sessionPresent) {
   mqttClient.subscribe((sSubscribe + "set/ChargeVoltage").c_str(),2);
   mqttClient.subscribe((sSubscribe + "set/ChargeCurrent").c_str(),2);
   
-  //log_d("Subscribing at QoS 2, packetId: %d", packetIdSub);
-  /*
-  mqttClient.publish("test/lol", 0, true, "test 1");
-  log_d("Publishing at QoS 0");
-  uint16_t packetIdPub1 = mqttClient.publish("test/lol", 1, true, "test 2");
-  log_d("Publishing at QoS 1, packetId: ");
-  log_d(packetIdPub1);
-  uint16_t packetIdPub2 = mqttClient.publish("test/lol", 2, true, "test 3");
-  log_d("Publishing at QoS 2, packetId: ");
-  log_d(packetIdPub2); 
-  */
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -148,48 +153,32 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 String sTopic = String(topic);
 String message = String(payload,len);
 
-if (sTopic == (wifiManager._mqttTopic + "/set/DischargeCurrent")) {
+if (sTopic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
     Inverter.SetDischargeCurrent(message.toInt());
   }
-  else if (sTopic == (wifiManager._mqttTopic + "/set/ChargeVoltage")) {
+  else if (sTopic == (wifiManager.GetMQTTTopic() + "/set/ChargeVoltage")) {
     if (message.toInt() > 0) {
       Inverter.SetChargeVoltage(message.toInt());
     }
   }
-  else if (sTopic == wifiManager._mqttTopic + "/set/ChargeCurrent") {
+  else if (sTopic == wifiManager.GetMQTTTopic() + "/set/ChargeCurrent") {
    Inverter.SetChargeCurrent(message.toInt());
   }
-  else if (sTopic == wifiManager._mqttTopic + "/set/ForceCharge") {
+  else if (sTopic == wifiManager.GetMQTTTopic() + "/set/ForceCharge") {
     bool forcecharge = (message == "ON") ? true : false;
     Inverter.ForceCharge((message == "ON") ? true : false);
     log_d("Force charge set to: %d", forcecharge);
    }
-  else if (sTopic == wifiManager._mqttTopic + "/set/DischargeEnable") {
+  else if (sTopic == wifiManager.GetMQTTTopic() + "/set/DischargeEnable") {
     Inverter.ManualAllowDischarge((message == "ON") ? true : false); 
    }
-  else if (sTopic == wifiManager._mqttTopic + "/set/ChargeEnable") {
+  else if (sTopic == wifiManager.GetMQTTTopic() + "/set/ChargeEnable") {
     Inverter.ManualAllowCharge((message == "ON") ? true : false); 
    }
-  else if (sTopic == wifiManager._mqttTopic + "/set/EnablePYLONTECH") {
+  else if (sTopic == wifiManager.GetMQTTTopic() + "/set/EnablePYLONTECH") {
     Inverter.EnablePylonTech((message == "ON") ? true : false); 
    }
   
-
-  /*
-  log_d(topic);
-  log_d("  qos: ");
-  log_d(properties.qos);
-  log_d("  dup: ");
-  log_d(properties.dup);
-  log_d("  retain: ");
-  log_d(properties.retain);
-  log_d("  len: ");
-  log_d(len);
-  log_d("  index: ");
-  log_d(index);
-  log_d("  total: ");
-  log_d(total);
-  */
 }
 
 void onMqttPublish(uint16_t packetId) {
@@ -198,15 +187,16 @@ void onMqttPublish(uint16_t packetId) {
 
 void mqttsetup() {
 
-    sServer = pref.getString(ccMQTTServerIP,"");
-    sUser = pref.getString(ccMQTTUser,"");
-    sPass = pref.getString(ccMQTTPass,"");
+    sServer = wifiManager.GetMQTTServerIP();
+    sUser = wifiManager.GetMQTTUser();
+    sPass = wifiManager.GetMQTTPass();
+    sTopic = wifiManager.GetMQTTTopic();
+    sTopicData = wifiManager.GetMQTTTopic() + "/Data";
     uint16_t mqttPort = (uint16_t) pref.getUInt(ccMQTTPort,mqttPort);
     IPAddress _ip;
     bool useIP = false;
     
     mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
-    //wifiReconnectTimer = xTimerCreate("wifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToWifi));
 
     WiFi.onEvent(WiFiEvent);
 

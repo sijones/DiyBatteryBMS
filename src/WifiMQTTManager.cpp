@@ -4,8 +4,6 @@
 
 bool WifiMQTTManagerClass::begin()
 {
-    //m_pref.begin(PREF_NAME);
-
     log_d("Getting all values from EEPROM");
 
     _wifiSSID = m_pref.getString(ccWifiSSID,_wifiSSID);
@@ -94,9 +92,6 @@ bool WifiMQTTManagerClass::begin()
         log_d("MQTT server not set.");
         log_d("MQTT Server IP: %s, MQTT Port %d, MQTT Client ID: %s",_mqttServer,_mqttPort,_mqttClientID);
     }
-
-
-   //m_pref.end();
 
     return true;
 }

@@ -21,6 +21,7 @@
    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
    SOFTWARE.
 */
+#define SYSLOG 1
 
 #define initBattChargeVoltage 55200       // Battery Charge Voltage sent to inverter
 #define initBattDischargeVoltage 45000    // Battery discharge voltage, not currently used
@@ -34,8 +35,7 @@
 #define initSlowSOCDivider1 0
 #define initSlowSOCDivider2 0
 
-          
-// To use PYLONTECH Protocol enable below
+// To use strict PYLONTECH Protocol enable below
 //#define USE_PYLONTECH
 
 //

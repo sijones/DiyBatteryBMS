@@ -6,6 +6,7 @@
 #include <WiFiClient.h>
 #include <WebServer.h>
 #include <DNSServer.h>
+#include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
 #include <ESPmDNS.h>
@@ -18,7 +19,6 @@ class WifiMQTTManagerClass {
         bool _provEnable;
         bool _needConfig;
         bool _wifiOK;
-
         bool _wifiEnabled = false;
         bool _dnsStarted = false;
         String _wifiSSID = "";
@@ -29,6 +29,8 @@ class WifiMQTTManagerClass {
         String _mqttPass = "";
         uint16_t _mqttPort = 1883;
         String _mqttClientID = "smartbms-dev";
+        String _mqttTopic = "SMARTBMS-dev";
+        String _mqttParameter = "/Param";
 
     public:
         WifiMQTTManagerClass() {
@@ -52,8 +54,6 @@ class WifiMQTTManagerClass {
         wifi_mode_t GetMode();
         WiFiClient wifiClient;
 
-        String _mqttTopic = "SMARTBMS-dev";
-        String _mqttParameter = "/Param";
         String GetWifiSSID();
         String GetWifiPass();
         String GetWifiHostName();

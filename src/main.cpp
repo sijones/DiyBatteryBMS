@@ -41,11 +41,11 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include "VEDisplay.h"
-
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h> // Include WebServer Library for ESP32
 #include "WifiMQTTManager.h"
 #include <ArduinoJson.h> // Include ArduinoJson Library
+#include <AsyncElegantOTA.h>
 
 WiFiClient _wifiClient;
 
@@ -154,8 +154,6 @@ void setup()
   // OW_WAIT_TIME = pref.getInt("OW_WAIT_TIME", OW_WAIT_TIME);
   // #endif
 
-  mqttsetup();
-
   if (LittleFS.begin(false))
   {
     Lcd.Data.LittleFSMounted.setValue(true);
@@ -166,16 +164,16 @@ void setup()
     log_d("Failed to mount storage (LittleFS).");
   }
   
-
   if (!wifiManager.begin())
   {
     // Failed to configure, start the basics to enable web configuration
     // on an Access Point
-
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     StartCriticalWebService();
     server.begin();
   }
+
+  mqttsetup();
 
   if (Inverter.Begin(pref.getUInt(ccCanCSPin, (uint32_t)CAN_BUS_CS_PIN)))
   {
@@ -210,6 +208,7 @@ void setup()
       4096, NULL, 2, NULL);
   if(veHandle.OpenSerial((uint8_t) pref.getUInt(ccVictronRX,VEDIRECT_RX), (uint8_t) pref.getUInt(ccVictronTX,VEDIRECT_TX)))
       veHandle.startReadTask();
+
   return;
 }
 
@@ -222,21 +221,12 @@ void loop()
 
   time_t t = time(nullptr);
  
-  wifiManager.loop();
+  wifiManager.loop(); 
 
-#ifdef USE_ONEWIRE
-  if (abs(t - last_ow) >= OW_WAIT_TIME)
-  {
-    if (checkWiFi())
-    {
-      sendOneWireMQTT();
-      last_ow = t;
-      // sendOPInfo();
-    }
-  }
-#endif
+  while(Serial1.available() > 0)
+      veHandle.rxData(Serial1.read());
 
-  if (abs(t - last_vedirect) >= VE_WAIT_TIME)
+
   {
     if (veHandle.dataavailable())
     {
@@ -245,37 +235,26 @@ void loop()
         Lcd.Data.VEData.setValue(true);
       log_d("Data Available to Process");
       VEDataProcess();
-    }
-    else {
-        if (Lcd.Data.VEData._currentValue)
-          Lcd.Data.VEData.setValue(false);
+      if (wifiManager.isWiFiConnected())
+      {
+        sendVE2MQTT();
+        ws.cleanupClients();
+        notifyWSClients(false);
+      }
     }
 
   }
-
-
-  if (abs(t - last_loop) >= VE_LOOP_TIME)
-  {
-    last_loop = t;
-    if (wifiManager.isWiFiConnected() && mqttClient.connected())
-    {
-      ws.cleanupClients();
-      notifyWSClients(false);
-      //sendASCII2MQTT(&block);
-      sendVE2MQTT();
-    }
-  }
+// Time out for data arrival
+  if ((abs(t - last_vedirect) > 2) && Lcd.Data.VEData._currentValue)
+      Lcd.Data.VEData.setValue(false);
 
   // Send MQTT Data every 15 seconds or if the inverter data has changed
   if (((millis() - SendCanBusMQTTUpdates) > 15000) || Inverter.DataChanged())
   {
+    log_d("Send MQTT Param Update");
     SendCanBusMQTTUpdates = millis();
     sendUpdateMQTTData();
   }
-  // if the web services are running we need to call the
-  // websocket loop function each loop
-  // if (Lcd.Data.GetWebServerState())
-  // webSocket.loop();
 
 #ifdef M5STACK
   if (M5.BtnA.wasPressed())

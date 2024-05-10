@@ -39,12 +39,12 @@
 
 void VETaskHandler(void * pointer)
 {
-    log_d("Getting Pointer.");
+
     VeDirectFrameHandler *veTask = (VeDirectFrameHandler *) pointer;
     log_d("Entering Read Loop.");
-    veTask->mRun = true;
-    
-    while(veTask->mRun)
+    //veTask->mRun = true;
+    //veTask->mRun
+    while(true)
     {
 		if(Serial1.available() > 0)
         	veTask->rxData(Serial1.read());
@@ -64,8 +64,10 @@ bool VeDirectFrameHandler::OpenSerial(uint8_t _rxPin,uint8_t _txPin)
 {
     Serial1.end();
 
-	//if (_txPin > 33)
-	//	return false;
+	#ifdef ESP32
+	if (_txPin > 33) // ESP32 can't use pins higher than 34 for output.
+		return false;
+	#endif
     log_d("Opening Serial Port rxPin: %i, txPin %i",_rxPin,_txPin);
     Serial1.begin(19200, SERIAL_8N1, _rxPin, _txPin);
     Serial1.flush();
@@ -195,15 +197,15 @@ void VeDirectFrameHandler::startReadTask()
     mStop = false;
     mRun = true;
 
-    log_d("Creating VE Read Task");
-    xTaskCreatePinnedToCore(
-    &VETaskHandler,   /* Task function. */
-    "VETaskHandler",  /* String with name of task. */
-    4096,             /* Stack size in bytes. */
-    this,             /* Parameter passed as input of the task */
-    4,                /* Priority of the task. */
-    &tHandle,         /* Task handle. */
-    1);  
+//    log_d("Creating VE Read Task");
+//    xTaskCreatePinnedToCore(
+//    &VETaskHandler,   /* Task function. */
+//    "VETaskHandler",  /* String with name of task. */
+//    5000,             /* Stack size in bytes. */
+//    this,             /* Parameter passed as input of the task */
+//    4,                /* Priority of the task. */
+//    &tHandle,         /* Task handle. */
+//    1);  
 
 }
 

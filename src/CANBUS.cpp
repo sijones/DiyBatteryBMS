@@ -65,8 +65,8 @@ bool CANBUS::Begin(uint8_t _CS_PIN) {
 bool CANBUS::StartRunTask()
 {
     if(CanBusAvailable){
-    // Create task and pin to Core0
-      xTaskCreatePinnedToCore(&canSendTask,"canSendTask",4096,this,6,&tHandle,1);    
+    // Create task and pin to Core1
+      xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,1);    
       return true;
     }
     else
@@ -182,17 +182,15 @@ bool CANBUS::SendCANData(){
   if (!Initialised() && !Configured()) return false;
 
   byte sndStat;
-  
+  _failedCanSendCount=0;
+
   // Send PYLON String
   //if(_enablePYLONTECH) {
   sndStat = CAN->sendMsgBuf(0x35E, 0, 8, MSG_PYLON);
-  if (sndStat == CAN_OK){
-    log_i("Sent PYLONTECH String.");
-  }  else {
-    log_e("Failed to send PYLONTECH String.");
+  if (sndStat != CAN_OK){
+    _failedCanSendCount++;
     _failedCanSendTotal++;
-  }
-      
+  }   
   delay(_canSendDelay);
   
   memset(CAN_MSG,0,sizeof(CAN_MSG));
@@ -202,23 +200,13 @@ bool CANBUS::SendCANData(){
   if (_forceCharge) CAN_MSG[1] | bmsForceCharge;
   if (_chargeEnabled && _ManualAllowCharge) CAN_MSG[1] | bmsChargeEnable;
   if (_dischargeEnabled && _ManualAllowDischarge) CAN_MSG[1] | bmsDischargeEnable;
-/*
-  CAN_MSG[2] = 0x00;
-  CAN_MSG[3] = 0x00;
-  CAN_MSG[4] = 0x00;
-  CAN_MSG[5] = 0x00;
-  CAN_MSG[6] = 0x00;
-  CAN_MSG[7] = 0x00;
-*/
 
   sndStat = CAN->sendMsgBuf(0x35C, 2, CAN_MSG);
-  if(sndStat == CAN_OK){
-    _failedCanSendCount = 0;
-  } else {
+  if (sndStat != CAN_OK){
     _failedCanSendCount++;
     _failedCanSendTotal++;
-    log_e("Battery Charge Flags via CAN Bus failed.");
-  }
+  } 
+
   delay(_canSendDelay); 
 
   // Current measured values of the BMS battery voltage, battery current, battery temperature
@@ -230,19 +218,13 @@ bool CANBUS::SendCANData(){
   CAN_MSG[3] = highByte(uint16_t(_battCurrentmA));
   CAN_MSG[4] = lowByte(uint16_t(_battTemp * 10));
   CAN_MSG[5] = highByte(uint16_t(_battTemp * 10));
-/*
-  CAN_MSG[6] = 0x00;
-  CAN_MSG[7] = 0x00;
-*/
+
   sndStat = CAN->sendMsgBuf(0x356, 6, CAN_MSG);
 
-  if(sndStat == CAN_OK){
-    _failedCanSendCount = 0;
-  } else {
+  if (sndStat != CAN_OK){
     _failedCanSendCount++;
     _failedCanSendTotal++;
-    log_e("Inverter Battery Voltage, Current update via CAN Bus failed.");
-  }
+  } 
   delay(_canSendDelay); 
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
@@ -260,21 +242,13 @@ bool CANBUS::SendCANData(){
 
   CAN_MSG[2] = lowByte(_battSOH);
   CAN_MSG[3] = highByte(_battSOH);
-/*  
-  CAN_MSG[4] = 0;
-  CAN_MSG[5] = 0;
-  CAN_MSG[6] = 0;
-  CAN_MSG[7] = 0; 
-*/
 
   sndStat = CAN->sendMsgBuf(0x355, 4, CAN_MSG);
-  if(sndStat == CAN_OK){
-    _failedCanSendCount = 0;
-  } else {
+  if (sndStat != CAN_OK){
     _failedCanSendCount++;
     _failedCanSendTotal++;
-    log_e("Inverter SOC Battery update via CAN Bus failed.");
-  }
+  } 
+
   delay(_canSendDelay);
 
   memset(CAN_MSG,0,sizeof(CAN_MSG));
@@ -301,13 +275,10 @@ bool CANBUS::SendCANData(){
 
   sndStat = CAN->sendMsgBuf(0x351, 8, CAN_MSG);
 
-  if(sndStat == CAN_OK){
-    _failedCanSendCount = 0;
-  } else {
+  if (sndStat != CAN_OK){
     _failedCanSendCount++;
     _failedCanSendTotal++;
-    log_e("Inverter Parameters update via CAN Bus failed.");
-  }
+  } 
   
   delay(_canSendDelay); 
 
@@ -323,15 +294,16 @@ bool CANBUS::SendCANData(){
   CAN_MSG[7] = 0x00;
 
   sndStat = CAN->sendMsgBuf(0x359, 7, CAN_MSG);
-  if(sndStat == CAN_OK){
-    _failedCanSendCount = 0;
-  } else {
+  if (sndStat != CAN_OK){
     _failedCanSendCount++;
     _failedCanSendTotal++;
-    log_e("Inverter Protection / Alarm Flags via CAN Bus failed.");
-  }
+  } 
   //delay(_canSendDelay); 
 
+if(_failedCanSendCount > 0)
+{
+  log_e("Failed to Send CAN Packets: %i",_failedCanSendCount);
+}
 if (CanBusFailed()) 
     CanBusDataOK = false;
   else

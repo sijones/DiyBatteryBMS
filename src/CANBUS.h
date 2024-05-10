@@ -15,6 +15,9 @@ PYLON Protocol, messages sent every 1 second.
 #include <mcp_can.h>              // Library for CAN Interface      https://github.com/coryjfowler/MCP_CAN_lib
 #include <mEEPROM.h>
 
+
+//#define CAN0_INT 13                              // Set INT to pin 13
+
 class CANBUS {
   private:
 //#pragma once
@@ -36,6 +39,7 @@ bool _chargeEnabled = true;
 bool _dischargeEnabled = true;
 bool _dataChanged = false;
 uint8_t _canSendDelay = 5;
+
 
 enum Charging {
   bmsForceCharge = 8,
@@ -60,7 +64,7 @@ volatile uint8_t _battSOH = 100; // State of health, not useful so defaulted to 
 volatile uint16_t _battVoltage = 0;
 volatile int32_t _battCurrentmA = 0;
 volatile int16_t _battTemp = 10;
-uint32_t _battCapacity = 0; // Only used for limiting current at high SOC.
+volatile uint32_t _battCapacity = 0; // Only used for limiting current at high SOC.
 
     // Used to tell the inverter battery limits
 volatile uint32_t _chargeVoltage = 0;

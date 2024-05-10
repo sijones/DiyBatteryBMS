@@ -1,7 +1,8 @@
 #pragma once
-#include <AsyncElegantOTA.h>
+
 #include <ArduinoJson.h>
 #include <WiFi.h>
+//#include <AsyncElegantOTA.h>
 
 void setClock() {
   
@@ -9,9 +10,7 @@ void setClock() {
   configTime(0, 0, "0.uk.pool.ntp.org", "1.uk.pool.ntp.org");  // UTC
   time_t now = time(nullptr);
   while (now < 8 * 3600 * 2) {
-    yield();
     vTaskDelay(500 / portTICK_PERIOD_MS);
-    //delay(500);
     now = time(nullptr);
   }
   struct tm timeinfo;
@@ -21,7 +20,9 @@ void setClock() {
 
 String generateDatatoJSON(bool All)
 {
-  StaticJsonDocument<750> doc;
+  JsonDocument doc;
+
+  //StaticJsonDocument<750> doc;
   // If ALL is true generate a json with all data
   if (All){
     doc["BMS"] = All;
@@ -70,7 +71,8 @@ String generateDatatoJSON(bool All)
   doc["forcecharge"] = Inverter.ForceCharge();
   doc["chargecurrent"] = Inverter.GetChargeCurrent();
   doc["dischargecurrent"] = Inverter.GetDischargeCurrent();
-  
+  doc["totalheap"] = ESP.getHeapSize();
+  doc["freeheap"] = ESP.getFreeHeap();
   //
   String outputJson;
   //int b =serializeJson(doc, out);
@@ -97,7 +99,7 @@ const char * GetWSDataJson(String data, String value)
 
 void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len){
 
-  StaticJsonDocument <256> doc;
+  JsonDocument doc;
   // Check if it's a GET request
   if (strncmp(data,"Get",(int)3)==0) {
     if (strncmp(data,"GetAll()",len)==0)
