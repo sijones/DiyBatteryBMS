@@ -1,4 +1,4 @@
-This is the new V2 version of https://github.com/sijones/VE.DirectMQTTCANBUS, there is some bugs and performance issues within this release, the main problem is the MQTT sending, therefore if this is your use case then using the old version would be best for the moment, this will be the version for the future and is actively being fixed and developed.
+This is the new V2 version of https://github.com/sijones/VE.DirectMQTTCANBUS, this will be the version for the future and is actively being developed.
 
 DiyBatteryBMS takes data from a Victron Smart Shunt and sends it to a inverter over CAN allowing for "DIY LifePO4" Batteries to be integrated.
 
