@@ -26,12 +26,30 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 - MQTT to CAN BUS support, use esphome BMS intgrations to feed the data in and send to the inverter.
 - Multi Inverter support
 - Maybe -> Temperature monitoring of batteries and inverter to run heaters and fans.
+- LCD Screen Support
 
 ## Limitations
 - VE.Direct2MQTT is only listening to messages of the VE.Direct device<br>It understands only the "ASCII" part of the protocol that is only good to receive a set of values. You can't request any special data or change any parameters of the VE.Direct device.<br>
 
 ## Hardware & Software Installation
 See the Wiki page
+
+## Hardware Recommended
+A esp32dev or the esp32plus
+
+Links:
+
+esp32dev
+https://amzn.to/3ypBQsv
+
+esp32plus
+https://amzn.to/3R43zWv
+
+LCD
+https://amzn.to/3WDjRJb
+
+Victron Smart Shunt
+https://amzn.to/3JV64q7
 
 ## Disclaimer
 I WILL NOT BE HELD LIABLE FOR ANY DAMAGE THAT YOU DO TO YOU OR ONE OF YOUR DEVICES.
