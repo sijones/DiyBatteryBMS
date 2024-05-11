@@ -1,5 +1,7 @@
 This is the new V2 version of https://github.com/sijones/VE.DirectMQTTCANBUS, this will be the version for the future and is actively being developed.
 
+The new UI means no coding knowledge is required, just flash and set up.
+
 DiyBatteryBMS takes data from a Victron Smart Shunt and sends it to a inverter over CAN allowing for "DIY LifePO4" Batteries to be integrated.
 
 The data is also sent over MQTT and allows commands to be sent back to control Charge/Discharge/Force Charge.
@@ -13,8 +15,8 @@ The software sends the data in Pylontech Protocol, most inverters should support
 With the help of the MQTT server you can integrate the monitoring data to virtually any Home Automation System. I use Home Assistant to automate off peak battery charging (using Force Charge) and can also enable and disable the charging and discharging.
 
 ## Features
-- Setup from a browser, once flashed go to http://192.168.4.1 and connect it to your wifi, then once connected go to it's IP address to configure all settings.
-- Listen to VE.Direct messages and publish a block (consisting of several key-value pairs) to a MQTT broker<br>Every key from the device will be appended to the MQTT_PREFIX and build a topic. e.g. MQTT_PREFIX="/SMARTBMS"; Topic /SMARTBMS/V will contain the Battery Voltage<br> so please see the VE.Direct protocol for the meaning of topics
+- Setup from a browser, flash to your ESP32 device then go to http://192.168.4.1 and connect it to your wifi, connected go to it's IP address to configure all settings.
+- Listen to VE.Direct messages and publish a some of the information to a MQTT broker<br> The MQTT Topic is fully configurable.
 - Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates. See the home assistant file for the commands and config.
 - SSL is currently disabled
 - Supports single MQTT server
@@ -26,12 +28,30 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 - MQTT to CAN BUS support, use esphome BMS intgrations to feed the data in and send to the inverter.
 - Multi Inverter support
 - Maybe -> Temperature monitoring of batteries and inverter to run heaters and fans.
+- LCD Screen Support
 
 ## Limitations
 - VE.Direct2MQTT is only listening to messages of the VE.Direct device<br>It understands only the "ASCII" part of the protocol that is only good to receive a set of values. You can't request any special data or change any parameters of the VE.Direct device.<br>
 
 ## Hardware & Software Installation
 See the Wiki page
+
+## Hardware Recommended
+A esp32dev or the esp32plus
+
+Links:
+
+esp32dev
+https://amzn.to/3ypBQsv
+
+esp32plus
+https://amzn.to/3R43zWv
+
+LCD
+https://amzn.to/3WDjRJb
+
+Victron Smart Shunt
+https://amzn.to/3JV64q7
 
 ## Disclaimer
 I WILL NOT BE HELD LIABLE FOR ANY DAMAGE THAT YOU DO TO YOU OR ONE OF YOUR DEVICES.
