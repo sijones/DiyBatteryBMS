@@ -93,7 +93,6 @@ void connectToMqtt() {
     log_i("Using User: %s, Password: %s",sUser,sPass);
     //mqttClient.setCredentials(sUser.c_str(),sPass.c_str());
     mqttClient.setCredentials(sUser.c_str(),sPass.c_str());
-    
     mqttClient.connect();
 }
 
@@ -113,7 +112,6 @@ void WiFiEvent(WiFiEvent_t event) {
 
 void onMqttConnect(bool sessionPresent) {
   log_d("Connected to MQTT.");
-  log_d("Session present: %d", sessionPresent);
   Lcd.Data.MQTTConnected.setValue(true);
   sSubscribe = pref.getString(ccMQTTTopic,"");
   if (!sSubscribe.endsWith("/"))

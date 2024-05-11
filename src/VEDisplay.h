@@ -2,9 +2,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-#ifdef M5STACK
-#include <M5Unified.h>
-#endif
 
 struct boolData {
     bool _changed = false;

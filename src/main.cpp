@@ -19,25 +19,11 @@
    SOFTWARE.
 */
 
-/*
-   All default configuration comes from config.h
-*/
-
 #include <Arduino.h>
 #include <nvs_flash.h>
 #include "config.h"
 #include "FS.h"
 #include "LittleFS.h"
-#ifdef M5STACK
-// If you use ATOMDisplay, write this.
-// #define M5ATOMDISPLAY_LOGICAL_WIDTH  1280  // width
-// #define M5ATOMDISPLAY_LOGICAL_HEIGHT  720  // height
-// #define M5ATOMDISPLAY_REFRESH_RATE     60  // refresh rate
-// #include <M5AtomDisplay.h>
-// If you use the Unit with LCD, include this.
-#include <M5UnitLCD.h>
-#include <M5Unified.h>
-#endif
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include "VEDisplay.h"
@@ -89,27 +75,6 @@ void setup()
 {
   pref.begin();
   Serial.begin(115200);
-
-#ifdef M5STACK
-  auto cfg = M5.config();
-#if defined(ARDUINO)
-  cfg.serial_baudrate = 115200; // default=115200. if "Serial" is not needed, set it to 0.
-#endif
-  cfg.clear_display = true; // default=true. clear the screen when begin.
-  cfg.output_power = false; // default=true. use external port 5V output.
-  cfg.internal_imu = false; // default=true. use internal IMU.
-  cfg.internal_rtc = true;  // default=true. use internal RTC.
-  cfg.internal_spk = false;  // default=true. use internal speaker.
-  cfg.internal_mic = false; // default=true. use internal microphone.
-  cfg.external_imu = false; // default=false. use Unit Accel & Gyro.
-  cfg.external_rtc = true;  // default=false. use Unit RTC.
-  cfg.external_spk = false; // default=false. use SPK_HAT / ATOMIC_SPK
-                            // cfg.external_spk_detail.omit_atomic_spk = true; // omit ATOMIC SPK
-  // cfg.external_spk_detail.omit_spk_hat    = true; // omit SPK HAT
-  cfg.led_brightness = 64; // default= 0. system LED brightness (0=off / 255=max) (※ not NeoPixel)
-  M5.begin(cfg);
-
-#endif
 
   Lcd.Begin(1, 2);
   Lcd.SetScreen(Lcd.StartUp);
@@ -198,7 +163,6 @@ void setup()
     Lcd.Data.CANBusData.setValue(false);
   }
 
-  // }
   SendCanBusMQTTUpdates = millis();
   //ve.begin();
   Lcd.UpdateScreenValues();
@@ -208,6 +172,10 @@ void setup()
       4096, NULL, 2, NULL);
   if(veHandle.OpenSerial((uint8_t) pref.getUInt(ccVictronRX,VEDIRECT_RX), (uint8_t) pref.getUInt(ccVictronTX,VEDIRECT_TX)))
       veHandle.startReadTask();
+
+  // Set the lcd timer
+  time_t t = time(nullptr);
+  last_lcd_refresh = t;
 
   return;
 }
@@ -226,24 +194,21 @@ void loop()
   while(Serial1.available() > 0)
       veHandle.rxData(Serial1.read());
 
-
+  if (veHandle.dataavailable())
   {
-    if (veHandle.dataavailable())
+    last_vedirect = t;
+    if(!Lcd.Data.VEData._currentValue)
+      Lcd.Data.VEData.setValue(true);
+    log_d("Data Available to Process");
+    VEDataProcess();
+    if (wifiManager.isWiFiConnected())
     {
-      last_vedirect = t;
-      if(!Lcd.Data.VEData._currentValue)
-        Lcd.Data.VEData.setValue(true);
-      log_d("Data Available to Process");
-      VEDataProcess();
-      if (wifiManager.isWiFiConnected())
-      {
-        sendVE2MQTT();
-        ws.cleanupClients();
-        notifyWSClients(false);
-      }
+      sendVE2MQTT();
+      ws.cleanupClients();
+      notifyWSClients(false);
     }
-
   }
+
 // Time out for data arrival
   if ((abs(t - last_vedirect) > 2) && Lcd.Data.VEData._currentValue)
       Lcd.Data.VEData.setValue(false);
@@ -256,46 +221,7 @@ void loop()
     sendUpdateMQTTData();
   }
 
-#ifdef M5STACK
-  if (M5.BtnA.wasPressed())
-  {
-    Lcd.NextScreen();
-  }
-  if (M5.BtnC.pressedFor(5000))
-  {
-    // erase the NVS partition and...
-    switch (nvs_flash_erase())
-    {
-    case ESP_OK:
-      log_d("NVS Flash Erase returned OK");
-      break;
-    case ESP_ERR_NOT_FOUND:
-      log_e("NVS Flash Erase returned ERR NOT FOUND");
-      break;
-    default:
-      break;
-    }
-    delay(500);
-    // initialize the NVS partition.
-    switch (nvs_flash_init())
-    {
-    case ESP_OK:
-      log_d("NVS Flash Init returned OK");
-      break;
-    case ESP_ERR_NOT_FOUND:
-      log_e("NVS Flash Init returned ERR NOT FOUND");
-      break;
-    case ESP_ERR_NVS_NO_FREE_PAGES:
-      log_e("NVS Flash Init return NVS NO FREE PAGES");
-      break;
-    case ESP_ERR_NO_MEM:
-      log_e("NVS Flash Init return ERR NO MEM");
-      break;
-    default:
-      break;
-    }
-    ESP.restart();
-  }
+
   if (abs(t - last_lcd_refresh) >= VE_LCD_REFRESH)
   {
     last_lcd_refresh = t;
@@ -312,8 +238,6 @@ void loop()
     Lcd.Data.CANBusData.setValue(!Inverter.CanBusFailed());
     Lcd.Data.ForceCharging.setValue(Inverter.ForceCharge());
     Lcd.UpdateScreenValues();
-    // Clean up Web Sockets
   }
-#endif
 
 }

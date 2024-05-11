@@ -1,38 +1,9 @@
-
-//#define M5STACK
-
 #include "Arduino.h"
 #include "VEDisplay.h"
-#ifdef M5STACK
-#include <M5Unified.h>
-#include <M5UnitLCD.h>
-#endif
+
 
 void Display::Begin(int Size, int Font){
-    #ifdef M5STACK
-    _height = M5.Display.height();
-    _width = M5.Display.width();
-    _backColour = BLACK;
-    _textColour = WHITE;
-    M5.Display.setEpdMode(epd_mode_t::epd_text);
-    SetTextFont(Font,true);
-    // Here we calculate the lines, first with the Header
-    SetTextSize(Size+1);
-    _headerSize = M5.Display.fontHeight()+3;
-    SetTextSize(Size,true);
-    // Now calculate each line position
-    Line1 = _headerSize + 2;
-    uint16_t _fontHeight = M5.Display.fontHeight();
-    Line2 = (Line1 + _fontHeight +2);
-    Line3 = (Line2 + _fontHeight +2);
-    Line4 = (Line3 + _fontHeight +2);
-    Line5 = (Line4 + _fontHeight +2);
-    Line6 = (Line5 + _fontHeight +2);
-    Line7 = (Line6 + _fontHeight +2);
-    Line8 = (Line7 + _fontHeight +2);
-    #endif
     ClearScreen();
-
 }
 
 void Display::ClearScreen(){
@@ -48,16 +19,11 @@ int Display::GetWidth()
 { return _width; }
 
 void Display::SetBackgroundColour(uint16_t Colour){
-#ifdef M5STACK
-    M5.Display.fillScreen(Colour);
-#endif
 }
 
 void Display::SetTextLocation(uint8_t Location){
     _textLocation = Location;
-    #ifdef M5STACK
-    M5.Display.setTextDatum(_textLocation);
-    #endif
+
 }
 
 void Display::SetHeight(int16_t Height)
@@ -71,10 +37,7 @@ void Display::SetTextSize(int Size)
 
 void Display::SetTextSize(int Size, bool Store)
 { 
-    if (Store) _textSize = Size; 
-    #ifdef M5STACK
-    M5.Display.setTextSize(_textSize); 
-    #endif
+
 }
 
 void Display::SetTextFont(int Font)
@@ -83,15 +46,10 @@ void Display::SetTextFont(int Font)
 void Display::SetTextFont(int Font, bool Store)
 { 
     if(Store) _textFont = Font; 
-    #ifdef M5STACK
-    M5.Display.setTextFont(Font); 
-    #endif
 }
 
 void Display::SetPosition(int16_t X, int16_t Y){
-    #ifdef M5STACK
-    M5.Display.setCursor(X, Y);
-    #endif 
+   
 }
 
 void Display::SetTextColour(uint16_t Colour){
@@ -101,9 +59,7 @@ void Display::SetTextColour(uint16_t Colour){
 }
 
 void Display::SetTextColour(uint16_t Colour, uint16_t BackgroundColour){
-    #ifdef M5STACK
-    M5.Display.setTextColor(Colour, BackgroundColour);
-    #endif
+
 }
 
 void Display::Write(String Text){
@@ -113,54 +69,38 @@ void Display::Write(String Text){
 }
 
 void Display::Write(String Text, int TextSize){
-    #ifdef M5STACK
-    SetTextSize(TextSize); 
-    M5.Display.drawString(Text,M5.Display.getCursorX(),M5.Display.getCursorY());
-    SetTextSize(_textSize); 
-    #endif
+   
 }
 
 void Display::WriteLine(String Text) {
     WriteLine(Text, _textSize);
 }
 void Display::WriteLine(String Text, int TextSize){
-    #ifdef M5STACK
-    SetTextSize(TextSize); 
-    M5.Display.drawString(Text,M5.Display.getCursorX(),M5.Display.getCursorY());
-    SetTextSize(_textSize);  
-    #endif
+    
 }
 
 
 void Display::WriteStringXY(String Text, int16_t X, int16_t Y){
-    #ifdef M5STACK
-    SetTextSize(_textSize);
-    M5.Display.drawString(Text, (int32_t)X, (int32_t)Y);
-    #endif    
+     
 }
 void Display::WriteStringXY(String Text, int16_t X, int16_t Y, int TextSize){
-    #ifdef M5STACK
-    SetTextSize(TextSize);
-    M5.Display.drawString(Text, (int32_t)X, (int32_t)Y);
-    SetTextSize(_textSize);
-    #endif
+    
 }
 
 void Display::SetScreen(Screen Number){
    
     ClearScreen();
-    #ifdef M5STACK
     switch (Number)
     {
 
     case StartUp :
         _screen = StartUp;
-        SetTextLocation(TC_DATUM);
+    //    SetTextLocation(TC_DATUM);
         SetTextColour(_textColour);
       //  SetTextSize(3);
         WriteStringXY("Services", (_width / 2), 0, _textSize+1);
       //  SetTextSize(_textSize);
-        SetTextLocation(TL_DATUM);
+    //    SetTextLocation(TL_DATUM);
         #ifdef M5STACK
         M5.Display.drawFastHLine(0,_headerSize, _width, RED);
         #endif
@@ -176,15 +116,15 @@ void Display::SetScreen(Screen Number){
         break;
     case Values :
         _screen = Values;
-        SetTextLocation(TC_DATUM);
-        SetTextColour(_textColour, _backColour);
+    //    SetTextLocation(TC_DATUM);
+    //    SetTextColour(_textColour, _backColour);
      //   SetTextSize(3);
         WriteStringXY("BMS Data", (_width / 2), 0, _textSize+1);
      //   SetTextSize(_textSize);
-        #ifdef M5STACK
-        M5.Display.drawFastHLine(0,_headerSize, _width, YELLOW);
-        #endif
-        SetTextLocation(TL_DATUM);
+        
+     //   M5.Display.drawFastHLine(0,_headerSize, _width, YELLOW);
+
+    //    SetTextLocation(TL_DATUM);
         WriteStringXY("Charge Volt:", 0, Line1);
         WriteStringXY("Charge Amps:", 0, Line2);
         WriteStringXY("Discharge Volts:", 0, Line3);
@@ -196,15 +136,12 @@ void Display::SetScreen(Screen Number){
 
     case Normal :
         _screen = Normal;
-        SetTextLocation(TC_DATUM);
+    //    SetTextLocation(TC_DATUM);
         SetTextColour(_textColour);
        // SetTextSize(3);
         WriteStringXY("Battery Status", (_width / 2), 0, _textSize+1);
        // SetTextSize(_textSize);
-        #ifdef M5STACK
-        M5.Display.drawFastHLine(0,_headerSize, _width, WHITE);
-        #endif
-        SetTextLocation(TL_DATUM);
+    //    SetTextLocation(TL_DATUM);
         WriteStringXY("SOC:", 0, Line2);        
         WriteStringXY("Batt Volts:", 0, Line4);
         WriteStringXY("Batt Amps:", 0, Line6);
@@ -212,12 +149,12 @@ void Display::SetScreen(Screen Number){
     default:
         break;
     }
-    #endif
+    
 }
 
 void Display::UpdateScreenValues(){
     // X = Hoz / Y Vertical
-    #ifdef M5STACK
+    /*
     int _textClear = M5.Display.textWidth("Stopped");
     
     switch (GetScreen()){
@@ -307,7 +244,7 @@ void Display::UpdateScreenValues(){
         WriteStringValue(Data.GetBattAmps(),Line6, WHITE);
       break;
   }
-#endif
+*/
 
 }
 
@@ -315,14 +252,14 @@ void Display::WriteStringValue(String Text, uint16_t Line, uint16_t Colour, int 
 {
     //SetTextLocation(TR_DATUM);
     //SetTextColour(Colour);
-#ifdef M5STACK
+/*
     M5.Display.setTextSize(TextSize);
     M5.Display.setTextColor(Colour);
     int _textSizeofString = M5.Display.textWidth(Text);
     M5.Display.drawString(Text, (_width - _textSizeofString), Line);
     M5.Display.setTextColor(_textColour);
     M5.Display.setTextSize(_textSize);
-#endif
+*/
     //WriteStringXY(Text,GetWidth(),Line);
     //SetTextLocation(_textLocation);
     //SetTextColour(_textColour);
