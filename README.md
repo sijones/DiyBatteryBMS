@@ -14,7 +14,7 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 
 ## Features
 - Setup from a browser, once flashed go to http://192.168.4.1 and connect it to your wifi, then once connected go to it's IP address to configure all settings.
-- Listen to VE.Direct messages and publish a block (consisting of several key-value pairs) to a MQTT broker<br>Every key from the device will be appended to the MQTT_PREFIX and build a topic. e.g. MQTT_PREFIX="/SMARTBMS"; Topic /SMARTBMS/V will contain the Battery Voltage<br> so please see the VE.Direct protocol for the meaning of topics
+- Listen to VE.Direct messages and publish a some of the information to a MQTT broker<br> The MQTT Topic is fully configurable.
 - Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates. See the home assistant file for the commands and config.
 - SSL is currently disabled
 - Supports single MQTT server
