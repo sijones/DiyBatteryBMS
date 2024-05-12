@@ -15,8 +15,10 @@ PYLON Protocol, messages sent every 1 second.
 #include <mcp_can.h>              // Library for CAN Interface      https://github.com/coryjfowler/MCP_CAN_lib
 #include <mEEPROM.h>
 
-
-//#define CAN0_INT 13                              // Set INT to pin 13
+#define flagChargeEnable 7      // Bit 7
+#define flagDischargeEnable 6   // Bit 6
+#define flagForceCharge 4       // Bit 4
+#define flagRequestFullCharge 3 // Bit 3
 
 class CANBUS {
   private:
@@ -107,6 +109,12 @@ TaskHandle_t tHandle = NULL;
 portMUX_TYPE CANMutex = portMUX_INITIALIZER_UNLOCKED;
 
 mEEPROM _pref;
+
+// Number is the value to alter, n is the bit to change, 
+// x to set to 1 or 0
+inline uint8_t bit_set_to(uint8_t number, uint8_t n, bool x) {
+    return (number & ~((uint8_t)1 << n)) | ((uint8_t)x << n);
+}
 
 public:
 

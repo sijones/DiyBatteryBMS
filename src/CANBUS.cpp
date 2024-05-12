@@ -192,15 +192,20 @@ bool CANBUS::SendCANData(){
     _failedCanSendTotal++;
   }   
   delay(_canSendDelay);
-  
+
   memset(CAN_MSG,0,sizeof(CAN_MSG));
   //0x35C – C0 00 – Battery charge request flags
-  CAN_MSG[0] = 0xC0;
-/*  CAN_MSG[1] = 0x00; */
-  if (_forceCharge) CAN_MSG[1] | bmsForceCharge;
-  if (_chargeEnabled && _ManualAllowCharge) CAN_MSG[1] | bmsChargeEnable;
-  if (_dischargeEnabled && _ManualAllowDischarge) CAN_MSG[1] | bmsDischargeEnable;
-
+  // CAN_MSG[0] = 0xC0;
+  /*  CAN_MSG[1] = 0x00; */
+  CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagForceCharge,_forceCharge);
+  CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
+  CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
+  /*
+  if (_forceCharge) CAN_MSG[0] | bmsForceCharge;
+  if (_chargeEnabled && _ManualAllowCharge) CAN_MSG[0] | bmsChargeEnable;
+  if (_dischargeEnabled && _ManualAllowDischarge) CAN_MSG[0] | bmsDischargeEnable;
+*/
+  
   sndStat = CAN->sendMsgBuf(0x35C, 2, CAN_MSG);
   if (sndStat != CAN_OK){
     _failedCanSendCount++;
@@ -209,9 +214,8 @@ bool CANBUS::SendCANData(){
 
   delay(_canSendDelay); 
 
-  // Current measured values of the BMS battery voltage, battery current, battery temperature
+    // Current measured values of the BMS battery voltage, battery current, battery temperature
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-
   CAN_MSG[0] = lowByte(_battVoltage);
   CAN_MSG[1] = highByte(_battVoltage);
   CAN_MSG[2] = lowByte(uint16_t(_battCurrentmA));
@@ -251,7 +255,7 @@ bool CANBUS::SendCANData(){
 
   delay(_canSendDelay);
 
-  memset(CAN_MSG,0,sizeof(CAN_MSG));
+  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
 
   // Battery charge and discharge parameters
   CAN_MSG[0] = lowByte(_chargeVoltage / 100);             // Maximum battery voltage
