@@ -16,18 +16,17 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 
 ## Features
 - Setup from a browser, flash to your ESP32 device then go to http://192.168.4.1 and connect it to your wifi, connected go to it's IP address to configure all settings.
-- Listen to VE.Direct messages and publish a some of the information to a MQTT broker<br> The MQTT Topic is fully configurable.
+- Listen to VE.Direct messages and publish some of the information to a MQTT broker<br> The MQTT Topic is fully configurable.
 - Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates. See the home assistant file for the commands and config.
-- SSL is currently disabled
 - Supports single MQTT server
-- OneWire temperature sensors will be supported in a future version
 - OTA (Over The Air Update)<br> use your browser and go to http://IPADDRESS/update and upload the lastest binary - please note the donation button does not donate to me.
 
 ## Features to come:
 - Voltage Limited Charging, automatically reducing charge current to keep the voltage stable
 - MQTT to CAN BUS support, use esphome BMS intgrations to feed the data in and send to the inverter.
 - Multi Inverter support
-- Maybe -> Temperature monitoring of batteries and inverter to run heaters and fans.
+- OneWire temperature sensors for charge control
+- Temperature monitoring of batteries and inverter to run heaters and fans.
 - LCD Screen Support
 
 ## Limitations
