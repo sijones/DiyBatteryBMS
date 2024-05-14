@@ -39,6 +39,7 @@ See the Wiki page
 A esp32dev or the esp32plus
 
 Links:
+** Disclosure, these are affliate links which will give me some money if you buy using them - this will help fund further developement **
 
 esp32dev
 https://amzn.to/3ypBQsv
