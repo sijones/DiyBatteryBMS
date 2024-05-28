@@ -24,12 +24,12 @@ class WifiMQTTManagerClass {
         String _wifiSSID = "";
         String _wifiPass = "";
         String _mqttServer = "";
-        String _wifiHostName = "DIY-SMARTBMS";
+        String _wifiHostName = "DIY-BATTERY";
         String _mqttUser = "";
         String _mqttPass = "";
         uint16_t _mqttPort = 1883;
-        String _mqttClientID = "smartbms-dev";
-        String _mqttTopic = "SMARTBMS-dev";
+        String _mqttClientID = "diy-battery-bms";
+        String _mqttTopic = "DIYBATTERYBMS";
         String _mqttParameter = "/Param";
 
     public:

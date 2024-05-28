@@ -42,6 +42,7 @@ const char* const ccCanCSPin = "CAN_CS_PIN";
 
 const char* const ccVELOOPTIME = "VE_LOOP_TIME";
 const char* const ccCANBusEnabled  = "CANEnabled";
+const char* const ccLcdEnabled = "lcdenabled";
 const char* const PREF_NAME = "smartbms";
 
 

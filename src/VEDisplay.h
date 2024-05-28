@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WebServer.h>
-
+#include <LCD-I2C.h>
 
 struct boolData {
     bool _changed = false;
@@ -14,8 +14,8 @@ struct boolData {
 
 struct stringData {
     bool _changed = false;
-    String _currentValue;
-    String _oldValue;
+    String _currentValue ="";
+    String _oldValue="";
     String getValue() {return _currentValue;}
     void setValue(String Value) { if(_currentValue != Value) {_oldValue = _currentValue; _currentValue = Value; _changed = true;} }
     bool hasChanged() { if (_changed) {_changed = false; return true; } else return false; }
@@ -60,11 +60,9 @@ struct int32Data {
     int32_t _currentValue = 0;
     int32_t _oldValue = 0;
     int32_t getValue() {return _currentValue;}
-    void setValue(int16_t Value) { if(_currentValue != Value) {_oldValue = _currentValue; _currentValue = Value; _changed = true;} }
+    void setValue(int32_t Value) { if(_currentValue != Value) {_oldValue = _currentValue; _currentValue = Value; _changed = true;} }
     bool hasChanged() { if (_changed) {_changed = false; return true; } else return false; }
 };
-
-
 
 // Class to store the real time display data
 // it converts it on call for the right format to display
@@ -73,25 +71,25 @@ class DisplayData
 public:
     float _roundUInt32(uint32_t f) { return round(f * 10.0) / 10.0; }
     float _roundFloat(float f) { return round(f * 10.0) / 10.0; }
-    float _roundInt(int32_t f) { return round(f * 10.0) / 10.0; }
+    float _roundInt(int32_t f) { return roundf(f * 10.0) / 10.0; }
 
     boolData VEData;
-    String GetVEData(){ return (VEData.getValue()) ? String("OK") : String("Failed"); }
+    String GetVEData(){ return (VEData.getValue()) ? String("OK") : String("No"); }
     boolData CANInit;
-    String GetCANInit() { return (CANInit.getValue()) ? String("OK") : String("Failed");}
+    String GetCANInit() { return (CANInit.getValue()) ? String("OK") : String("No");}
     boolData CANBusData;
-    String GetCANBusData() { return (CANBusData.getValue()) ? String("OK") : String("Failed");}
+    String GetCANBusData() { return (CANBusData.getValue()) ? String("OK") : String("No");}
     boolData WifiInit;
-    String GetWifiInit() { return (WifiInit.getValue()) ? String("OK") : String("Failed");}
+    String GetWifiInit() { return (WifiInit.getValue()) ? String("OK") : String("No");}
     boolData WifiConnected;
     String GetWifiConnected() { 
         if (WiFi.getMode() == WIFI_MODE_AP) 
-            return "AP Mode";
+            return "AP";
         else
-            return (WifiConnected.getValue()) ? String("OK") : String("Down");
+            return (WifiConnected.getValue()) ? String("OK") : String("No");
         }
     boolData MQTTConnected;
-    String GetMQTTConnected() { return (MQTTConnected.getValue()) ? String("OK") : String("Down");}
+    String GetMQTTConnected() { return (MQTTConnected.getValue()) ? String("OK") : String("NO");}
     boolData WebServerState;
     String GetWebServerState() { return (WebServerState.getValue()) ? String("Started") : String("Stopped");}
     uint16Data ChargeVolts;
@@ -103,43 +101,45 @@ public:
     uint32Data DischargeAmps;
     String GetDischargeAmps() { return (String) _roundUInt32(DischargeAmps.getValue()*0.001) + "A";}
     boolData ChargeEnable;
-    String GetChargeEnable() { return (ChargeEnable.getValue()) ? String("Yes") : String("No");}
+    String GetChargeEnable() { return (ChargeEnable.getValue()) ? String("Yes") : String(" No");}
     boolData DischargeEnable;
-    String GetDischargeEnable(){ return (DischargeEnable.getValue()) ? String("Yes") : String("No");}
+    String GetDischargeEnable(){ return (DischargeEnable.getValue()) ? String("Yes") : String(" No");}
     uint8Data BattSOC;
     String GetBattSOC() { return (String) BattSOC.getValue() + "%";}
     uint16Data BattVolts ;
     String GetBattVolts() { return (String) _roundFloat(BattVolts.getValue()*0.01) + "V";}
     int32Data BattAmps;
-    String GetBattAmps() { return (String) _roundInt(BattAmps.getValue()*0.001) + "A";}
+    String GetBattAmps() { 
+        String _battAmps = String(BattAmps.getValue()*0.1);
+        _battAmps.remove(_battAmps.length()-1);
+        return _battAmps + "A";}
     boolData LittleFSMounted;
-    String GetLittleFSMounted() { return (LittleFSMounted.getValue()) ? String("Online") : String("Offline"); }
+    String GetLittleFSMounted() { return (LittleFSMounted.getValue()) ? String("OK") : String("No"); }
     stringData IPAddr;
     String GetIPAddress() { return IPAddr.getValue(); }
     boolData ForceCharging;
-    String GetForceCharging() { return (ForceCharging.getValue() == true) ? String("Yes") : String("No"); }
+    String GetForceCharging() { return (ForceCharging.getValue() == true) ? String("Yes") : String(" No"); }
 };
-
 
 class Display{
 private:
+    bool enabled = false;
     int _screen = 0;
-    int16_t _height = 0;
-    int16_t _width = 0;
-    int _textSize;
-    int _textFont;
-    uint8_t _textLocation;
-    uint16_t _backColour;
-    uint16_t _textColour;
+    uint8_t _height = 4;
+    uint8_t _width = 20;
     uint16_t _headerSize;
-    uint16_t Line1;
-    uint16_t Line2;
-    uint16_t Line3;
-    uint16_t Line4;
-    uint16_t Line5;
-    uint16_t Line6;
-    uint16_t Line7;
-    uint16_t Line8;
+    u8_t _runHeatbeat = 0;
+    uint8_t heart[8] =
+    {
+        0b00000,
+        0b01010,
+        0b11111,
+        0b11111,
+        0b01110,
+        0b00100,
+        0b00000,
+        0b00000
+    };
 
 public:
 
@@ -150,36 +150,34 @@ public:
         Values = 1,
         Normal = 2
     };
+    enum DisplayType {
+        LCD2004 = 0
+    };
 
+    struct VEDisplay
+    {
+        DisplayType LCDType;
+        uint16_t X;
+        uint16_t Y;
+    };
+    
+    //Display::Display(DisplayType);
     DisplayData Data;
-    void Begin();
-    void Begin(int Size, int Font);
+    void Begin(DisplayType);
+    bool Enabled(){return enabled;}
+    void Enable(){Begin(LCD2004);SetScreen(StartUp);}
+    void Disable(){ClearScreen(); enabled = false;}
     void ClearScreen();
     void Write(String Text);
-    void Write(String Text, int Size);
-    void Write(String Text, int Size, uint16_t Colour);
-    void WriteStringXY(String Text, int16_t X, int16_t Y);
-    void WriteStringXY(String Text, int16_t X, int16_t Y, int TextSize);
-    void WriteStringXY(String Text, int16_t X, int16_t Y, int TextSize, uint16_t Colour);
-    void WriteStringValue(String Text, uint16_t Line, uint16_t Colour);
-    void WriteStringValue(String Text, uint16_t Line, uint16_t Colour, int TextSize);
-    
+    void WriteStringXY(String Text, uint8_t X, uint8_t Y);
     void WriteLine(String Line);
-    void WriteLine(String Line, int Size);
-    void WriteLine(String Line, int Size, uint16_t Colour);    
-    void SetPosition(int16_t X, int16_t Y);
-    void SetTextSize(int Size);
-    void SetTextFont(int Font);
-    void SetTextSize(int Size, bool Store);
-    void SetTextFont(int Font, bool Store);
-    void SetTextColour(uint16_t Colour);
-    void SetTextColour(uint16_t Colour, u_int16_t BackgroundColour);
-    void SetBackgroundColour(uint16_t Colour);
-    void SetTextLocation(uint8_t Location);
-    int GetWidth();
-    int GetHeight();
-    void SetWidth(int16_t Width);
-    void SetHeight(int16_t Height);
+    void WriteLineXY(String Line,uint8_t X, uint8_t Y);
+    void WriteSpecialXY(uint8_t CustomChar, uint8_t X, uint8_t Y);
+    void SetPosition(uint8_t X, uint8_t Y);
+    u8_t GetWidth();
+    uint8_t GetHeight();
+    void SetWidth(uint8_t Width);
+    void SetHeight(uint8_t Height);
     void SetScreen(Screen Number);
     Screen GetScreen(){ return (Screen) _screen;} 
     void UpdateScreenValues();

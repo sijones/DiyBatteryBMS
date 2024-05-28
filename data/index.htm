@@ -3,15 +3,18 @@
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.1/jquery.min.js"></script> -->
-    <link href="bootstrap/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
-    <script src="bootstrap/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
-    <title>DIY SMART BMS</title>
+    <!-- 
+      <link href="bootstrap/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous"> 
+      <script src="bootstrap/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+    -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
+    <title>DIY Battery BMS</title>
   </head>
   <body>
 
     <div class="container-sm">
-      <h2>DIY Battery Integration BMS</h2>
-      <h5>Victron to CAN (PylonTech Protocol) Inverter Software</h5>
+      <img src="diy-logo-hoz-web.jpg" alt="DIY Battery Integration BMS">
       <hr><br>
     <div class="d-flex p-2 bd-highlight">
       <div class="col-sm-2">
@@ -228,6 +231,17 @@
               </div>
               </div>
             </div>
+
+            <div class="row">
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight form-check form-switch"><label for="lcdenabled" class="form-check-label">LCD Enabled:</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="lcdenabled" onclick="SendJSONUpdate('lcdenabled')"></div>
+              </div>
+              </div>
+            </div>
+
             <p>
               <div class="d-flex flex-row bd-highlight mb-3">
                 <div class="p-2 bd-highlight">
@@ -360,18 +374,16 @@
         if(obj.hasOwnProperty('highsoclimit')) document.getElementById('highsoclimit').value=obj.highsoclimit;
         if(obj.hasOwnProperty('velooptime')) document.getElementById('velooptime').value=obj.velooptime;
         if(obj.hasOwnProperty('canbusenabled')) document.getElementById('canbusenabled').checked=obj.canbusenabled;
-        
       }
       if(obj.hasOwnProperty('RealTime') && obj.RealTime)
       {
         if(obj.hasOwnProperty('battsoc')) document.getElementById('battsoc').innerHTML=obj.battsoc+'%' ;
-        if(obj.hasOwnProperty('battvoltage')) document.getElementById('battvoltage').innerHTML=(obj.battvoltage*0.01).toFixed(2) +'V';
-        if(obj.hasOwnProperty('battcurrent')) document.getElementById('battcurrent').innerHTML=(obj.battcurrent*0.1).toFixed(2)+'A';
+        if(obj.hasOwnProperty('battvoltage')) document.getElementById('battvoltage').innerHTML=(obj.battvoltage*0.01).toFixed(1) +'V';
+        if(obj.hasOwnProperty('battcurrent')) document.getElementById('battcurrent').innerHTML=(obj.battcurrent*0.1).toFixed(1)+'A';
         if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').innerHTML=(obj.chargecurrent*0.001).toFixed(0)+'A';
         if(obj.hasOwnProperty('dischargecurrent')) document.getElementById('dischargecurrent').innerHTML=(obj.dischargecurrent*0.001).toFixed(0)+'A';
         if(obj.hasOwnProperty('pylontechenabled')) document.getElementById('pylontechenabled').checked=obj.pylontechenabled;
       }
-
 
       if(obj.hasOwnProperty('wifissid')) document.getElementById('wifissid').value=obj.wifissid;
       if(obj.hasOwnProperty('wifipass')) document.getElementById('wifipass').value=obj.wifipass;
@@ -388,12 +400,13 @@
 
       if(obj.hasOwnProperty('mqttuser')) document.getElementById('mqttuser').value=obj.mqttuser;
       if(obj.hasOwnProperty('mqttpass')) document.getElementById('mqttpass').value=obj.mqttpass;
+
       if(obj.hasOwnProperty('slowchargesoc1')) document.getElementById('slowchargesoc1').value=obj.slowchargesoc1;
       if(obj.hasOwnProperty('slowchargesoc2')) document.getElementById('slowchargesoc2').value=obj.slowchargesoc2;
       if(obj.hasOwnProperty('slowchargesoc1div')) document.getElementById('slowchargesoc1div').value=obj.slowchargesoc1div;
       if(obj.hasOwnProperty('slowchargesoc2div')) document.getElementById('slowchargesoc2div').value=obj.slowchargesoc2div;
-      
-      
+      if(obj.hasOwnProperty('lcdenabled')) document.getElementById('lcdenabled').checked=obj.lcdenabled;
+        
       // handle any WS messages or errors
       if(obj.hasOwnProperty('Message'))
         alert(obj.Message);
