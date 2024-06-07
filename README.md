@@ -2,7 +2,11 @@ This is the new V2 version of https://github.com/sijones/VE.DirectMQTTCANBUS, th
 
 The new UI means no coding knowledge is required, just flash and set up.
 
-DiyBatteryBMS takes data from a Victron Smart Shunt and sends it to a inverter over CAN allowing for "DIY LifePO4" Batteries to be integrated.
+DiyBatteryBMS takes data from a Victron Smart Shunt and sends it to a inverter over CAN using Pylontech protocol allowing for "DIY LifePO4" Batteries to be integrated.
+
+The Victron Smart Shunt provides the actual monitoring data, this software translates it to Pylontech protocol that most Inverters understand, the part that you need to configure is the charging voltage, current that is also sent to the Inverter.
+
+As long as the Inverter accepts Pylontech protocol over CAN Bus this software should work with it, it's tested with Solis Inverters but forum users have reported it working with others.
 
 The data is also sent over MQTT and allows commands to be sent back to control Charge/Discharge/Force Charge.
 
