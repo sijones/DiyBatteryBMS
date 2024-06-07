@@ -56,6 +56,12 @@ https://amzn.to/3R43zWv
 LCD
 https://amzn.to/3WDjRJb
 
+Isolated CAN Bus Adapter
+https://amzn.to/45fyzbE
+
+Non-Isolated Adapter - Does work and cheaper but can be blown if not careful.
+https://amzn.to/3VxEy8F
+
 Victron Smart Shunt
 https://amzn.to/3JV64q7
 
