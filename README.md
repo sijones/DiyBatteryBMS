@@ -8,6 +8,8 @@ The data is also sent over MQTT and allows commands to be sent back to control C
 
 This software uses a ESP32 developers board with a MCP2515 Can Bus adapter currently developed using Visual Studio code.
 
+See the WIKI for more detailed documentation.
+
 The software sends the data in Pylontech Protocol, most inverters should support this.
 
 - See also: https://www.victronenergy.com/live/vedirect_protocol:faq
@@ -30,16 +32,16 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 - LCD Screen Support
 
 ## Limitations
-- VE.Direct2MQTT is only listening to messages of the VE.Direct device<br>It understands only the "ASCII" part of the protocol that is only good to receive a set of values. You can't request any special data or change any parameters of the VE.Direct device.<br>
+- DiyBatteryBMS is only listening to messages of the VE.Direct device<br>It understands only the "ASCII" part of the protocol that is only good to receive a set of values. You can't request any special data or change any parameters of the VE.Direct device.<br>
 
 ## Hardware & Software Installation
 See the Wiki page
 
 ## Hardware Recommended
-A esp32dev or the esp32plus
+esp32dev or the esp32plus
 
 Links:
-** Disclosure, these are affliate links which will give me some money if you buy using them - this will help fund further developement **
+** Disclosure, these are affliate links which will give me some money if you buy using them - this will help fund further development **
 
 esp32dev
 https://amzn.to/3ypBQsv
@@ -54,4 +56,5 @@ Victron Smart Shunt
 https://amzn.to/3JV64q7
 
 ## Disclaimer
-I WILL NOT BE HELD LIABLE FOR ANY DAMAGE THAT YOU DO TO YOU OR ONE OF YOUR DEVICES.
+I WILL NOT BE HELD LIABLE FOR ANY DAMAGE THAT YOU DO TO YOU, ONE OF YOUR DEVICES, BURN YOUR HOUSE DOWN, ETC.
+A CERTAIN LEVEL OF KNOWLEDGE IS EXPECTED, LIKE HOW TO WIRE THINGS AND PROGRAM THE SOFTWARE TO YOUR DEVICE.
