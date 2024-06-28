@@ -413,6 +413,8 @@ void StartCriticalWebService()
   }); 
   */   
 
+  AsyncElegantOTA.begin(&server);
+
   //server.rewrite("/index.htm", "/index-ap.htm").setFilter(ON_AP_FILTER);
   server.serveStatic("/", LittleFS, "/");
 
@@ -470,8 +472,6 @@ void taskStartWebServices(void * pointer)
   setClock();
   log_d("Starting Web Services");
   
-  AsyncElegantOTA.begin(&server);
-
   if (Lcd.Data.LittleFSMounted.getValue()){
    /* server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(LittleFS, "/index.html", "text/html");
