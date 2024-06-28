@@ -12,9 +12,22 @@ void Display::Begin(DisplayType _DisplayType){
         _height = 4;
         _width = 20;
     }
-    _lcd->createChar(0, heart);
     _lcd->begin();
     _lcd->display();
+    _lcd->createChar(icon_heart, _heart);
+    delay(5);
+    _lcd->createChar(icon_happy, _happy);
+    delay(5);
+    _lcd->createChar(icon_sad, _sad);
+    delay(5);
+    _lcd->createChar(icon_fc, _fc);
+    delay(5);
+    _lcd->createChar(icon_chg,_charge);
+    delay(5);
+    _lcd->createChar(icon_dischg,_dischg);
+    delay(5);
+    _lcd->createChar(icon_float,_float);
+    delay(5);
     _lcd->backlight();
     ClearScreen();
 }
@@ -79,35 +92,32 @@ void Display::SetScreen(Screen Number){
     case StartUp :
         _screen = StartUp;
         WriteStringXY("VE   :",0,0);
-        WriteStringXY((Data.VEData._currentValue == true) ? "OK":"No",7,0);
+        WriteStringXY((Data.VEData._currentValue == true) ? "OK":"No",7,Line1);
         WriteStringXY("Wifi :",11,0);
-        WriteStringXY((Data.WifiConnected._currentValue==true) ? "OK":"No",18,0);
+        WriteStringXY((Data.WifiConnected._currentValue==true) ? "OK":"No",18,Line1);
         WriteStringXY("CAN I:", 0, 1);
-        WriteStringXY((Data.CANInit._currentValue == true) ? "OK":"No",7,1);
+        WriteStringXY((Data.CANInit._currentValue == true) ? "OK":"No",7,Line2);
         WriteStringXY("CAN D:",11,1);
-        WriteStringXY((Data.CANBusData._currentValue==true) ? "OK":"No",18,1);
+        WriteStringXY((Data.CANBusData._currentValue==true) ? "OK":"No",18,Line2);
         WriteStringXY("MQTT :",0,2);
-        WriteStringXY((Data.MQTTConnected._currentValue==true) ? "OK":"No",7,2);
+        WriteStringXY((Data.MQTTConnected._currentValue==true) ? "OK":"No",7,Line3);
         WriteStringXY("L FS :", 11, 2);
-        WriteStringXY((Data.LittleFSMounted._currentValue==true) ? "OK":"No",18,2);
-        WriteStringXY("IP: " + Data.IPAddr._currentValue, 0, 3);
-       // WriteStringXY("Web Services:", 0, Line7);                
+        WriteStringXY((Data.LittleFSMounted._currentValue==true) ? "OK":"No",18,Line3);
+        WriteStringXY("IP: ", 0, Line4);
+        WriteStringXY(Data.IPAddr._currentValue,19-Data.IPAddr._currentValue.length(),Line4);              
         break;
     case Values :
         _screen = Values;
-        WriteStringXY("SOC:    ", 0, 1);
-        WriteStringXY(Data.GetBattSOC(),9-Data.GetBattSOC().length(),1);
-        WriteStringXY("BV:     ", 10, 1);
-        WriteStringXY(Data.GetBattVolts(),20-Data.GetBattVolts().length(),1);
-        WriteStringXY("BC:   ", 0, 2);
-        WriteStringXY(Data.GetBattAmps(),10-Data.GetBattAmps().length(),2);
+        WriteStringXY("SOC:   ", 0, 0);
+        WriteStringXY(Data.GetBattSOC(),9-Data.GetBattSOC().length(),0);
+        WriteStringXY("BV:    ", 0, 1);
+        WriteStringXY(Data.GetBattVolts(),9-Data.GetBattVolts().length(),1);
+        WriteStringXY("BC:   ", 11, 1);
+        WriteStringXY(Data.GetBattAmps(),20-Data.GetBattAmps().length(),1);
 /*
         WriteStringXY("Discharge Amps:", 0, Line4);
-
         WriteStringXY("Charge Enabled:", 0, Line5);
-
         WriteStringXY("Discharge Enabled:", 0, Line6);
-
         WriteStringXY("Force Charging:", 0,Line7);
    */
         break;
@@ -145,43 +155,51 @@ void Display::UpdateScreenValues(){
     WriteStringXY("L FS: ", 11, 2);
   */  
 
+    // this is used to track how many Icons are being displayed
+    uint8_t numIcons = 1;
+    int32_t battAmps = Data.BattAmps._currentValue;
+    
     switch (GetScreen()){
     case StartUp: // Start Up
+        
         if(Data.VEData.hasChanged()){
-            WriteStringXY((Data.VEData._currentValue == true) ? "OK":"No",7,0);
+            WriteStringXY((Data.VEData._currentValue == true) ? "OK":"No",7,Line1);
         }
         if(Data.CANInit.hasChanged()){
-            WriteStringXY((Data.CANInit._currentValue == true) ? "OK":"No",7,1);
+            WriteStringXY((Data.CANInit._currentValue == true) ? "OK":"No",7,Line2);
         }
         if(Data.CANBusData.hasChanged()){
-            WriteStringXY((Data.CANBusData._currentValue==true) ? "OK":"No",18,1);
+            WriteStringXY((Data.CANBusData._currentValue==true) ? "OK":"No",18,Line2);
         }
         if(Data.WifiConnected.hasChanged()){
-            WriteStringXY((Data.WifiConnected._currentValue==true) ? "OK":"No",18,0);
+            WriteStringXY((Data.WifiConnected._currentValue==true) ? "OK":"No",18,Line1);
         }
         if(Data.MQTTConnected.hasChanged()){
-            WriteStringXY((Data.MQTTConnected._currentValue==true) ? "OK":"No",7,2);
+            WriteStringXY((Data.MQTTConnected._currentValue==true) ? "OK":"No",7,Line3);
         }
         if(Data.LittleFSMounted.hasChanged()){
-            WriteStringXY((Data.LittleFSMounted._currentValue==true)?"OK":"No",18,2);
+            WriteStringXY((Data.LittleFSMounted._currentValue==true)?"OK":"No",18,Line3);
         }
         //if(Data.WebServerState.hasChanged()){
         //    M5.Display.fillRect(_width-_textClear,Line7,_width,Line7+M5.Display.fontHeight(),BLACK);
         //}
         if(Data.IPAddr.hasChanged()){
-            WriteStringXY("IP: " + Data.IPAddr._currentValue, 0, 3);
+            WriteStringXY("IP: ", 0, Line4);
+            WriteStringXY(Data.IPAddr._currentValue,19-Data.IPAddr._currentValue.length(),Line4);
         }
         break;
     case Values: // Normal
-        WriteStringXY("DIY BATTERY BMS",0,0);
+        // Top Right Line Status Icons
+        // Wipe the status bar to put new up.
+        WriteStringXY("    ",15,Line1);
         switch (_runHeatbeat)
         {
         case 0:
-            WriteSpecialXY(0,19,0);
+            WriteSpecialXY(icon_heart,19,Line1);
             _runHeatbeat++;
             break;
         case 1:
-            WriteStringXY(" ",19,0);
+            WriteStringXY(icon_blank,19,Line1);
             _runHeatbeat=0;
             break;
         default:
@@ -189,26 +207,44 @@ void Display::UpdateScreenValues(){
             break;
         }
 
+        // Display icon for Forced Charging if Active
+        if(Data.ForceCharging.hasChanged()){
+            if(Data.ForceCharging.getValue()==true){
+                WriteSpecialXY(icon_fc,19-numIcons,Line1);
+                numIcons++;
+                }
+        }
+        // Display icon for battery state (charging/floating/discharging)
+        if(battAmps>1000)
+            {WriteSpecialXY(icon_chg,19-numIcons,Line1);
+            numIcons++;}
+        else if(battAmps<1000)
+            {WriteSpecialXY(icon_dischg,19-numIcons,Line1);
+            numIcons++;}
+        else
+            {WriteSpecialXY(icon_float,19-numIcons,Line1);
+            numIcons++;}
+
+        // End of Status Icon
+
         if(Data.BattSOC.hasChanged()){
-            WriteStringXY("SOC:    ", 0, 1);
-            WriteStringXY(Data.GetBattSOC(),10-Data.GetBattSOC().length(),1);
+            WriteStringXY("SOC:    ", 0, Line1);
+            WriteStringXY(Data.GetBattSOC(),9-Data.GetBattSOC().length(),Line1);
         }
 
         if(Data.BattVolts.hasChanged()){
-            WriteStringXY("BV:     ", 10, 1);
-            WriteStringXY(Data.GetBattVolts(),20-Data.GetBattVolts().length(),1);
+            WriteStringXY("BV:    ", 0, Line2);
+            WriteStringXY(Data.GetBattVolts(),9-Data.GetBattVolts().length(),Line2);
         }
         
         if(Data.BattAmps.hasChanged()){
-            WriteStringXY("BC:   ", 0, 2);
-            WriteStringXY(Data.GetBattAmps(),10-Data.GetBattAmps().length(),2);
+            WriteStringXY("BC:   ", 10, Line2);
+            WriteStringXY(Data.GetBattAmps(),20-Data.GetBattAmps().length(),Line2);
         }
         break;
     case Normal: // Config
         break;
   }
-
-
 }
 
 void Display::NextScreen()

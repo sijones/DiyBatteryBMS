@@ -3,6 +3,20 @@
 #include <WebServer.h>
 #include <LCD-I2C.h>
 
+#define icon_heart 0
+#define icon_happy 1
+#define icon_sad 2
+#define icon_fc 3
+#define icon_chg 4
+#define icon_dischg 5
+#define icon_float 6
+#define icon_blank " "
+#define Line1 0
+#define Line2 1
+#define Line3 2
+#define Line4 3
+
+
 struct boolData {
     bool _changed = false;
     bool _currentValue = false;
@@ -123,23 +137,20 @@ public:
 
 class Display{
 private:
+
     bool enabled = false;
     int _screen = 0;
     uint8_t _height = 4;
     uint8_t _width = 20;
     uint16_t _headerSize;
     u8_t _runHeatbeat = 0;
-    uint8_t heart[8] =
-    {
-        0b00000,
-        0b01010,
-        0b11111,
-        0b11111,
-        0b01110,
-        0b00100,
-        0b00000,
-        0b00000
-    };
+    uint8_t _happy[8] =  {0b00000,0b10001,0b00000,0b00000,0b10001,0b01110,0b00000,0b00000};
+    uint8_t _sad[8] =    {0b00000,0b10001,0b00000,0b00000,0b01110,0b10001,0b00000,0b00000};
+    uint8_t _heart[8] =  {0b00000,0b01010,0b11111,0b11111,0b01110,0b00100,0b00000,0b00000};
+    uint8_t _fc[8] =     {0b11100,0b10000,0b11000,0b10000,0b10111,0b00100,0b00100,0b00111};
+    uint8_t _charge[8] = {0b00000,0b00000,0b00100,0b01010,0b10001,0b00100,0b01010,0b10001};
+    uint8_t _dischg[8] = {0b10001,0b01010,0b00100,0b10001,0b01010,0b00100,0b00000,0b00000};
+    uint8_t _float[8] =  {0b00000,0b00000,0b10101,0b01010,0b00000,0b01010,0b10101,0b00000};
 
 public:
 
