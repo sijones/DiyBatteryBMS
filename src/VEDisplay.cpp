@@ -208,13 +208,17 @@ void Display::UpdateScreenValues(){
         }
 
         // Display icon for Forced Charging if Active
+/*        
         if(Data.ForceCharging.hasChanged()){
             if(Data.ForceCharging.getValue()==true){
                 WriteSpecialXY(icon_fc,19-numIcons,Line1);
                 numIcons++;
                 }
         }
+        */
+
         // Display icon for battery state (charging/floating/discharging)
+        /*
         if(battAmps>1000)
             {WriteSpecialXY(icon_chg,19-numIcons,Line1);
             numIcons++;}
@@ -224,7 +228,7 @@ void Display::UpdateScreenValues(){
         else
             {WriteSpecialXY(icon_float,19-numIcons,Line1);
             numIcons++;}
-
+*/
         // End of Status Icon
 
         if(Data.BattSOC.hasChanged()){
