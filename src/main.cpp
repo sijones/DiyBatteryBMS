@@ -76,14 +76,12 @@ void setup()
   pref.begin();
   Serial.begin(115200);
 
-  Lcd.Begin(1, 2);
-  Lcd.SetScreen(Lcd.StartUp);
-
   if (!pref.isKey("EEPROMSetup"))
   {
     log_d("EEPROM not setup, writing inital values.");
     // pref.putBool("WifiEnabled", true);
     pref.putBool(ccCANBusEnabled, true);
+    pref.putBool(ccLcdEnabled, false);
     // pref.putBool("MQTTEnabled", false);
     pref.putUInt(ccCanCSPin, CAN_BUS_CS_PIN);
     pref.putUInt(ccVictronRX, VEDIRECT_RX);
@@ -111,6 +109,11 @@ void setup()
   VE_LCD_REFRESH = pref.getUInt("VE_LCD_REFRESH", VE_LCD_REFRESH);
   VE_MQTT_RECONNECT = pref.getUInt("VE_MQTT_REC", VE_MQTT_RECONNECT);
   VE_LOOP_TIME = pref.getUInt(ccVELOOPTIME, VE_LOOP_TIME);
+
+  if(pref.getBool(ccLcdEnabled,false)) {
+    Lcd.Begin(Lcd.LCD2004);
+    Lcd.SetScreen(Lcd.StartUp);
+  }
 
   // #ifdef USE_OTA
   // OTA_WAIT_TIME = pref.getInt("OTA_WAIT_TIME", OTA_WAIT_TIME);
@@ -237,6 +240,7 @@ void loop()
     Lcd.Data.IPAddr.setValue(wifiManager.GetIPAddr());
     Lcd.Data.CANBusData.setValue(!Inverter.CanBusFailed());
     Lcd.Data.ForceCharging.setValue(Inverter.ForceCharge());
+    CheckAndChangeLCD();
     Lcd.UpdateScreenValues();
   }
 

@@ -60,6 +60,7 @@ String generateDatatoJSON(bool All)
     doc["slowchargesoc2"] = Inverter.GetSlowChargeSOCLimit(2);
     doc["slowchargesoc1div"] = Inverter.GetSlowChargeDivider(1);
     doc["slowchargesoc2div"] = Inverter.GetSlowChargeDivider(2);
+    doc["lcdenabled"] = pref.getBool(ccLcdEnabled,false);
   }
 
   doc["RealTime"] = true;
@@ -194,6 +195,16 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         Inverter.CANBusEnabled(doc["canbusenabled"]);
         handled = true;
         notifyWSClients(); }
+
+      if (doc.containsKey("lcdenabled")) {
+        pref.putBool(ccLcdEnabled, doc["lcdenabled"]);
+        if(doc["lcdenabled"])
+          Lcd.Enable();
+          else
+          Lcd.Disable();
+        handled = true;
+        notifyWSClients(); }
+        
       if (doc.containsKey("canbuscspin")) {
         pref.putUInt(ccCanCSPin, doc["canbuscspin"]);
         handled = true;
@@ -312,8 +323,8 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         //  delay(25);
           ws.closeAll();
           delay(25);
-          pref.end();
           handled = true;
+          Lcd.ClearScreen();
           ESP.restart();
         }
         else 

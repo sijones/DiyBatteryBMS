@@ -1,3 +1,5 @@
+
+
 void VEDataProcess()
 {
 
@@ -62,4 +64,19 @@ void VEDataProcess()
 
   }
 
+}
+
+void CheckAndChangeLCD()
+{
+  bool _wifi = Lcd.Data.WifiConnected.getValue();
+  bool _caninit = Lcd.Data.CANInit.getValue();
+  bool _candata = Lcd.Data.CANBusData.getValue();
+  bool _mqtt = Lcd.Data.MQTTConnected.getValue();
+  bool _vedata = Lcd.Data.VEData.getValue();
+
+  if(_wifi && _caninit && _candata && _mqtt && _vedata && Lcd.GetScreen() == Lcd.StartUp)
+    Lcd.SetScreen(Lcd.Values);
+  else if(Lcd.GetScreen() == Lcd.Values && (!_wifi || !_candata || !_mqtt || !_vedata) )
+    Lcd.SetScreen(Lcd.StartUp);
+  
 }
