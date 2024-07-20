@@ -26,6 +26,7 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 - Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates. See the home assistant file for the commands and config.
 - Supports single MQTT server
 - OTA (Over The Air Update)<br> use your browser and go to http://IPADDRESS/update and upload the lastest binary - please note the donation button does not donate to me.
+- LCD Screen Support (LCD 20x4 via I2C)
 
 ## Features to come:
 - Voltage Limited Charging, automatically reducing charge current to keep the voltage stable
@@ -33,7 +34,6 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 - Multi Inverter support
 - OneWire temperature sensors for charge control
 - Temperature monitoring of batteries and inverter to run heaters and fans.
-- LCD Screen Support
 
 ## Limitations
 - DiyBatteryBMS is only listening to messages of the VE.Direct device<br>It understands only the "ASCII" part of the protocol that is only good to receive a set of values. You can't request any special data or change any parameters of the VE.Direct device.<br>
