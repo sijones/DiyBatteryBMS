@@ -4,18 +4,59 @@
 #include <WiFi.h>
 //#include <AsyncElegantOTA.h>
 
-void setClock() {
+void TaskSetClock(void * pointer) {
   
+  log_d("Entering TaskSetClock");
+  String Servers = pref.getString(ccNTPServer,"");
+    // Return if no servers set.
+  if (Servers.length()==0)
+  {
+    log_d("No NTP Server Set.");
+    vTaskDelete(NULL);
+    return;
+  } 
+
+  while (!WiFi.isConnected())
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+     
+  bool secondserver = false;
+  String ServerArray[2];
+  int CommaLoc = 0;
+
+  CommaLoc = Servers.indexOf(',');
+  if (CommaLoc != -1){
+    ServerArray[0] = Servers.substring(0,CommaLoc);
+    ServerArray[0].trim();
+    log_d("Server 1: %s", ServerArray[0].c_str());
+    if (CommaLoc < Servers.length())
+    {
+      ServerArray[1] = Servers.substring(CommaLoc+1,Servers.length());
+      ServerArray[1].trim();
+      log_d("Server 2: %s", ServerArray[1].c_str());
+      secondserver = true;
+    }
+  }
   log_d("Setting Clock");
-  configTime(0, 0, "0.uk.pool.ntp.org", "1.uk.pool.ntp.org");  // UTC
+
+  if (secondserver)
+    configTime(0, 0, ServerArray[0].c_str(), ServerArray[1].c_str());  // UTC
+  else
+    configTime(0, 0, ServerArray[0].c_str());  // UTC
+
   time_t now = time(nullptr);
   while (now < 8 * 3600 * 2) {
     vTaskDelay(500 / portTICK_PERIOD_MS);
     now = time(nullptr);
   }
   struct tm timeinfo;
-  gmtime_r(&now, &timeinfo);
-  log_d("NTP time %s", asctime(&timeinfo));
+
+  while (true)
+  {
+    gmtime_r(&now, &timeinfo);
+    log_d("NTP time %s", asctime(&timeinfo));
+    vTaskDelay(60000 / portTICK_PERIOD_MS);
+  }
+
 }
 
 String generateDatatoJSON(bool All)
@@ -61,6 +102,7 @@ String generateDatatoJSON(bool All)
     doc["slowchargesoc1div"] = Inverter.GetSlowChargeDivider(1);
     doc["slowchargesoc2div"] = Inverter.GetSlowChargeDivider(2);
     doc["lcdenabled"] = pref.getBool(ccLcdEnabled,false);
+    doc["ntpserver"] = pref.getString(ccNTPServer,"");
   }
 
   doc["RealTime"] = true;
@@ -316,6 +358,13 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         notifyWSClients();
       }
       
+      if (doc.containsKey("ntpserver")) {
+      String value = doc["ntpserver"];
+      handled = true;
+      pref.putString(ccNTPServer,value);
+      notifyWSClients();
+      }
+
       if (doc.containsKey("reboot")) {
         if(doc["reboot"])
         {
@@ -397,7 +446,7 @@ void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEven
   }
 }
 
-void StartCriticalWebService()
+void StartWebServices()
 {
   log_d("Configuring Web Services.");
   //server.rewrite("/", "/index.html");
@@ -480,15 +529,15 @@ void taskStartWebServices(void * pointer)
     vTaskDelay(100 / portTICK_PERIOD_MS);
   }
   
-  setClock();
   log_d("Starting Web Services");
   
   if (Lcd.Data.LittleFSMounted.getValue()){
    /* server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send(LittleFS, "/index.html", "text/html");
     }); */
-    StartCriticalWebService();
+    StartWebServices();
 
+/*
     server.on("/BMS/ChargeVoltage", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/plain", String(Inverter.GetChargeVoltage()).c_str());
     });
@@ -501,11 +550,10 @@ void taskStartWebServices(void * pointer)
     server.on("/BMS/DischargeCurrent", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/plain", String(Inverter.GetDischargeCurrent()).c_str());
     });
-    
+*/
     Lcd.Data.WebServerState.setValue(true);
   }
   server.begin();
-
   vTaskDelete( NULL );
 }
   

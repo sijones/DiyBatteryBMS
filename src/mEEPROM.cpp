@@ -18,7 +18,7 @@ void mEEPROM::end() {
   
 }
 
-boolean mEEPROM::isKey(String key){
+bool mEEPROM::isKey(String key){
   bool exists;
   _preferences.begin(PREF_NAME);
   exists = _preferences.isKey(key.c_str());
@@ -26,7 +26,7 @@ boolean mEEPROM::isKey(String key){
   return exists;
 }
 
-boolean mEEPROM::clear()
+bool mEEPROM::clear()
 {
   bool _cleared;
   _preferences.begin(PREF_NAME);
@@ -35,56 +35,48 @@ boolean mEEPROM::clear()
   return _cleared;
 }
 
-int32_t mEEPROM::getInt(String key, int default_value = 0) {
+int32_t mEEPROM::getInt(const char* key, int default_value = 0) {
   _preferences.begin(PREF_NAME);
-  int32_t ret = _preferences.getInt(key.c_str(), default_value);
-  //log_d("PrefGetInt; \'%s\' = \'%d\'", key.c_str(),  ret);
+  int32_t ret = _preferences.getInt(key, default_value);
   _preferences.end();
   return ret;
 }
 
-boolean mEEPROM::putInt(String key, int32_t value) {
+int32_t mEEPROM::getInt(String key, int default_value = 0) {
+  return getInt(key.c_str(),default_value);
+}
+
+bool mEEPROM::putInt(const char* key, int32_t value) {
   _preferences.begin(PREF_NAME);
-  _preferences.putInt(key.c_str(), value);
-  //log_d("PrefPutInt; \'%s\' = \'%d\'", key.c_str(),  value);
+  _preferences.putInt(key, value);
   _preferences.end();
   return true;
 }
 
-int32_t mEEPROM::getInt(int key, int default_value = 0) {
-  return mEEPROM::getInt(String(key), default_value);
+bool mEEPROM::putInt(String key, int32_t value) {
+  return putInt(key.c_str(),value);
 }
 
-boolean mEEPROM::putInt(int key, int32_t value = 0) {
-  return mEEPROM::putInt(String(key), value);
+uint32_t mEEPROM::getUInt(const char* key, uint32_t default_value = 0) {
+  _preferences.begin(PREF_NAME);
+  uint32_t ret = _preferences.getUInt(key, default_value);
+  _preferences.end();
+  return ret;
 }
 
 uint32_t mEEPROM::getUInt(String key, uint32_t default_value = 0) {
-  _preferences.begin(PREF_NAME);
-  uint32_t ret = _preferences.getUInt(key.c_str(), default_value);
-  //log_d("PrefGetInt; \'%s\' = \'%d\'", key.c_str(),  ret);
-  _preferences.end();
-  return ret;
+  return getUInt(key.c_str(),default_value);
 }
 
-boolean mEEPROM::putUInt(String key, uint32_t value) {
+bool mEEPROM::putUInt(const char* key, uint32_t value) {
   _preferences.begin(PREF_NAME);
-  _preferences.putUInt(key.c_str(), value);
-  log_d("PrefPutInt; \'%s\' = \'%d\'", key.c_str(),  value);
+  _preferences.putUInt(key, value);
   _preferences.end();
   return true;
 }
 
-uint32_t mEEPROM::getUInt(uint32_t key, uint32_t default_value = 0) {
-  return mEEPROM::getUInt(String(key), default_value);
-}
-
-boolean mEEPROM::putUInt(uint32_t key, uint32_t value = 0) {
-  return mEEPROM::putUInt(String(key), value);
-}
-
-String mEEPROM::getString(int key, String default_value = String("")){
-  return getString(String(key), default_value);
+bool mEEPROM::putUInt(String key, uint32_t value) {
+  return putUInt(key.c_str(),value);
 }
 
 String mEEPROM::getString(String key, String default_value = String("")) {
@@ -103,11 +95,7 @@ String mEEPROM::getString(const char* key, String default_value = String("")) {
   return ret;
 }
 
-boolean mEEPROM::putString(int key, String value){
-  return putString(String(key), value);
-}
-
-boolean mEEPROM::putString(String key, String value) {
+bool mEEPROM::putString(String key, String value) {
   _preferences.begin(PREF_NAME);
   _preferences.putString(key.c_str(), value);
   //log_d("PrefputStr: \'%s\' = \'%s\'", key.c_str(), value);
@@ -115,35 +103,32 @@ boolean mEEPROM::putString(String key, String value) {
   return true;
 }
 
-boolean mEEPROM::putString(const char* key, String value) {
+bool mEEPROM::putString(const char* key, String value) {
   _preferences.begin(PREF_NAME);
   _preferences.putString(key, value);
-  //log_d("PrefputStr: \'%s\' = \'%s\'", key, value);
   _preferences.end();
   return true;
 }
 
 // Boolean
-boolean mEEPROM::getBool(String key, boolean default_value = false) {
+bool mEEPROM::getBool(const char* key, boolean default_value = false) {
   _preferences.begin(PREF_NAME);
-  boolean ret = _preferences.getBool(key.c_str(), default_value);
-  //log_d("PrefGetInt; \'%s\' = \'%d\'", key.c_str(),  ret);
+  boolean ret = _preferences.getBool(key, default_value);
   _preferences.end();
   return ret;
 }
 
-boolean mEEPROM::putBool(String key, boolean value) {
+bool mEEPROM::getBool(String key, boolean default_value = false) {
+  return getBool(key.c_str(),default_value);
+}
+
+bool mEEPROM::putBool(const char* key, boolean value) {
   _preferences.begin(PREF_NAME);
-  _preferences.putBool(key.c_str(), value);
-  //log_d("PrefPutInt; \'%s\' = \'%d\'", key.c_str(),  value);
+  _preferences.putBool(key, value);
   _preferences.end();
   return true;
 }
 
-boolean mEEPROM::getBool(int key, boolean default_value = 0) {
-  return mEEPROM::getInt(String(key), default_value);
-}
-
-boolean mEEPROM::putBool(int key, boolean value = false) {
-  return mEEPROM::putInt(String(key), value);
+bool mEEPROM::putBool(String key, boolean value) {
+  return putBool(key.c_str(),value);
 }

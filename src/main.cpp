@@ -137,7 +137,7 @@ void setup()
     // Failed to configure, start the basics to enable web configuration
     // on an Access Point
     vTaskDelay(1000 / portTICK_PERIOD_MS);
-    StartCriticalWebService();
+    StartWebServices();
     server.begin();
   }
 
@@ -169,13 +169,13 @@ void setup()
   SendCanBusMQTTUpdates = millis();
   //ve.begin();
   Lcd.UpdateScreenValues();
-  xTaskCreate(
-      &taskStartWebServices,
-      "taskStartWebServices",
-      4096, NULL, 2, NULL);
+
+  xTaskCreate(&taskStartWebServices,"taskStartWebServices",4096, NULL, 6, NULL);
+
   if(veHandle.OpenSerial((uint8_t) pref.getUInt(ccVictronRX,VEDIRECT_RX), (uint8_t) pref.getUInt(ccVictronTX,VEDIRECT_TX)))
       veHandle.startReadTask();
 
+  xTaskCreate(&TaskSetClock,"taskSetClock", 2048, NULL, 5, NULL); 
   // Set the lcd timer
   time_t t = time(nullptr);
   last_lcd_refresh = t;
@@ -217,7 +217,7 @@ void loop()
       Lcd.Data.VEData.setValue(false);
 
   // Send MQTT Data every 15 seconds or if the inverter data has changed
-  if (((millis() - SendCanBusMQTTUpdates) > 15000) || Inverter.DataChanged())
+  if ((((millis() - SendCanBusMQTTUpdates) > 15000) || Inverter.DataChanged()) && Lcd.Data.VEData.getValue() == true)
   {
     log_d("Send MQTT Param Update");
     SendCanBusMQTTUpdates = millis();

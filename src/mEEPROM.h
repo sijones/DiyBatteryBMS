@@ -43,6 +43,7 @@ const char* const ccCanCSPin = "CAN_CS_PIN";
 const char* const ccVELOOPTIME = "VE_LOOP_TIME";
 const char* const ccCANBusEnabled  = "CANEnabled";
 const char* const ccLcdEnabled = "lcdenabled";
+const char* const ccNTPServer = "NTPServer";
 const char* const PREF_NAME = "smartbms";
 
 
@@ -53,27 +54,25 @@ class mEEPROM {
     void end();
 
     Preferences _preferences;
-    boolean isKey(String key);
-    boolean clear();
+    bool isKey(String key);
+    bool clear();
     String getString(String key, String default_value);
     String getString(const char* key, String default_value);
-    String getString(int key, String default_value);
-    boolean putString(String key, String value);
-    boolean putString(const char* key, String value);
-    boolean putString(int key, String value);
-    int32_t getInt(int key, int default_value);
+    bool putString(String key, String value);
+    bool putString(const char* key, String value);
     int32_t getInt(String key, int default_value);
-    boolean putInt(int key, int32_t value);
-    boolean putInt(String key, int32_t value);
-    uint32_t getUInt(uint32_t key, uint32_t default_value);
+    bool putInt(String key, int32_t value);
+    int32_t getInt(const char* key, int default_value);
+    bool putInt(const char* key, int32_t value);
     uint32_t getUInt(String key, uint32_t default_value);
-    boolean putUInt(uint32_t key, uint32_t value);
-    boolean putUInt(String key, uint32_t value);
-    boolean getBool(int key, boolean default_value);
-    boolean getBool(String key, boolean default_value);
-    boolean putBool(int key, boolean value);
-    boolean putBool(String key, boolean value);
-    
+    bool putUInt(String key, uint32_t value);
+    uint32_t getUInt(const char* key, uint32_t default_value);
+    bool putUInt(const char* key, uint32_t value);
+    bool getBool(String key, boolean default_value);
+    bool putBool(String key, boolean value);
+    bool getBool(const char* key, boolean default_value);
+    bool putBool(const char* key, boolean value);
+
 };
 
 
