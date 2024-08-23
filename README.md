@@ -20,6 +20,8 @@ The software sends the data in Pylontech Protocol, most inverters should support
 
 With the help of the MQTT server you can integrate the monitoring data to virtually any Home Automation System. I use Home Assistant to automate off peak battery charging (using Force Charge) and can also enable and disable the charging and discharging.
 
+The device itself no longer requires internet as the NTP Servers are now configurable, the web browser accessing this device does need internet access as the framework for the web page is loaded from a Content Delivery Network.
+
 ## Features
 - Setup from a browser, flash to your ESP32 device then go to http://192.168.4.1 and connect it to your wifi, once connected go to http://diy-batterybms.local or it's IP address to configure all settings.
 - Listen to VE.Direct messages and publish some of the information to a MQTT broker<br> The MQTT Topic is fully configurable.
