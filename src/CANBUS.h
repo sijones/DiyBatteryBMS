@@ -26,7 +26,7 @@ class CANBUS {
 
   // CAN BUS Library
 MCP_CAN *CAN;
-uint8_t CAN_MSG[7];
+uint8_t CAN_MSG[8];
 uint8_t MSG_PYLON[8] = {0x50,0x59,0x4C,0x4F,0x4E,0x20,0x20,0x20};
 
     /*
@@ -71,6 +71,7 @@ volatile uint32_t _battCapacity = 0; // Only used for limiting current at high S
     // Used to tell the inverter battery limits
 volatile uint32_t _chargeVoltage = 0;
 volatile uint32_t _dischargeVoltage = 0; 
+volatile uint16_t _fullVoltage = 0;
   // Dynamically set limits for charge/discharge
 volatile uint32_t _chargeCurrentmA = 0;
 volatile uint32_t _dischargeCurrentmA = 0;
@@ -143,10 +144,12 @@ public:
   void SetDischargeCurrent(uint32_t CurrentmA);
   void SetMaxChargeCurrent(uint32_t CurrentmA) {_initialChargeCurrent = true; _maxChargeCurrentmA = CurrentmA;}
   void SetMaxDischargeCurrent(uint32_t CurrentmA) {_initialDischargeCurrent = true; _maxDischargeCurrentmA = CurrentmA;}
+  void SetFullVoltage(uint32_t Voltage) { _fullVoltage = Voltage; }
   uint32_t GetChargeCurrent() {return _chargeCurrentmA; }
   void SetDischargeVoltage(uint32_t Voltage);
   uint32_t GetBatteryCapacity() { return _battCapacity; }
   uint32_t GetDischargeVoltage() { return _dischargeVoltage; }
+  uint32_t GetFullVoltage() { return _fullVoltage; }
 
   bool ManualAllowCharge(){return _ManualAllowCharge;}
   bool ManualAllowDischarge(){return _ManualAllowDischarge;}

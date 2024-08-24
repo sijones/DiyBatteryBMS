@@ -53,8 +53,9 @@ void TaskSetClock(void * pointer) {
   while (true)
   {
     gmtime_r(&now, &timeinfo);
+    time(&now);
     log_d("NTP time %s", asctime(&timeinfo));
-    vTaskDelay(60000 / portTICK_PERIOD_MS);
+    vTaskDelay(3600000 / portTICK_PERIOD_MS);
   }
 
 }
@@ -103,6 +104,7 @@ String generateDatatoJSON(bool All)
     doc["slowchargesoc2div"] = Inverter.GetSlowChargeDivider(2);
     doc["lcdenabled"] = pref.getBool(ccLcdEnabled,false);
     doc["ntpserver"] = pref.getString(ccNTPServer,"");
+    doc["fullvoltage"] = Inverter.GetFullVoltage();
   }
 
   doc["RealTime"] = true;
@@ -188,6 +190,10 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
        // pref.begin(PREF_NAME);
       if (doc.containsKey("chargevoltage")) {
         Inverter.SetChargeVoltage((uint32_t) doc["chargevoltage"]); 
+        handled = true;
+        notifyWSClients(); }
+      if (doc.containsKey("fullvoltage")) {
+        Inverter.SetFullVoltage((uint32_t) doc["fullvoltage"]); 
         handled = true;
         notifyWSClients(); }
       if (doc.containsKey("dischargevoltage")) {
@@ -385,6 +391,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       if (doc.containsKey("saveall")){
         if(doc["saveall"]){
           pref.putUInt(ccChargeVolt,Inverter.GetChargeVoltage());
+          pref.putUInt(ccFullVoltage,Inverter.GetFullVoltage());
           pref.putUInt(ccDischargeVolt,Inverter.GetDischargeVoltage());
           pref.putUInt(ccChargeCurrent,Inverter.GetMaxChargeCurrent());
           pref.putUInt(ccDischargeCurrent,Inverter.GetMaxDischargeCurrent());

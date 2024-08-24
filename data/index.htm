@@ -80,6 +80,7 @@
 
         <!-- BMS Settings Content -->
         <div class="tab-pane fade" id="v-pills-bms" role="tabpanel" aria-labelledby="v-pills-bms-tab">
+
               <div class="row">
                 <div class="col-sm-6">
                   <div class="d-flex bd-highlight">
@@ -97,6 +98,23 @@
               </div>
               </div>
             
+              <div class="row">
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                    <div class="p-2 w-100 bd-highlight"><label for="fullvoltage" class="label">Battery Full Voltage (mV): </label></div>
+                    <div class="p-2 flex-shrink-1 bd-highlight">
+                      <input class="form-control" type="number" id="fullvoltage" onblur="SendJSONUpdate('fullvoltage')"></div>
+                    </div>
+                </div>
+             <!--   <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                  <div class="p-2 w-100 bd-highlight"><label for="dischargevoltage" class="label">Discharge Voltage (mV): </label></div>
+                  <div class="p-2 flex-shrink-1 bd-highlight">
+                    <input class="form-control" type="number" id="dischargevoltage" onblur="SendJSONUpdate('dischargevoltage')"></div>
+                </div>
+              </div> -->
+              </div>
+
               <div class="row">
                 <div class="col-sm-6">
                   <div class="d-flex bd-highlight">
@@ -376,6 +394,7 @@
       if(obj.hasOwnProperty('BMS') && obj.BMS)
       {
         if(obj.hasOwnProperty('chargevoltage')) document.getElementById('chargevoltage').value=obj.chargevoltage;
+        if(obj.hasOwnProperty('fullvoltage')) document.getElementById('fullvoltage').value=obj.fullvoltage;
         if(obj.hasOwnProperty('dischargevoltage')) document.getElementById('dischargevoltage').value=obj.dischargevoltage;
         if(obj.hasOwnProperty('maxchargecurrent')) document.getElementById('maxchargecurrent').value=obj.maxchargecurrent;
         if(obj.hasOwnProperty('maxdischargecurrent')) document.getElementById('maxdischargecurrent').value=obj.maxdischargecurrent;
@@ -392,9 +411,9 @@
         if(obj.hasOwnProperty('battcurrent')) document.getElementById('battcurrent').innerHTML=(obj.battcurrent*0.1).toFixed(1)+'A';
         if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').innerHTML=(obj.chargecurrent*0.001).toFixed(0)+'A';
         if(obj.hasOwnProperty('dischargecurrent')) document.getElementById('dischargecurrent').innerHTML=(obj.dischargecurrent*0.001).toFixed(0)+'A';
-        if(obj.hasOwnProperty('pylontechenabled')) document.getElementById('pylontechenabled').checked=obj.pylontechenabled;
       }
 
+      if(obj.hasOwnProperty('pylontechenabled')) document.getElementById('pylontechenabled').checked=obj.pylontechenabled;
       if(obj.hasOwnProperty('wifissid')) document.getElementById('wifissid').value=obj.wifissid;
       if(obj.hasOwnProperty('wifipass')) document.getElementById('wifipass').value=obj.wifipass;
       if(obj.hasOwnProperty('wifihostname')) document.getElementById('wifihostname').value=obj.wifihostname;

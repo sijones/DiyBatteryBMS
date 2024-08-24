@@ -147,6 +147,7 @@ void setup()
   {
     Lcd.Data.CANInit.setValue(true);
     Inverter.SetChargeVoltage(pref.getUInt(ccChargeVolt, initBattChargeVoltage));
+    Inverter.SetFullVoltage(pref.getUInt(ccFullVoltage, initBattFullVoltage));
     Inverter.SetMaxChargeCurrent(pref.getUInt(ccChargeCurrent, initBattChargeCurrent));
     Inverter.SetDischargeVoltage(pref.getUInt(ccDischargeVolt, initBattDischargeVoltage));
     Inverter.SetMaxDischargeCurrent(pref.getUInt(ccDischargeCurrent, initBattDischargeCurrent));

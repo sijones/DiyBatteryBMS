@@ -12,6 +12,7 @@ const char* const ccChargeVolt = "ChargeVolt";
 const char* const ccDischargeVolt = "DischargeVolt";
 const char* const ccChargeCurrent = "ChargeCurr";
 const char* const ccDischargeCurrent = "DischargeCurr";
+const char* const ccFullVoltage = "fullvoltage";
 
 const char* const ccLowSOCLimit = "LowSOCLimit";
 const char* const ccHighSOCLimit = "HighSOCLimit";
