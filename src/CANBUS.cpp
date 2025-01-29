@@ -80,18 +80,70 @@ bool CANBUS::SendAllUpdates()
   if (Initialised() && Configured())
     {
     // Turn off force charge, this is defined in PylonTech Protocol
-    if (_battSOC > 96 && _forceCharge){
-      ForceCharge(false);
+   // if (_battSOC > 96 && _forceCharge){
+   //   ForceCharge(false);
+   // }
+   // Check Auto charge settings are setup
+    if (!_enableAutoCharge){
+      if(_overVoltage > 0 && _fullVoltage > 0) _enableAutoCharge = true;
     }
+    uint16_t _adjustStep = 2000;
+    uint16_t _tempOverVoltage = (_overVoltage * 0.1);
+    uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
+    // By default we want to be charging
+    bool _tempChargeEnabled = true;
+    // Track Charging / Discharging
+    bool BatteryCharging = (_battCurrentmA >= 2000) ? true : false;
+    // New Charge Current
+    uint32_t _tempChargingCurrent;
 
+    // Calculate charging current
     if (_battCapacity > 0 && _initialBattData)
     {
-      if(_slowchargeSOC[1] > 0 && _battSOC >= _slowchargeSOC[1] && _slowchargeSOCdiv[1] > 0)
-        SetChargeCurrent(_battCapacity / _slowchargeSOCdiv[1]);
-      else if(_slowchargeSOC[0] > 0 && _battSOC >= _slowchargeSOC[0] && _slowchargeSOCdiv[0] > 0)
-        SetChargeCurrent(_battCapacity / _slowchargeSOCdiv[0]);
-      else
-        SetChargeCurrent(_maxChargeCurrentmA);
+      // Initial Calcuation
+      if(_slowchargeSOC[1] > 0 && _battSOC >= _slowchargeSOC[1] && _slowchargeSOCdiv[1] > 0) {
+        _tempChargingCurrent = (_battCapacity / _slowchargeSOCdiv[1]); 
+        _chargeAdjust = 0;
+        }
+      else if(_slowchargeSOC[0] > 0 && _battSOC >= _slowchargeSOC[0] && _slowchargeSOCdiv[0] > 0) {
+        _tempChargingCurrent = (_battCapacity / _slowchargeSOCdiv[0]);
+        _chargeAdjust = 0;
+      }
+      else // If no limits set or not hit a limit
+        _tempChargingCurrent = _maxChargeCurrentmA;
+  
+      if(_useAutoCharge && _enableAutoCharge) 
+      {
+          // Calculate if an adjust is required
+          if(BatteryCharging && (_battVoltage > _tempFullVoltage)) {
+            if(_chargeAdjust < (_tempChargingCurrent - _minChargeCurrent) ) {
+              _chargeAdjust=(_chargeAdjust+_adjustStep);
+              log_d("Charge Current %i and Adjustment is: %i",_tempChargingCurrent,_chargeAdjust);
+            } else {
+              // Stop charging if no more adjustment available
+              ChargeEnable(false);
+              log_d("Minimum Charge Hit, Stopping Charge by Charge Adjustment");
+            }
+          } 
+          else
+          {
+            if (BatteryCharging && (_battVoltage < _tempFullVoltage-30 && _chargeAdjust > 0)) {
+              if(_chargeAdjust>=_adjustStep) {
+                _chargeAdjust = (_chargeAdjust-_adjustStep); 
+                log_d("Charge Current %i and Adjustment is: %i",_tempChargingCurrent,_chargeAdjust);
+              }
+            } else if (_battVoltage < (_tempFullVoltage-20) && _chargeEnabled == false) {
+              // Start charging if battery voltage under full voltage by 200mV
+              ChargeEnable(true);
+              log_d("Charging Reenabled by Charge Adjustment");
+            }
+          }
+      } // End of Auto Charge Logic
+
+      // Check the charge current has changed and if so set it.
+      _tempChargingCurrent=(_tempChargingCurrent-_chargeAdjust);
+      if (_tempChargingCurrent != _chargeCurrentmA)
+        SetChargeCurrent(_tempChargingCurrent);
     }
     
     // If Low SOC is greater than 0 then we have a limit set
@@ -104,14 +156,19 @@ bool CANBUS::SendAllUpdates()
         DischargeEnable(true);
       }
     }
+
     // If High SOC is set lower than 100 then we have a limit set
     // if the current battery soc is equal or more stop charge
     if(_highSOCLimit < 100) {
       if (_battSOC >= _highSOCLimit && _chargeEnabled == true)
-        ChargeEnable(false);
-      else if (_battSOC < _highSOCLimit && _chargeEnabled == false)
-        ChargeEnable(true);
+      _tempChargeEnabled = false;
     }
+    // If Battery Voltage is over "Battery Over Voltage" then stop charging.
+    if ((_overVoltage > _dischargeVoltage && _battVoltage > _tempOverVoltage))
+      _tempChargeEnabled = false;
+      
+    if(_tempChargeEnabled != _chargeEnabled)
+      ChargeEnable(_tempChargeEnabled);
 
     if (SendCANData()) 
       return true;
@@ -126,7 +183,7 @@ bool CANBUS::SendAllUpdates()
     
 }
 
-void CANBUS::SetChargeVoltage(uint32_t Voltage){
+void CANBUS::SetChargeVoltage(uint16_t Voltage){
   _initialChargeVoltage = true; 
   if(_chargeVoltage != Voltage) {
     _dataChanged = true;
@@ -148,7 +205,6 @@ void CANBUS::SetDischargeVoltage(uint32_t Voltage){
   }
 
 void CANBUS::SetDischargeCurrent(uint32_t CurrentmA){
-  
   if (_dischargeCurrentmA != CurrentmA && _initialDone) {
     _dischargeCurrentmA = CurrentmA;
     _dataChanged = true;
@@ -181,11 +237,13 @@ bool CANBUS::SendCANData(){
 
   if (!Initialised() && !Configured()) return false;
 
+  uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
   uint16_t _tempChargeVolt = (_chargeVoltage * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
   uint16_t _tempDisChargeCurr = (_dischargeCurrentmA * 0.01);
-  uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
+  int16_t _tempBattTemp = (_battTemp * 10);
+
   byte sndStat;
   _failedCanSendCount=0;
 
@@ -199,17 +257,19 @@ bool CANBUS::SendCANData(){
   delay(_canSendDelay);
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-  // 0x35C – C0 00 – Battery charge request flags
-  // CAN_MSG[0] = 0xC0;
-  // CAN_MSG[1] = 0x00;
-/*
-  CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagForceCharge,_forceCharge);
-  CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
-  CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
-*/
-  if (_forceCharge) CAN_MSG[0] |= bmsForceCharge;
-  if (_chargeEnabled && _ManualAllowCharge) CAN_MSG[0] |= bmsChargeEnable;
-  if (_dischargeEnabled && _ManualAllowDischarge) CAN_MSG[0] |= bmsDischargeEnable;
+  // 0x35C – C0 00 – Battery charge request flags - means allow charge and discharge
+  CAN_MSG[0] = 0xC0;
+  CAN_MSG[1] = 0x00;
+  if(_enablePYLONTECH) {
+    //CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagForceCharge,_forceCharge);
+    CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagRequestFullCharge,_forceCharge);
+    //CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
+    //CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
+  } 
+
+  //if (_forceCharge) CAN_MSG[0] |= bmsForceCharge;
+  //if (_chargeEnabled && _ManualAllowCharge) CAN_MSG[0] |= bmsChargeEnable;
+  //if (_dischargeEnabled && _ManualAllowDischarge) CAN_MSG[0] |= bmsDischargeEnable;
   
   sndStat = CAN->sendMsgBuf(0x35C, 2, CAN_MSG);
   if (sndStat != CAN_OK){
@@ -225,8 +285,8 @@ bool CANBUS::SendCANData(){
   CAN_MSG[1] = highByte(_battVoltage);
   CAN_MSG[2] = lowByte(int16_t(_battCurrentmA));
   CAN_MSG[3] = highByte(int16_t(_battCurrentmA));
-  CAN_MSG[4] = lowByte(int16_t(_battTemp * 10));
-  CAN_MSG[5] = highByte(int16_t(_battTemp * 10));
+  CAN_MSG[4] = lowByte(_tempBattTemp);
+  CAN_MSG[5] = highByte(_tempBattTemp);
 
   sndStat = CAN->sendMsgBuf(0x356, 6, CAN_MSG);
 
@@ -244,32 +304,20 @@ bool CANBUS::SendCANData(){
       CAN_MSG[0] = lowByte(99);
       CAN_MSG[1] = highByte(99);      
     } 
-    else if ((_tempFullVoltage > 0) && (_battVoltage >= (_tempFullVoltage + 10))){
-      CAN_MSG[0] = lowByte(100);
-      CAN_MSG[1] = highByte(100);  
-    }
     else {
       CAN_MSG[0] = lowByte(_battSOC);
       CAN_MSG[1] = highByte(_battSOC);
     }
   } 
   else if (_forceCharge) {
-    CAN_MSG[0] = lowByte(1);
-    CAN_MSG[1] = highByte(1);
-  } else {
-    if(_fullVoltage > _dischargeVoltage && _battVoltage < _tempFullVoltage && _battSOC >= 99) {
-      CAN_MSG[0] = lowByte(99);
-      CAN_MSG[1] = highByte(99);      
-    } 
-    else if ((_fullVoltage > _dischargeVoltage) && (_battVoltage >= (_tempFullVoltage+10))){
-      CAN_MSG[0] = lowByte(100);
-      CAN_MSG[1] = highByte(100);  
-    }
+    CAN_MSG[0] = lowByte(u_int8_t(_battSOC * 0.1));
+    CAN_MSG[1] = highByte(u_int8_t(_battSOC * 0.1));
+  }
     else {
       CAN_MSG[0] = lowByte(_battSOC);
       CAN_MSG[1] = highByte(_battSOC);
     }
-  }
+  
 
   CAN_MSG[2] = lowByte(_battSOH);
   CAN_MSG[3] = highByte(_battSOH);
@@ -288,14 +336,14 @@ bool CANBUS::SendCANData(){
 
   CAN_MSG[0] = lowByte(_tempChargeVolt);             // Maximum battery voltage
   CAN_MSG[1] = highByte(_tempChargeVolt);
-  if((_chargeEnabled && _ManualAllowCharge) || _enablePYLONTECH){
+  if((_chargeEnabled && _ManualAllowCharge)){
     CAN_MSG[2] = lowByte(_tempChargeCurr);         // Maximum charging current 
     CAN_MSG[3] = highByte(_tempChargeCurr);
   } else {
     CAN_MSG[2] = 0;                                                 // Maximum charging current 
     CAN_MSG[3] = 0;
   }
-  if((_dischargeEnabled && _ManualAllowDischarge) || _enablePYLONTECH){
+  if((_dischargeEnabled && _ManualAllowDischarge)){
     CAN_MSG[4] = lowByte(_tempDisChargeCurr);      // Maximum discharge current 
     CAN_MSG[5] = highByte(_tempDisChargeCurr);
   } else {
@@ -325,7 +373,7 @@ bool CANBUS::SendCANData(){
   CAN_MSG[6] = 0x4E;
   CAN_MSG[7] = 0x00;
 
-  sndStat = CAN->sendMsgBuf(0x359, 7, CAN_MSG);
+  sndStat = CAN->sendMsgBuf(0x359, 8, CAN_MSG);
   if (sndStat != CAN_OK){
     _failedCanSendCount++;
     _failedCanSendTotal++;

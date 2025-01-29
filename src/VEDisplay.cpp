@@ -12,7 +12,7 @@ void Display::Begin(DisplayType _DisplayType){
         _height = 4;
         _width = 20;
     }
-    _lcd->begin();
+    _lcd->begin(&Wire);
     _lcd->display();
     _lcd->createChar(icon_heart, _heart);
     delay(5);
@@ -218,9 +218,9 @@ void Display::UpdateScreenValues(){
         */
 
         // Display icon for battery state (charging/floating/discharging)
-        /*
-        if(battAmps>1000)
-            {WriteSpecialXY(icon_chg,19-numIcons,Line1);
+        
+        if(Data.ChargeEnable.getValue())
+            {WriteStringXY("",19-numIcons,Line1);
             numIcons++;}
         else if(battAmps<1000)
             {WriteSpecialXY(icon_dischg,19-numIcons,Line1);
@@ -228,7 +228,7 @@ void Display::UpdateScreenValues(){
         else
             {WriteSpecialXY(icon_float,19-numIcons,Line1);
             numIcons++;}
-*/
+
         // End of Status Icon
 
         if(Data.BattSOC.hasChanged()){
@@ -244,6 +244,16 @@ void Display::UpdateScreenValues(){
         if(Data.BattAmps.hasChanged()){
             WriteStringXY("BC:   ", 10, Line2);
             WriteStringXY(Data.GetBattAmps(),20-Data.GetBattAmps().length(),Line2);
+        }
+        if(Data.ChargeEnable.hasChanged()){
+            WriteStringXY("CE: ",0,Line3);
+
+        }
+        if(Data.DischargeEnable.hasChanged()) {
+
+        }
+        if(Data.ForceCharging.hasChanged()) {
+
         }
         break;
     case Normal: // Config

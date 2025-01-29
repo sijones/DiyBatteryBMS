@@ -30,7 +30,6 @@
 #ifndef VEDIRECTONEWIRE_H
 #define VEDIRECTONEWIRE_H
 
-#include <OneWire.h>
 #include <DallasTemperature.h>
 
 #define MAX_DS18SENSORS 3
@@ -65,6 +64,7 @@ boolean meassureOneWire() {
       if ( temp > 200 || temp < -80 ) {
         onewire_good_values = false;
       }
+      
     }
   } while (m_count >= 0 && !onewire_good_values);
 }

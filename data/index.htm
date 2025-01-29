@@ -106,13 +106,13 @@
                       <input class="form-control" type="number" id="fullvoltage" onblur="SendJSONUpdate('fullvoltage')"></div>
                     </div>
                 </div>
-             <!--   <div class="col-sm-6">
+                <div class="col-sm-6">
                   <div class="d-flex bd-highlight">
-                  <div class="p-2 w-100 bd-highlight"><label for="dischargevoltage" class="label">Discharge Voltage (mV): </label></div>
+                  <div class="p-2 w-100 bd-highlight"><label for="overvoltage" class="label">Battery Over Voltage (mV): </label></div>
                   <div class="p-2 flex-shrink-1 bd-highlight">
-                    <input class="form-control" type="number" id="dischargevoltage" onblur="SendJSONUpdate('dischargevoltage')"></div>
+                    <input class="form-control" type="number" id="overvoltage" onblur="SendJSONUpdate('overvoltage')"></div>
                 </div>
-              </div> -->
+              </div>
               </div>
 
               <div class="row">
@@ -193,6 +193,17 @@
               </div>
               </div>
             </div>
+
+            <div class="row">
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight form-check form-switch"><label for="autocharge" class="form-check-label">Smart Adjust Enabled:</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="autocharge" onclick="SendJSONUpdate('autocharge')"></div>
+              </div>
+              </div>
+            </div>
+
           <p>
             <div>
               <button type="button" class="btn btn-success pull-right" id="SavetoEEPROM" onclick="saveAll();">Save to EEPROM</button>
@@ -240,6 +251,25 @@
               </div>
               </div>
             </div>
+
+            <div class="row">
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight"><label for="fanpin" class="label">FAN Pin:</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight">
+                  <input class="form-control" type="number" id="fanpin" onblur="SendJSONUpdate('fanpin')"></div>
+              </div>
+              </div>
+  
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight"><label for="onewirepin" class="label">OneWire Pin:</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight">
+                  <input class="form-control" type="number" id="onewirepin" onblur="SendJSONUpdate('onewirepin')"></div>
+              </div>
+              </div>
+            </div>
+
             <div class="row">
               <div class="col-sm-6">
                 <div class="d-flex bd-highlight">
@@ -274,6 +304,7 @@
               <div class="d-flex flex-row bd-highlight mb-3">
                 <div class="p-2 bd-highlight">
                   <button type="button" class="btn btn-warning pull-right" id="FactoryReset" onclick="eraseAll();">Factory Reset</button>
+                  <button type="button" class="btn btn-warning pull-right" id="FactoryResetKeepWifi" onclick="erasekeepwifi();">Factory Reset Keeping Wifi</button>
                   <button type="button" class="btn btn-danger pull-right" id="Reboot" onclick="rebootBMS();">Reboot & Apply</button>
                 </div>
               </div>
@@ -395,6 +426,7 @@
       {
         if(obj.hasOwnProperty('chargevoltage')) document.getElementById('chargevoltage').value=obj.chargevoltage;
         if(obj.hasOwnProperty('fullvoltage')) document.getElementById('fullvoltage').value=obj.fullvoltage;
+        if(obj.hasOwnProperty('overvoltage')) document.getElementById('overvoltage').value=obj.overvoltage;
         if(obj.hasOwnProperty('dischargevoltage')) document.getElementById('dischargevoltage').value=obj.dischargevoltage;
         if(obj.hasOwnProperty('maxchargecurrent')) document.getElementById('maxchargecurrent').value=obj.maxchargecurrent;
         if(obj.hasOwnProperty('maxdischargecurrent')) document.getElementById('maxdischargecurrent').value=obj.maxdischargecurrent;
@@ -414,6 +446,7 @@
       }
 
       if(obj.hasOwnProperty('pylontechenabled')) document.getElementById('pylontechenabled').checked=obj.pylontechenabled;
+      if(obj.hasOwnProperty('autocharge')) document.getElementById('autocharge').checked=obj.autocharge;
       if(obj.hasOwnProperty('wifissid')) document.getElementById('wifissid').value=obj.wifissid;
       if(obj.hasOwnProperty('wifipass')) document.getElementById('wifipass').value=obj.wifipass;
       if(obj.hasOwnProperty('wifihostname')) document.getElementById('wifihostname').value=obj.wifihostname;
@@ -436,7 +469,9 @@
       if(obj.hasOwnProperty('slowchargesoc2div')) document.getElementById('slowchargesoc2div').value=obj.slowchargesoc2div;
       if(obj.hasOwnProperty('lcdenabled')) document.getElementById('lcdenabled').checked=obj.lcdenabled;
       if(obj.hasOwnProperty('ntpserver')) document.getElementById('ntpserver').value=obj.ntpserver;
-        
+      if(obj.hasOwnProperty('fanpin')) document.getElementById('fanpin').value=obj.fanpin;
+      if(obj.hasOwnProperty('onewirepin')) document.getElementById('onewirepin').value=obj.onewirepin;
+
       // handle any WS messages or errors
       if(obj.hasOwnProperty('Message'))
         alert(obj.Message);
@@ -465,6 +500,12 @@
     function eraseAll(){
       console.log('Sending Erase All (EEPROM) command');
       var jsonobj = '{"eraseall" : true}';
+      websocket.send(jsonobj);
+    }
+
+    function erasekeepwifi(){
+      console.log('Sending Erase All Keep Wifi (EEPROM) command');
+      var jsonobj = '{"erasekeepwifi" : true}';
       websocket.send(jsonobj);
     }
 

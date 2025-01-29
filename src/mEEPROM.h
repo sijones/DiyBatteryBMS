@@ -5,6 +5,7 @@
 // no key larger than 15 chars
 
 #include <Preferences.h>
+#include <nvs_flash.h>
 #define RW_MODE true
 #define RO_MODE false
 
@@ -13,6 +14,7 @@ const char* const ccDischargeVolt = "DischargeVolt";
 const char* const ccChargeCurrent = "ChargeCurr";
 const char* const ccDischargeCurrent = "DischargeCurr";
 const char* const ccFullVoltage = "fullvoltage";
+const char* const ccOverVoltage = "overvoltage";
 
 const char* const ccLowSOCLimit = "LowSOCLimit";
 const char* const ccHighSOCLimit = "HighSOCLimit";
@@ -40,6 +42,9 @@ const char* const ccMQTTParam = "MQTTParam";
 const char* const ccVictronRX = "VictronRX";
 const char* const ccVictronTX = "VictronTX";
 const char* const ccCanCSPin = "CAN_CS_PIN";
+const char* const ccOneWirePin = "onewirepin";
+const char* const ccFanPin = "fanpin";
+const char* const ccAutoAdjustCharge = "AutoAdjust";
 
 const char* const ccVELOOPTIME = "VE_LOOP_TIME";
 const char* const ccCANBusEnabled  = "CANEnabled";
@@ -52,27 +57,38 @@ class mEEPROM {
   public:
     mEEPROM();
     void begin();
+    void begin(const char * nvsspace);
     void end();
 
     Preferences _preferences;
     bool isKey(String key);
-    bool clear();
+    bool clear(bool all);
+
     String getString(String key, String default_value);
     String getString(const char* key, String default_value);
     bool putString(String key, String value);
     bool putString(const char* key, String value);
-    int32_t getInt(String key, int default_value);
-    bool putInt(String key, int32_t value);
-    int32_t getInt(const char* key, int default_value);
-    bool putInt(const char* key, int32_t value);
-    uint32_t getUInt(String key, uint32_t default_value);
-    bool putUInt(String key, uint32_t value);
-    uint32_t getUInt(const char* key, uint32_t default_value);
-    bool putUInt(const char* key, uint32_t value);
+
+    int32_t getInt32(const char* key, int32_t default_value);
+    bool putInt32(const char* key, int32_t value);
+    uint32_t getUInt32(const char* key, uint32_t default_value);
+    bool putUInt32(const char* key, uint32_t value);
+
+    int16_t getInt16(const char* key, int16_t default_value);
+    bool putInt16(const char* key, int16_t value);
+    uint16_t getUInt16(const char* key, uint16_t default_value);
+    bool putUInt16(const char* key, uint16_t value);
+
+    int8_t getInt8(const char* key, int8_t default_value);
+    bool putInt8(const char* key, int8_t value);
+    uint8_t getUInt8(const char* key, uint8_t default_value);
+    bool putUInt8(const char* key, uint8_t value);
+
     bool getBool(String key, boolean default_value);
     bool putBool(String key, boolean value);
     bool getBool(const char* key, boolean default_value);
     bool putBool(const char* key, boolean value);
+    uint16_t freeentries();
 
 };
 

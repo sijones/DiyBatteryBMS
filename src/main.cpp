@@ -32,15 +32,17 @@
 #include "WifiMQTTManager.h"
 #include <ArduinoJson.h> // Include ArduinoJson Library
 #include <AsyncElegantOTA.h>
+#include <Wire.h>
 
 WiFiClient _wifiClient;
 
 #include "mEEPROM.h"
 mEEPROM pref;
 
-#include "VEDirectFrameHandler.h"
+#include "VeDirectFrameHandler.h"
 #include "TimeLib.h"
 #include "CANBUS.h"
+#include "FAN.h"
 
 uint32_t SendCanBusMQTTUpdates;
 CANBUS Inverter;
@@ -61,6 +63,7 @@ VeDirectFrameHandler veHandle;
 #include "ONEWIRE.h"
 #endif
 
+
 // Functions for handling VE Data
 #include "DataProcessing.h"
 
@@ -78,39 +81,58 @@ void setup()
 
   if (!pref.isKey("EEPROMSetup"))
   {
-    log_d("EEPROM not setup, writing inital values.");
+    if(pref.isKey(ccWifiSSID) && pref.isKey(ccWifiPass))
+      log_d("Wifi Details found, but NVS not been setup, saving initial values.");
+    else
+      log_d("NVS not setup, writing inital values.");
+    
     // pref.putBool("WifiEnabled", true);
     pref.putBool(ccCANBusEnabled, true);
     pref.putBool(ccLcdEnabled, false);
     // pref.putBool("MQTTEnabled", false);
-    pref.putUInt(ccCanCSPin, CAN_BUS_CS_PIN);
-    pref.putUInt(ccVictronRX, VEDIRECT_RX);
-    pref.putUInt(ccVictronTX, VEDIRECT_TX);
-    pref.putUInt(ccChargeVolt, initBattChargeVoltage);
-    pref.putUInt(ccChargeCurrent, initBattChargeCurrent);
-    pref.putUInt(ccDischargeVolt, initBattDischargeVoltage);
-    pref.putUInt(ccDischargeCurrent, initBattDischargeCurrent);
-    pref.putUInt(ccLowSOCLimit, initLowSOCLimit);
-    pref.putUInt(ccHighSOCLimit, initHighSOCLimit);
-    pref.putUInt(ccBattCapacity, initBattCapacity);
+    pref.putUInt8(ccCanCSPin, CAN_BUS_CS_PIN);
+    pref.putUInt8(ccVictronRX, VEDIRECT_RX);
+    pref.putUInt8(ccVictronTX, VEDIRECT_TX);
+    pref.putUInt16(ccChargeVolt, initBattChargeVoltage);
+    pref.putUInt16(ccFullVoltage,initBattFullVoltage);
+    pref.putUInt16(ccOverVoltage, initBattOverVoltage);
+    pref.putUInt32(ccChargeCurrent, initBattChargeCurrent);
+    pref.putUInt32(ccDischargeVolt, initBattDischargeVoltage);
+    pref.putUInt32(ccDischargeCurrent, initBattDischargeCurrent);
+    pref.putUInt8(ccLowSOCLimit, initLowSOCLimit);
+    pref.putUInt8(ccHighSOCLimit, initHighSOCLimit);
+    pref.putUInt8(ccSlowSOCCharge1,0);
+    pref.putUInt8(ccSlowSOCCharge2,0);
+    pref.putUInt8(ccSlowSOCDivider1,0);
+    pref.putUInt8(ccSlowSOCDivider2,0);
+    pref.putUInt8(ccBattCapacity, initBattCapacity);
     pref.putBool(ccPylonTech, false);
-    pref.putUInt("VE_WAIT_TIME", VE_WAIT_TIME);
-    pref.putUInt("VE_STARTUP_TIME", VE_STARTUP_TIME);
-    pref.putUInt("VE_LCD_REFRESH", VE_LCD_REFRESH);
-    pref.putUInt("VE_MQTT_REC", VE_MQTT_RECONNECT);
-    pref.putUInt(ccVELOOPTIME, VE_LOOP_TIME);
+    pref.putBool(ccAutoAdjustCharge, true);
+    pref.putUInt8("VE_WAIT_TIME", VE_WAIT_TIME);
+    pref.putUInt8("VE_STARTUP_TIME", VE_STARTUP_TIME);
+    pref.putUInt8("VE_LCD_REFRESH", VE_LCD_REFRESH);
+    pref.putUInt8("VE_MQTT_REC", VE_MQTT_RECONNECT);
+    pref.putUInt8(ccVELOOPTIME, VE_LOOP_TIME);
+    pref.putString(ccNTPServer,"");
     pref.putBool("EEPROMSetup", true);
   }
-  else
-    log_d("EEPROM Store opened, initial key found.");
+  else {
+      log_d("EEPROM Store opened, initial key found.");
+      log_d("EEPROM has free entries of: %i",pref.freeentries());
+  }
 
-  VE_WAIT_TIME = pref.getUInt("VE_WAIT_TIME", VE_WAIT_TIME);
-  VE_STARTUP_TIME = pref.getUInt("VE_STARTUP_TIME", VE_STARTUP_TIME);
-  VE_LCD_REFRESH = pref.getUInt("VE_LCD_REFRESH", VE_LCD_REFRESH);
-  VE_MQTT_RECONNECT = pref.getUInt("VE_MQTT_REC", VE_MQTT_RECONNECT);
-  VE_LOOP_TIME = pref.getUInt(ccVELOOPTIME, VE_LOOP_TIME);
+
+  VE_WAIT_TIME = pref.getUInt8("VE_WAIT_TIME", VE_WAIT_TIME);
+  VE_STARTUP_TIME = pref.getUInt8("VE_STARTUP_TIME", VE_STARTUP_TIME);
+  VE_LCD_REFRESH = pref.getUInt8("VE_LCD_REFRESH", VE_LCD_REFRESH);
+  VE_MQTT_RECONNECT = pref.getUInt8("VE_MQTT_REC", VE_MQTT_RECONNECT);
+  VE_LOOP_TIME = pref.getUInt8(ccVELOOPTIME, VE_LOOP_TIME);
+  
+  // Setup FAN, will only complete if a PIN number is assigned.
+  FanInit(pref.getUInt8(ccFanPin,0));
 
   if(pref.getBool(ccLcdEnabled,false)) {
+    Wire.begin();
     Lcd.Begin(Lcd.LCD2004);
     Lcd.SetScreen(Lcd.StartUp);
   }
@@ -143,22 +165,24 @@ void setup()
 
   mqttsetup();
 
-  if (Inverter.Begin(pref.getUInt(ccCanCSPin, (uint32_t)CAN_BUS_CS_PIN)))
+  if (Inverter.Begin(pref.getUInt8(ccCanCSPin, (uint32_t)CAN_BUS_CS_PIN)))
   {
     Lcd.Data.CANInit.setValue(true);
-    Inverter.SetChargeVoltage(pref.getUInt(ccChargeVolt, initBattChargeVoltage));
-    Inverter.SetFullVoltage(pref.getUInt(ccFullVoltage, initBattFullVoltage));
-    Inverter.SetMaxChargeCurrent(pref.getUInt(ccChargeCurrent, initBattChargeCurrent));
-    Inverter.SetDischargeVoltage(pref.getUInt(ccDischargeVolt, initBattDischargeVoltage));
-    Inverter.SetMaxDischargeCurrent(pref.getUInt(ccDischargeCurrent, initBattDischargeCurrent));
-    Inverter.SetLowSOCLimit((uint8_t) pref.getUInt(ccLowSOCLimit, initLowSOCLimit));
-    Inverter.SetHighSOCLimit((uint8_t) pref.getUInt(ccHighSOCLimit, initHighSOCLimit));
-    Inverter.SetBattCapacity(pref.getUInt(ccBattCapacity, initBattCapacity));
+    Inverter.SetChargeVoltage((u_int16_t) pref.getUInt32(ccChargeVolt, initBattChargeVoltage));
+    Inverter.SetFullVoltage((u_int16_t) pref.getUInt32(ccFullVoltage, initBattFullVoltage));
+    Inverter.SetOverVoltage((u_int16_t) pref.getUInt32(ccOverVoltage, initBattOverVoltage));
+    Inverter.SetMaxChargeCurrent(pref.getUInt32(ccChargeCurrent, initBattChargeCurrent));
+    Inverter.SetDischargeVoltage(pref.getUInt32(ccDischargeVolt, initBattDischargeVoltage));
+    Inverter.SetMaxDischargeCurrent(pref.getUInt32(ccDischargeCurrent, initBattDischargeCurrent));
+    Inverter.SetLowSOCLimit((uint8_t) pref.getUInt8(ccLowSOCLimit, initLowSOCLimit));
+    Inverter.SetHighSOCLimit((uint8_t) pref.getUInt8(ccHighSOCLimit, initHighSOCLimit));
+    Inverter.SetBattCapacity(pref.getUInt32(ccBattCapacity, initBattCapacity));
     Inverter.EnablePylonTech(pref.getBool(ccPylonTech, false));
-    Inverter.SetSlowChargeDivider(1,pref.getUInt(ccSlowSOCDivider1,initSlowSOCDivider1));
-    Inverter.SetSlowChargeDivider(2,pref.getUInt(ccSlowSOCDivider2,initSlowSOCDivider2));
-    Inverter.SetSlowChargeSOCLimit(1, pref.getUInt(ccSlowSOCCharge1, initSlowSOCCharge1));
-    Inverter.SetSlowChargeSOCLimit(2, pref.getUInt(ccSlowSOCCharge2, initSlowSOCCharge2));
+    Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));
+    Inverter.SetSlowChargeDivider(2,pref.getUInt8(ccSlowSOCDivider2,initSlowSOCDivider2));
+    Inverter.SetSlowChargeSOCLimit(1, pref.getUInt8(ccSlowSOCCharge1, initSlowSOCCharge1));
+    Inverter.SetSlowChargeSOCLimit(2, pref.getUInt8(ccSlowSOCCharge2, initSlowSOCCharge2));
+    Inverter.AutoCharge(pref.getBool(ccAutoAdjustCharge, true));
     Inverter.StartRunTask();
   }
   else
@@ -173,7 +197,7 @@ void setup()
 
   xTaskCreate(&taskStartWebServices,"taskStartWebServices",4096, NULL, 6, NULL);
 
-  if(veHandle.OpenSerial((uint8_t) pref.getUInt(ccVictronRX,VEDIRECT_RX), (uint8_t) pref.getUInt(ccVictronTX,VEDIRECT_TX)))
+  if(veHandle.OpenSerial((uint8_t) pref.getUInt8(ccVictronRX,VEDIRECT_RX), (uint8_t) pref.getUInt8(ccVictronTX,VEDIRECT_TX)))
       veHandle.startReadTask();
 
   xTaskCreate(&TaskSetClock,"taskSetClock", 2048, NULL, 5, NULL); 
@@ -243,6 +267,12 @@ void loop()
     Lcd.Data.ForceCharging.setValue(Inverter.ForceCharge());
     CheckAndChangeLCD();
     Lcd.UpdateScreenValues();
+    if(FAN_INIT){
+      int32_t b = Inverter.BattCurrentmA();
+      if (b < 0)
+        b = -b;
+      FanUpdate((b * 0.1));
+    }
   }
 
 }

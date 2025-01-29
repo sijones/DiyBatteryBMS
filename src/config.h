@@ -25,6 +25,7 @@
 
 #define initBattChargeVoltage 55600       // Battery Charge Voltage sent to inverter
 #define initBattFullVoltage 0             // Battery Full Voltage - keep SOC from 100% until this value.
+#define initBattOverVoltage 0             // Battery Over Voltage - stop charging if Batt Volts hits this.
 #define initBattDischargeVoltage 45000    // Battery discharge voltage, not currently used
 #define initBattChargeCurrent 0           // in mA, 
 #define initBattDischargeCurrent 0        // in mA 
@@ -54,7 +55,6 @@ int OW_WAIT_TIME = 10; // in s
 time_t last_ow;
 #endif
 
-
 /*
    WiFi parameters
 */
@@ -73,15 +73,19 @@ String MQTT_ONEWIRE = "/Temp/OneWire";
    Waittime of 1 or 0 means every received packet will be transmitted to MQTT
    Packets during OTA or OneWire will be discarded
 */
-int VE_WAIT_TIME = 1; // in s
+uint8_t VE_WAIT_TIME = 1; // in s
 // Change from start up screen to normal after
-int VE_STARTUP_TIME = 30;
+uint8_t VE_STARTUP_TIME = 30;
 // Update LCD Screen
-int VE_LCD_REFRESH = 1;
+uint8_t VE_LCD_REFRESH = 1;
 
-int VE_MQTT_RECONNECT = 5;
+uint8_t VE_MQTT_RECONNECT = 5;
 
-int VE_LOOP_TIME = 5;
+uint8_t VE_LOOP_TIME = 5;
+
+uint8_t ONEWIRE_PIN = 0;
+
+
 
 #define AppCore 1
 #define SysCore 0

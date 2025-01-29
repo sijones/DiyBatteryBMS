@@ -11,7 +11,6 @@
 #include <LittleFS.h>
 #include <ESPmDNS.h>
 
-
 class WifiMQTTManagerClass {
     private:
         DNSServer _dnsserver;
@@ -28,8 +27,8 @@ class WifiMQTTManagerClass {
         String _mqttUser = "";
         String _mqttPass = "";
         uint16_t _mqttPort = 1883;
-        String _mqttClientID = "diy-battery-bms";
-        String _mqttTopic = "DIYBATTERYBMS";
+        String _mqttClientID = "diy-battery";
+        String _mqttTopic = "DIY-BATTERY";
         String _mqttParameter = "/Param";
 
     public:

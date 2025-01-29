@@ -4,6 +4,7 @@
 
 bool WifiMQTTManagerClass::begin()
 {
+    m_pref.begin("network");
     log_d("Getting all values from EEPROM");
 
     _wifiSSID = m_pref.getString(ccWifiSSID,_wifiSSID);
@@ -23,9 +24,9 @@ bool WifiMQTTManagerClass::begin()
     else
         _mqttClientID = m_pref.getString(ccMQTTClientID,_mqttClientID);
     if(!m_pref.isKey(ccMQTTPort))
-        m_pref.putUInt(ccMQTTPort,_mqttPort);
+        m_pref.putUInt16(ccMQTTPort,_mqttPort);
     else
-        _mqttPort = m_pref.getUInt(ccMQTTPort,_mqttPort);
+        _mqttPort = m_pref.getUInt16(ccMQTTPort,_mqttPort);
     if(!m_pref.isKey(ccMQTTParam))
         m_pref.putString(ccMQTTParam,_mqttParameter);
     else
@@ -227,7 +228,7 @@ void WifiMQTTManagerClass::SetMQTTPort(uint16_t Port){
         _mqttPort = Port;
         if (_mqttPort >= 20 && _mqttPort <= 65535) {
             //m_pref.begin(PREF_NAME);
-            m_pref.putUInt(ccMQTTPort,_mqttPort);
+            m_pref.putUInt16(ccMQTTPort,_mqttPort);
             //m_pref.end();
         }
 }

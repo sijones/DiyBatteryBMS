@@ -40,6 +40,9 @@ bool _forceCharge = false;
 bool _chargeEnabled = true;
 bool _dischargeEnabled = true;
 bool _dataChanged = false;
+bool _useAutoCharge = true;
+bool _enableAutoCharge = false;
+
 uint8_t _canSendDelay = 5;
 
 
@@ -69,12 +72,17 @@ volatile int16_t _battTemp = 10;
 volatile uint32_t _battCapacity = 0; // Only used for limiting current at high SOC.
 
     // Used to tell the inverter battery limits
-volatile uint32_t _chargeVoltage = 0;
+volatile uint16_t _chargeVoltage = 0;
 volatile uint32_t _dischargeVoltage = 0; 
 volatile uint16_t _fullVoltage = 0;
+volatile uint16_t _overVoltage = 0;
   // Dynamically set limits for charge/discharge
 volatile uint32_t _chargeCurrentmA = 0;
 volatile uint32_t _dischargeCurrentmA = 0;
+volatile uint32_t _chargeAdjust = 0;
+uint32_t _dischargeAdjust = 0;
+uint32_t _minChargeCurrent = 6000;
+uint32_t _minDischargeCurrent = 20000;
 
   // Max Current Limits for Inverter.
 uint32_t _maxChargeCurrentmA = 0;
@@ -99,6 +107,16 @@ uint8_t _slowchargeSOCdiv[2];
 uint8_t _maxFailedCanSendCount = 20;
 uint16_t _failedCanSendCount = 0;
 uint32_t _failedCanSendTotal = -1;
+
+/* CAN Data Values, calculated every cycle 
+   these Varibles are used to feed the 
+   json sent to the webpage for debugging */
+
+  uint16_t _tempChargeVolt;
+  uint16_t _tempDisCharVolt; 
+  uint16_t _tempChargeCurr;  
+  uint16_t _tempDisChargeCurr;
+
 
 uint32_t LoopTimer; // store current time
 // The interval for sending the inverter updated information
@@ -138,28 +156,35 @@ public:
   bool SendBattUpdate();
   bool SendCANData();
   bool DataChanged();
-  void SetChargeVoltage(uint32_t Voltage);
-  uint32_t GetChargeVoltage() {return _chargeVoltage; }
+  void SetChargeVoltage(uint16_t Voltage);
+  u_int16_t GetChargeVoltage() {return _chargeVoltage; }
   void SetChargeCurrent(uint32_t CurrentmA);
   void SetDischargeCurrent(uint32_t CurrentmA);
   void SetMaxChargeCurrent(uint32_t CurrentmA) {_initialChargeCurrent = true; _maxChargeCurrentmA = CurrentmA;}
   void SetMaxDischargeCurrent(uint32_t CurrentmA) {_initialDischargeCurrent = true; _maxDischargeCurrentmA = CurrentmA;}
-  void SetFullVoltage(uint32_t Voltage) { _fullVoltage = Voltage; }
-  uint32_t GetChargeCurrent() {return _chargeCurrentmA; }
+  void SetFullVoltage(u_int16_t Voltage) { _fullVoltage = Voltage; }
+  void SetOverVoltage(u_int16_t Voltage) { _overVoltage = Voltage; }
+  u_int32_t GetChargeCurrent() {return _chargeCurrentmA; }
   void SetDischargeVoltage(uint32_t Voltage);
-  uint32_t GetBatteryCapacity() { return _battCapacity; }
-  uint32_t GetDischargeVoltage() { return _dischargeVoltage; }
-  uint32_t GetFullVoltage() { return _fullVoltage; }
+  void SetBattCapacity(uint32_t BattCapacity){_battCapacity = BattCapacity;} 
+  u_int32_t GetBatteryCapacity() { return _battCapacity; }
+  u_int32_t GetDischargeVoltage() { return _dischargeVoltage; }
+  u_int16_t GetFullVoltage() { return _fullVoltage; }
+  u_int16_t GetOverVoltage() { return _overVoltage; }
 
   bool ManualAllowCharge(){return _ManualAllowCharge;}
   bool ManualAllowDischarge(){return _ManualAllowDischarge;}
   void ManualAllowCharge(bool Value){if(Value != _ManualAllowCharge) {_ManualAllowCharge = Value; _dataChanged = true;} }
   void ManualAllowDischarge(bool Value){if(Value != _ManualAllowDischarge) {_ManualAllowDischarge = Value; _dataChanged = true;} }
+  bool AutoCharge(){return _useAutoCharge;}
+  void AutoCharge(bool Value) {_useAutoCharge = Value;}
+  uint32_t GetChargeAdjust() { return _chargeAdjust;}
   
   uint32_t GetDischargeCurrent() { return _dischargeCurrentmA; }
   uint32_t GetFailedTotalCount() { return _failedCanSendTotal; }
   uint32_t GetMaxChargeCurrent() { return _maxChargeCurrentmA; }
   uint32_t GetMaxDischargeCurrent() { return _maxDischargeCurrentmA; }
+  uint32_t GetChargeAdjustAmount() { return _chargeAdjust; }
   uint8_t GetLowSOCLimit() { return _lowSOCLimit; }
   void SetLowSOCLimit(uint8_t Limit) { _lowSOCLimit = Limit; }
   uint8_t GetHighSOCLimit() { return _highSOCLimit; }
@@ -185,7 +210,6 @@ public:
   void BattSOH(uint8_t soh){_battSOH = soh;}
   void BattCurrentmA(int32_t currentmA){_initialBattCurrent = true; _battCurrentmA = currentmA;}
   void BattTemp(int16_t batttemp){_battTemp = batttemp;}
-  void SetBattCapacity(uint32_t BattCapacity){_battCapacity = BattCapacity;} 
   void EnablePylonTech(bool State) {_enablePYLONTECH = State;} 
 
   uint8_t BattSOC(){return _battSOC;}

@@ -190,7 +190,7 @@ void mqttsetup() {
     sPass = wifiManager.GetMQTTPass();
     sTopic = wifiManager.GetMQTTTopic();
     sTopicData = wifiManager.GetMQTTTopic() + "/Data";
-    uint16_t mqttPort = (uint16_t) pref.getUInt(ccMQTTPort,mqttPort);
+    uint16_t mqttPort = (uint16_t) pref.getUInt16(ccMQTTPort,mqttPort);
     IPAddress _ip;
     bool useIP = false;
     

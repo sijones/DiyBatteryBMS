@@ -82,10 +82,10 @@ String generateDatatoJSON(bool All)
     doc["mqttclientid"] = wifiManager.GetMQTTClientID();
     doc["mqttserverip"] = wifiManager.GetMQTTServerIP();
     doc["mqttport"] = wifiManager.GetMQTTPort();
-    doc["victronrxpin"] = pref.getUInt(ccVictronRX,VEDIRECT_RX);
-    doc["victrontxpin"] = pref.getUInt(ccVictronTX,VEDIRECT_TX);
+    doc["victronrxpin"] = pref.getUInt8(ccVictronRX,VEDIRECT_RX);
+    doc["victrontxpin"] = pref.getUInt8(ccVictronTX,VEDIRECT_TX);
     doc["canbusenabled"] = Inverter.CANBusEnabled();
-    doc["canbuscspin"] = pref.getUInt(ccCanCSPin,CAN_BUS_CS_PIN);
+    doc["canbuscspin"] = pref.getUInt8(ccCanCSPin,CAN_BUS_CS_PIN);
     doc["pylontechenabled"] = Inverter.EnablePylonTech();
     doc["wifissid"] = wifiManager.GetWifiSSID();
     doc["wifipass"] = wifiManager.GetWifiPass();
@@ -105,25 +105,29 @@ String generateDatatoJSON(bool All)
     doc["lcdenabled"] = pref.getBool(ccLcdEnabled,false);
     doc["ntpserver"] = pref.getString(ccNTPServer,"");
     doc["fullvoltage"] = Inverter.GetFullVoltage();
+    doc["overvoltage"] = Inverter.GetOverVoltage();
+    doc["fanpin"] = pref.getUInt8(ccFanPin,0);
+    doc["onewirepin"] = pref.getUInt8(ccOneWirePin,0);
+    doc["autocharge"] = Inverter.AutoCharge();
   }
 
   doc["RealTime"] = true;
   doc["battsoc"] = Inverter.BattSOC();
   doc["battvoltage"] = Inverter.BattVoltage();
   doc["battcurrent"] = Inverter.BattCurrentmA();
+  doc["chargeadjust"] = Inverter.GetChargeAdjust();
   doc["chargeenabled"] = (Inverter.ChargeEnable() && Inverter.ManualAllowCharge()) ? true : false;
   doc["dischargeenabled"] = (Inverter.DischargeEnable() && Inverter.ManualAllowDischarge()) ? true : false;
   doc["forcecharge"] = Inverter.ForceCharge();
   doc["chargecurrent"] = Inverter.GetChargeCurrent();
   doc["dischargecurrent"] = Inverter.GetDischargeCurrent();
+  doc["chargeadjust"] = Inverter.GetChargeAdjustAmount();
   doc["totalheap"] = ESP.getHeapSize();
   doc["freeheap"] = ESP.getFreeHeap();
-  //
+  
   String outputJson;
-  //int b =serializeJson(doc, out);
   int b = serializeJson(doc, outputJson);
   return outputJson;
-
 }
 
 void notifyWSClients(bool sendalldata = true) {
@@ -172,13 +176,13 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
     else if (strncmp(data,"GetDischargeEnabled()",len)==0)
       wsclient->printf(GetWSDataJson((String) "dischargeenabled",(String) Inverter.DischargeEnable()));
     else if (strncmp(data,"GetCANCSPin()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "canbuscspin",(String) pref.getUInt(ccCanCSPin,0)));
+      wsclient->printf(GetWSDataJson((String) "canbuscspin",(String) pref.getUInt8(ccCanCSPin,0)));
     else if (strncmp(data,"GetVictronRXPin()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "victronrxpin",(String) pref.getUInt(ccVictronRX,0)));
+      wsclient->printf(GetWSDataJson((String) "victronrxpin",(String) pref.getUInt8(ccVictronRX,0)));
     else if (strncmp(data,"GetVictronTXPin()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "victrontxpin",(String) pref.getUInt(ccVictronTX,0)));
+      wsclient->printf(GetWSDataJson((String) "victrontxpin",(String) pref.getUInt8(ccVictronTX,0)));
     else if (strncmp(data,"GetPylontechEnabled()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "pylontechenabled",(String) pref.getUInt(ccPylonTech,0)));
+      wsclient->printf(GetWSDataJson((String) "pylontechenabled",(String) pref.getBool(ccPylonTech,false)));
     else 
       wsclient->printf("{\"ERROR\" : \"Unknown Get Request\"}");
     }
@@ -189,22 +193,32 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         deserializeJson(doc,data);
        // pref.begin(PREF_NAME);
       if (doc.containsKey("chargevoltage")) {
+        pref.putUInt32(ccChargeVolt,(uint32_t) doc["chargevoltage"]);
         Inverter.SetChargeVoltage((uint32_t) doc["chargevoltage"]); 
         handled = true;
         notifyWSClients(); }
       if (doc.containsKey("fullvoltage")) {
+        pref.putUInt32(ccFullVoltage,(uint32_t) doc["fullvoltage"]);
         Inverter.SetFullVoltage((uint32_t) doc["fullvoltage"]); 
         handled = true;
         notifyWSClients(); }
+      if (doc.containsKey("overvoltage")) {
+        pref.putUInt32(ccOverVoltage,(uint32_t) doc["overvoltage"]);
+        Inverter.SetOverVoltage((uint32_t) doc["overvoltage"]); 
+        handled = true;
+        notifyWSClients(); }
       if (doc.containsKey("dischargevoltage")) {
+        pref.putUInt32(ccDischargeVolt,(uint32_t) doc["dischargevoltage"]);
         Inverter.SetDischargeVoltage((uint32_t) doc["dischargevoltage"]); 
         handled = true;
         notifyWSClients(); }
       if (doc.containsKey("maxchargecurrent")) {
+        pref.putUInt32(ccChargeCurrent,(uint32_t) doc["maxchargecurrent"]);
         Inverter.SetMaxChargeCurrent((uint32_t) doc["maxchargecurrent"]); 
         handled = true;
         notifyWSClients(); }
       if (doc.containsKey("maxdischargecurrent")) {
+        pref.putUInt32(ccDischargeCurrent,(uint32_t) doc["maxdischargecurrent"]);
         Inverter.SetMaxDischargeCurrent((uint32_t) doc["maxdischargecurrent"]); 
         handled = true;
         notifyWSClients(); }
@@ -217,6 +231,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         notifyWSClients(); }
       if (doc.containsKey("batterycapacity")) {
+        pref.putUInt32(ccBattCapacity,(uint32_t) doc["batterycapacity"]);
         Inverter.SetBattCapacity((uint32_t) doc["batterycapacity"]);
         handled = true;
         notifyWSClients(); }
@@ -230,11 +245,13 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         notifyWSClients(); }
       // Low SOC OFF
       if (doc.containsKey("lowsoclimit")) {
+        pref.putUInt8(ccLowSOCLimit,(uint8_t) doc["lowsoclimit"]);
         Inverter.SetLowSOCLimit((uint8_t) doc["lowsoclimit"]);
         handled = true;
         notifyWSClients(); }
       // High SOC Limit
       if (doc.containsKey("highsoclimit")) {
+        pref.putUInt8(ccHighSOCLimit,(uint8_t) doc["highsoclimit"]);
         Inverter.SetHighSOCLimit((uint8_t) doc["highsoclimit"]);
         handled = true;
         notifyWSClients(); }
@@ -254,15 +271,15 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         notifyWSClients(); }
         
       if (doc.containsKey("canbuscspin")) {
-        pref.putUInt(ccCanCSPin, doc["canbuscspin"]);
+        pref.putUInt8(ccCanCSPin, (uint8_t) doc["canbuscspin"]);
         handled = true;
         notifyWSClients(); }
       if (doc.containsKey("victronrxpin")) {
-        pref.putUInt(ccVictronRX, doc["victronrxpin"]);
+        pref.putUInt8(ccVictronRX, (uint8_t) doc["victronrxpin"]);
         handled = true;
         notifyWSClients(); }
       if (doc.containsKey("victrontxpin")) {
-        pref.putUInt(ccVictronTX, doc["victrontxpin"]);
+        pref.putUInt8(ccVictronTX, (uint8_t) doc["victrontxpin"]);
         handled = true;
         notifyWSClients(); }
       if (doc.containsKey("wifissid")) {
@@ -326,26 +343,30 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       }
 
       if (doc.containsKey("slowchargesoc1")) {
-        uint8_t value = doc["slowchargesoc1"];
+        uint8_t value = (uint8_t) doc["slowchargesoc1"];
         handled = true;
+        pref.putUInt8(ccSlowSOCCharge1,value);
         Inverter.SetSlowChargeSOCLimit(1,value);
         notifyWSClients();
       }
       if (doc.containsKey("slowchargesoc1div")) {
-        uint8_t value = doc["slowchargesoc1div"];
+        uint8_t value = (uint8_t) doc["slowchargesoc1div"];
         handled = true;
+        pref.putUInt8(ccSlowSOCDivider1,value);
         Inverter.SetSlowChargeDivider(1,value);
         notifyWSClients();
       }
       if (doc.containsKey("slowchargesoc2")) {
-        uint8_t value = doc["slowchargesoc2"];
+        uint8_t value = (uint8_t) doc["slowchargesoc2"];
         handled = true;
+        pref.putUInt8(ccSlowSOCCharge2,value);
         Inverter.SetSlowChargeSOCLimit(2,value);
         notifyWSClients();
       }
       if (doc.containsKey("slowchargesoc2div")) {
-        uint8_t value = doc["slowchargesoc2div"];
+        uint8_t value = (uint8_t) doc["slowchargesoc2div"];
         handled = true;
+        pref.putUInt8(ccSlowSOCDivider2,value);
         Inverter.SetSlowChargeDivider(2,value);
         notifyWSClients();
       }
@@ -359,8 +380,8 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       if (doc.containsKey("velooptime")) {
         uint8_t value = doc["velooptime"];
         handled = true;
-        pref.putUInt(ccVELOOPTIME,VE_LOOP_TIME);
         VE_LOOP_TIME = value;
+        pref.putUInt8(ccVELOOPTIME,VE_LOOP_TIME);
         notifyWSClients();
       }
       
@@ -369,6 +390,30 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       handled = true;
       pref.putString(ccNTPServer,value);
       notifyWSClients();
+      }
+
+      if (doc.containsKey("fanpin")) {
+        uint8_t value = doc["fanpin"];
+        handled = true;
+        pref.putUInt8(ccFanPin,value);
+        if (!FAN_INIT)
+          FanInit(value);
+        notifyWSClients();
+      }
+
+      if (doc.containsKey("onewirepin")) {
+        uint8_t value = doc["onewirepin"];
+        handled = true;
+        pref.putUInt8(ccOneWirePin,value);
+        notifyWSClients();
+      }
+
+      if (doc.containsKey("autocharge")) {
+        bool value = doc["autocharge"];
+        handled = true;
+        Inverter.AutoCharge(value);
+        pref.putBool(ccAutoAdjustCharge,value);
+        notifyWSClients();
       }
 
       if (doc.containsKey("reboot")) {
@@ -390,30 +435,36 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       }    
       if (doc.containsKey("saveall")){
         if(doc["saveall"]){
-          pref.putUInt(ccChargeVolt,Inverter.GetChargeVoltage());
-          pref.putUInt(ccFullVoltage,Inverter.GetFullVoltage());
-          pref.putUInt(ccDischargeVolt,Inverter.GetDischargeVoltage());
-          pref.putUInt(ccChargeCurrent,Inverter.GetMaxChargeCurrent());
-          pref.putUInt(ccDischargeCurrent,Inverter.GetMaxDischargeCurrent());
-          pref.putUInt(ccBattCapacity,Inverter.GetBatteryCapacity());
-          pref.putUInt(ccLowSOCLimit,Inverter.GetLowSOCLimit());
-          pref.putUInt(ccHighSOCLimit,Inverter.GetHighSOCLimit());
-          pref.putUInt(ccSlowSOCCharge1,Inverter.GetSlowChargeSOCLimit(1));
-          pref.putUInt(ccSlowSOCCharge2,Inverter.GetSlowChargeSOCLimit(2));
-          pref.putUInt(ccSlowSOCDivider1,Inverter.GetSlowChargeDivider(1));
-          pref.putUInt(ccSlowSOCDivider2,Inverter.GetSlowChargeDivider(2));
+          pref.putUInt32(ccChargeCurrent,Inverter.GetMaxChargeCurrent());
+          pref.putUInt32(ccDischargeCurrent,Inverter.GetMaxDischargeCurrent());
+          pref.putUInt32(ccBattCapacity,Inverter.GetBatteryCapacity());
+          pref.putUInt8(ccLowSOCLimit,Inverter.GetLowSOCLimit());
+          pref.putUInt8(ccHighSOCLimit,Inverter.GetHighSOCLimit());
+          pref.putUInt8(ccSlowSOCCharge1,Inverter.GetSlowChargeSOCLimit(1));
+          pref.putUInt8(ccSlowSOCCharge2,Inverter.GetSlowChargeSOCLimit(2));
+          pref.putUInt8(ccSlowSOCDivider1,Inverter.GetSlowChargeDivider(1));
+          pref.putUInt8(ccSlowSOCDivider2,Inverter.GetSlowChargeDivider(2));
+          log_d("Save all completed.");
           handled = true;
         }
       }
 
       if (doc.containsKey("eraseall")){
         if(doc["eraseall"]){
-          pref.clear();
+          pref.clear(true);
           handled = true;
           ESP.restart();
         }
       }
       
+      if (doc.containsKey("erasekeepwifi")){
+        if(doc["erasekeepwifi"]){
+          pref.clear(false);
+          handled = true;
+          ESP.restart();
+        }
+      }
+
       if (!handled)
         wsclient->printf("{ \"Message\" : \"ERROR: Unknown Request\" }");
     }   
