@@ -1,3 +1,5 @@
+Latest source has a breaking change, the wifi and MQTT details are now stored in a seperate area of the NVS, so if using an older version on upgrade the details will need to be put back in using the AP setup method.
+
 This is the new V2 version of https://github.com/sijones/VE.DirectMQTTCANBUS, this will be the version for the future and is actively being developed.
 
 The new UI means no coding knowledge is required, just flash and set up.
