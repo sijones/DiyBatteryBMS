@@ -47,26 +47,27 @@ See the Wiki page
 ## Hardware Recommended
 esp32dev or the esp32plus
 
+Please use the recommended hardware, as a personal project it's difficult to support other configurations.
+
 Links:
-** Disclosure, these are affliate links which will give me some money if you buy using them - this will help fund further development **
 
 esp32dev
-https://amzn.to/3ypBQsv
+https://www.amazon.co.uk/gp/product/B0C9THDPXP/
 
 esp32plus
-https://amzn.to/3R43zWv
+https://www.amazon.co.uk/dp/B0BHZ8H6LM
 
 LCD
-https://amzn.to/3WDjRJb
+https://www.amazon.co.uk/dp/B07V5K3ZVB
 
 Isolated CAN Bus Adapter
-https://amzn.to/45fyzbE
+https://www.amazon.co.uk/Coolwell-Isolated-Expansion-Raspberry-SN65HVD230/dp/B0C7VX6G6P
 
 Non-Isolated Adapter - Does work and cheaper but can be blown if not careful.
-https://amzn.to/3VxEy8F
+https://www.amazon.co.uk/AZDelivery-MCP2515-Receiver-Development-Compatible/dp/B086TXSFD8/
 
 Victron Smart Shunt
-https://amzn.to/3JV64q7
+https://www.amazon.co.uk/Victron-Energy-SmartShunt-Battery-Bluetooth/dp/B0856PHNLX
 
 ## Disclaimer
 I WILL NOT BE HELD LIABLE FOR ANY DAMAGE THAT YOU DO TO YOU, ONE OF YOUR DEVICES, BURN YOUR HOUSE DOWN, ETC.
