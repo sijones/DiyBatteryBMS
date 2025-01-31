@@ -129,12 +129,44 @@ void onMqttConnect(bool sessionPresent) {
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
-    log_d("Disconnected from MQTT.");
-    Lcd.Data.MQTTConnected.setValue(false);
 
-    if (WiFi.isConnected()) {
-        xTimerStart(mqttReconnectTimer, 0);
-    }
+  switch (reason)
+  {
+    case AsyncMqttClientDisconnectReason::TCP_DISCONNECTED:
+      log_d("Disconnected from MQTT due to TCP Disconnection");
+      break;
+    case AsyncMqttClientDisconnectReason::ESP8266_NOT_ENOUGH_SPACE:
+      log_d("Disconnected from MQTT due to Not Enough Space");
+      break;
+    case AsyncMqttClientDisconnectReason::MQTT_IDENTIFIER_REJECTED:
+      log_d("Disconnected from MQTT, due to MQTT Identifier Rejected");
+      break;
+    case AsyncMqttClientDisconnectReason::MQTT_MALFORMED_CREDENTIALS:
+      log_d("Disconnected from MQTT, due to Malformed Credentials");
+      break;
+    case AsyncMqttClientDisconnectReason::MQTT_NOT_AUTHORIZED:
+      log_d("Disconnected from MQTT, due to Not Authorised");
+      break;
+    case AsyncMqttClientDisconnectReason::MQTT_SERVER_UNAVAILABLE:
+      log_d("Disconnected from MQTT, due to Server Unavailable");
+      break;
+    case AsyncMqttClientDisconnectReason::MQTT_UNACCEPTABLE_PROTOCOL_VERSION:
+      log_d("Disconnected from MQTT, Unacceptable Protocol Version");
+      break;
+    case AsyncMqttClientDisconnectReason::TLS_BAD_FINGERPRINT:
+      log_d("Disconnected from MQTT, due to Bad TLS Fingerprint");
+      break;
+    default:
+      log_d("Disconnected from MQTT for Unknown Reason");
+      break;
+  }
+
+  Lcd.Data.MQTTConnected.setValue(false);
+
+  if (WiFi.isConnected()) {
+      xTimerStart(mqttReconnectTimer, 0);
+  }
+
 }
 
 void onMqttSubscribe(uint16_t packetId, uint8_t qos) {

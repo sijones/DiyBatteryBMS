@@ -5,12 +5,12 @@
 bool WifiMQTTManagerClass::begin()
 {
     m_pref.begin("network");
-    log_d("Getting all values from EEPROM");
+    log_d("Attempting to get WiFi/MQTT details from NVS");
 
     _wifiSSID = m_pref.getString(ccWifiSSID,_wifiSSID);
     _wifiPass = m_pref.getString(ccWifiPass,_wifiPass);
 
-    log_d("Wifi SSID: %s, Password: %s",_wifiSSID,_wifiPass);
+    log_d("Wifi SSID: %s, Password Length: %i",_wifiSSID,_wifiPass.length());
 
     if(!m_pref.isKey(ccWifiHostName))
         m_pref.putString(ccWifiHostName, _wifiHostName);
