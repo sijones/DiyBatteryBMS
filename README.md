@@ -1,4 +1,6 @@
-Latest source has a breaking change, the wifi and MQTT details are now stored in a seperate area of the NVS, so if using an older version on upgrade the details will need to be put back in using the AP setup method.
+Latest source has a breaking change (Jan 2025), the wifi and MQTT details are now stored in a seperate area of the NVS, so if using an older version on upgrade the details will need to be put back in using the AP setup method.
+
+Please also note, this is a hobby project and I add features as and when I have time, it means sometimes it's not updated for a while and then sometimes I add a number of features!
 
 This is the new V2 version of https://github.com/sijones/VE.DirectMQTTCANBUS, this will be the version for the future and is actively being developed.
 
@@ -15,8 +17,6 @@ The data is also sent over MQTT and allows commands to be sent back to control C
 This software uses a ESP32 developers board with a MCP2515 Can Bus adapter currently developed using Visual Studio code.
 
 See the WIKI for more detailed documentation.
-
-The software sends the data in Pylontech Protocol, most inverters should support this.
 
 - See also: https://www.victronenergy.com/live/vedirect_protocol:faq
 
