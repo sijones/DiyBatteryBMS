@@ -72,6 +72,9 @@ String generateDatatoJSON(bool All)
     doc["dischargevoltage"] = Inverter.GetDischargeVoltage();
     doc["maxchargecurrent"] = Inverter.GetMaxChargeCurrent();
     doc["maxdischargecurrent"] = Inverter.GetMaxDischargeCurrent();
+    doc["minchargecur"] = Inverter.MinChargeCurrent();
+    doc["adjuststep"] = pref.getUInt16(ccAdjustStep,initAdjustStep);
+    doc["minchargecurr"] = pref.getUInt32(ccMinCharge,initMinChargeCurrent);
     doc["lowsoclimit"] = Inverter.GetLowSOCLimit();
     doc["highsoclimit"] = Inverter.GetHighSOCLimit();
     doc["batterycapacity"] = Inverter.GetBatteryCapacity();
@@ -121,7 +124,7 @@ String generateDatatoJSON(bool All)
   doc["forcecharge"] = Inverter.ForceCharge();
   doc["chargecurrent"] = Inverter.GetChargeCurrent();
   doc["dischargecurrent"] = Inverter.GetDischargeCurrent();
-  doc["chargeadjust"] = Inverter.GetChargeAdjustAmount();
+  doc["chargeadjust"] = Inverter.GetChargeAdjust();
   doc["totalheap"] = ESP.getHeapSize();
   doc["freeheap"] = ESP.getFreeHeap();
   
@@ -258,6 +261,18 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       if (doc.containsKey("canbusenabled")) {
         pref.putBool(ccCANBusEnabled, doc["canbusenabled"]);
         Inverter.CANBusEnabled(doc["canbusenabled"]);
+        handled = true;
+        notifyWSClients(); }
+
+      if (doc.containsKey("adjuststep")) {
+        pref.putUInt16(ccAdjustStep, doc["adjuststep"]);
+        Inverter.SetChargeStepAdjust(doc["adjuststep"]);
+        handled = true;
+        notifyWSClients(); }
+
+      if (doc.containsKey("minchargecurr")) {
+        pref.putUInt32(ccMinCharge, doc["minchargecurr"]);
+        Inverter.MinChargeCurrent(doc["minchargecurr"]);
         handled = true;
         notifyWSClients(); }
 

@@ -132,6 +132,26 @@
                 </div>
               </div>
             
+              <!-- Smart charge settings area      -->
+              <div class="row">
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                    <div class="p-2 w-100 bd-highlight"><label for="adjuststep" class="label">Charge Adjust Step (mA): </label></div>
+                    <div class="p-2 flex-shrink-1 bd-highlight">
+                      <input class="form-control" type="number" id="adjuststep" onblur="SendJSONUpdate('adjuststep')"></div>
+                  </div>
+                </div>
+                <div class="col-sm-6">
+                  <div class="d-flex bd-highlight">
+                  <div class="p-2 w-100 bd-highlight"><label for="minchargecurr" class="label">Min Charge (mA): </label></div>
+                  <div class="p-2 flex-shrink-1 bd-highlight">
+                    <input class="form-control" type="number" id="minchargecurr" onblur="SendJSONUpdate('minchargecurr')"></div>
+                </div>
+                </div>
+              </div>
+
+              <!-- End of smart charge settings    -->
+
               <div class="row">
                 <div class="col-sm-6">
                   <div class="d-flex bd-highlight">
@@ -259,16 +279,17 @@
                 <div class="p-2 flex-shrink-1 bd-highlight">
                   <input class="form-control" type="number" id="fanpin" onblur="SendJSONUpdate('fanpin')"></div>
               </div>
-              </div>
+            </div>
   
-              <div class="col-sm-6">
+            <!--   <div class="col-sm-6">
                 <div class="d-flex bd-highlight">
                 <div class="p-2 w-100 bd-highlight"><label for="onewirepin" class="label">OneWire Pin:</label></div>
                 <div class="p-2 flex-shrink-1 bd-highlight">
                   <input class="form-control" type="number" id="onewirepin" onblur="SendJSONUpdate('onewirepin')"></div>
               </div>
-              </div>
+              </div> -->
             </div>
+            
 
             <div class="row">
               <div class="col-sm-6">
@@ -426,6 +447,8 @@
       {
         if(obj.hasOwnProperty('chargevoltage')) document.getElementById('chargevoltage').value=obj.chargevoltage;
         if(obj.hasOwnProperty('fullvoltage')) document.getElementById('fullvoltage').value=obj.fullvoltage;
+        if(obj.hasOwnProperty('minchargecurr')) document.getElementById('minchargecurr').value=obj.minchargecurr;
+        if(obj.hasOwnProperty('adjuststep')) document.getElementById('adjuststep').value=obj.adjuststep;
         if(obj.hasOwnProperty('overvoltage')) document.getElementById('overvoltage').value=obj.overvoltage;
         if(obj.hasOwnProperty('dischargevoltage')) document.getElementById('dischargevoltage').value=obj.dischargevoltage;
         if(obj.hasOwnProperty('maxchargecurrent')) document.getElementById('maxchargecurrent').value=obj.maxchargecurrent;

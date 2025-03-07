@@ -85,15 +85,15 @@ bool CANBUS::SendAllUpdates()
    // }
    // Check Auto charge settings are setup
     if (!_enableAutoCharge){
-      if(_overVoltage > 0 && _fullVoltage > 0) _enableAutoCharge = true;
+      if(_overVoltage > 0 && _fullVoltage > 0 && _adjustStep > 0 && _minChargeCurrent > 0) _enableAutoCharge = true;
     }
-    uint16_t _adjustStep = 2000;
+
     uint16_t _tempOverVoltage = (_overVoltage * 0.1);
     uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
     // By default we want to be charging
     bool _tempChargeEnabled = true;
     // Track Charging / Discharging
-    bool BatteryCharging = (_battCurrentmA >= 2000) ? true : false;
+    bool BatteryCharging = (_battCurrentmA >= 5) ? true : false;
     // New Charge Current
     uint32_t _tempChargingCurrent;
 
@@ -103,22 +103,31 @@ bool CANBUS::SendAllUpdates()
       // Initial Calcuation
       if(_slowchargeSOC[1] > 0 && _battSOC >= _slowchargeSOC[1] && _slowchargeSOCdiv[1] > 0) {
         _tempChargingCurrent = (_battCapacity / _slowchargeSOCdiv[1]); 
-        _chargeAdjust = 0;
-        }
+        ChargingState = Level2;
+      }
       else if(_slowchargeSOC[0] > 0 && _battSOC >= _slowchargeSOC[0] && _slowchargeSOCdiv[0] > 0) {
         _tempChargingCurrent = (_battCapacity / _slowchargeSOCdiv[0]);
-        _chargeAdjust = 0;
+        ChargingState = Level1;
       }
       else // If no limits set or not hit a limit
+      {
+        ChargingState = Bulk;
         _tempChargingCurrent = _maxChargeCurrentmA;
-  
+      }
+
+      if(ChargingState != PrevChargingState){
+        PrevChargingState = ChargingState;
+        _chargeAdjust = 0;
+      }
+
       if(_useAutoCharge && _enableAutoCharge) 
       {
           // Calculate if an adjust is required
           if(BatteryCharging && (_battVoltage > _tempFullVoltage)) {
-            if(_chargeAdjust < (_tempChargingCurrent - _minChargeCurrent) ) {
-              _chargeAdjust=(_chargeAdjust+_adjustStep);
-              log_d("Charge Current %i and Adjustment is: %i",_tempChargingCurrent,_chargeAdjust);
+            //   25                   22                2               4 / 6
+            if(((_tempChargingCurrent-_chargeAdjust) + _adjustStep) > (_minChargeCurrent+_adjustStep)) {
+              _chargeAdjust+=_adjustStep;
+              log_d("Decrease Charge Current %i and Adjustment is: %i",_tempChargingCurrent,_chargeAdjust);
             } else {
               // Stop charging if no more adjustment available
               ChargeEnable(false);
@@ -127,22 +136,27 @@ bool CANBUS::SendAllUpdates()
           } 
           else
           {
-            if (BatteryCharging && (_battVoltage < _tempFullVoltage-30 && _chargeAdjust > 0)) {
+            if (BatteryCharging && _battVoltage < (_tempFullVoltage-30) && _chargeAdjust > 0) {
               if(_chargeAdjust>=_adjustStep) {
-                _chargeAdjust = (_chargeAdjust-_adjustStep); 
-                log_d("Charge Current %i and Adjustment is: %i",_tempChargingCurrent,_chargeAdjust);
+                _chargeAdjust-=_adjustStep;
+                if (_chargeAdjust<0) _chargeAdjust = 0;
+                log_d("Increase Charge Current %i and Adjustment is: %i",_tempChargingCurrent,_chargeAdjust);
               }
-            } else if (_battVoltage < (_tempFullVoltage-20) && _chargeEnabled == false) {
-              // Start charging if battery voltage under full voltage by 200mV
+            } else if (_battVoltage < (_tempFullVoltage-50) && _chargeEnabled == false && _battSOC <= 97) {
+              // Start charging if battery voltage under full voltage by 500mV
               ChargeEnable(true);
               log_d("Charging Reenabled by Charge Adjustment");
             }
           }
       } // End of Auto Charge Logic
 
-      // Check the charge current has changed and if so set it.
       _tempChargingCurrent=(_tempChargingCurrent-_chargeAdjust);
-      if (_tempChargingCurrent != _chargeCurrentmA)
+      // Here we check we dont go under the min charge
+      if(_tempChargingCurrent < _minChargeCurrent)
+        _tempChargingCurrent = _minChargeCurrent;
+
+      // Check the charge current has changed and if so set it.
+      if (_tempChargingCurrent != GetChargeCurrent())
         SetChargeCurrent(_tempChargingCurrent);
     }
     
@@ -164,7 +178,7 @@ bool CANBUS::SendAllUpdates()
       _tempChargeEnabled = false;
     }
     // If Battery Voltage is over "Battery Over Voltage" then stop charging.
-    if ((_overVoltage > _dischargeVoltage && _battVoltage > _tempOverVoltage))
+    if ((_overVoltage > _dischargeVoltage && _battVoltage >= _tempOverVoltage))
       _tempChargeEnabled = false;
       
     if(_tempChargeEnabled != _chargeEnabled)

@@ -36,6 +36,9 @@
 #define initSlowSOCCharge2 100
 #define initSlowSOCDivider1 0
 #define initSlowSOCDivider2 0
+#define initAdjustStep 0                  // If smart charging this is the amount the current is changed by in each step
+#define initMinChargeCurrent 0            // Minimum supported charging current, Inverter dependant.
+#define initMinDischargeCurrent 0         // Minimum supported discharging current
 
 // To use strict PYLONTECH Protocol enable below
 //#define USE_PYLONTECH

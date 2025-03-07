@@ -96,6 +96,8 @@ void setup()
     pref.putUInt16(ccChargeVolt, initBattChargeVoltage);
     pref.putUInt16(ccFullVoltage,initBattFullVoltage);
     pref.putUInt16(ccOverVoltage, initBattOverVoltage);
+    pref.getUInt16(ccAdjustStep,initAdjustStep);
+    pref.getUInt32(ccMinCharge,initMinChargeCurrent);
     pref.putUInt32(ccChargeCurrent, initBattChargeCurrent);
     pref.putUInt32(ccDischargeVolt, initBattDischargeVoltage);
     pref.putUInt32(ccDischargeCurrent, initBattDischargeCurrent);
@@ -117,8 +119,8 @@ void setup()
     pref.putBool("EEPROMSetup", true);
   }
   else {
-      log_d("EEPROM Store opened, initial key found.");
-      log_d("EEPROM has free entries of: %i",pref.freeentries());
+      log_d("NVS Store opened, initial key found.");
+      log_d("NVS has free entries of: %i",pref.freeentries());
   }
 
 
@@ -131,11 +133,14 @@ void setup()
   // Setup FAN, will only complete if a PIN number is assigned.
   FanInit(pref.getUInt8(ccFanPin,0));
 
+  // Setup LCD Screen if Enabled
   if(pref.getBool(ccLcdEnabled,false)) {
     Wire.begin();
     Lcd.Begin(Lcd.LCD2004);
     Lcd.SetScreen(Lcd.StartUp);
   }
+
+  //if(pref.getBool())
 
   // #ifdef USE_OTA
   // OTA_WAIT_TIME = pref.getInt("OTA_WAIT_TIME", OTA_WAIT_TIME);
@@ -171,6 +176,8 @@ void setup()
     Inverter.SetChargeVoltage((u_int16_t) pref.getUInt32(ccChargeVolt, initBattChargeVoltage));
     Inverter.SetFullVoltage((u_int16_t) pref.getUInt32(ccFullVoltage, initBattFullVoltage));
     Inverter.SetOverVoltage((u_int16_t) pref.getUInt32(ccOverVoltage, initBattOverVoltage));
+    Inverter.SetChargeStepAdjust(pref.getUInt16(ccAdjustStep,initAdjustStep));
+    Inverter.MinChargeCurrent(pref.getUInt32(ccMinCharge,initMinChargeCurrent));
     Inverter.SetMaxChargeCurrent(pref.getUInt32(ccChargeCurrent, initBattChargeCurrent));
     Inverter.SetDischargeVoltage(pref.getUInt32(ccDischargeVolt, initBattDischargeVoltage));
     Inverter.SetMaxDischargeCurrent(pref.getUInt32(ccDischargeCurrent, initBattDischargeCurrent));
@@ -192,7 +199,7 @@ void setup()
   }
 
   SendCanBusMQTTUpdates = millis();
-  //ve.begin();
+  
   Lcd.UpdateScreenValues();
 
   xTaskCreate(&taskStartWebServices,"taskStartWebServices",4096, NULL, 6, NULL);
@@ -210,10 +217,6 @@ void setup()
 
 void loop()
 {
-
-#ifdef M5STACK
-  M5.update();
-#endif
 
   time_t t = time(nullptr);
  

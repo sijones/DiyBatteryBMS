@@ -1,12 +1,12 @@
 /*
 PYLON Protocol, messages sent every 1 second.
 
-0x351 – 14 02 74 0E 74 0E CC 01 – Battery voltage + current limits
-0x355 – 1A 00 64 00 – State of Health (SOH) / State of Charge (SOC)
-0x356 – 4e 13 02 03 04 05 – Voltage / Current / Temp
-0x359 – 00 00 00 00 0A 50 4E – Protection & Alarm flags
-0x35C – C0 00 – Battery charge request flags
-0x35E – 50 59 4C 4F 4E 20 20 20 – Manufacturer name (“PYLON   “)
+0x35E – 50 59 4C 4F 4E 20 20 20 – Manufacturer name (“PYLON   “) (8 bytes)
+0x351 – 14 02 74 0E 74 0E CC 01 – Battery voltage + current limits (8 bytes)
+0x355 – 1A 00 64 00 – State of Health (SOH) / State of Charge (SOC) (4 bytes)
+0x356 – 4e 13 02 03 04 05 – Voltage / Current / Temp (6 bytes)
+0x359 – 00 00 00 00 0A 50 4E – Protection & Alarm flags (7 bytes)
+0x35C – C0 00 – Battery charge request flags (2 bytes)
 
 */
 
@@ -29,10 +29,6 @@ MCP_CAN *CAN;
 uint8_t CAN_MSG[8];
 uint8_t MSG_PYLON[8] = {0x50,0x59,0x4C,0x4F,0x4E,0x20,0x20,0x20};
 
-    /*
-    uint8_t lowByte;
-    uint8_t highByte;
-    */
 bool _canbusEnabled = true;
 bool _initialised = false;
 bool _enablePYLONTECH = false;
@@ -43,8 +39,10 @@ bool _dataChanged = false;
 bool _useAutoCharge = true;
 bool _enableAutoCharge = false;
 
-uint8_t _canSendDelay = 5;
+uint8_t _canSendDelay = 10;
 
+int ChargingState = Bulk;
+int PrevChargingState = Bulk;
 
 enum Charging {
   bmsForceCharge = 8,
@@ -77,11 +75,12 @@ volatile uint32_t _dischargeVoltage = 0;
 volatile uint16_t _fullVoltage = 0;
 volatile uint16_t _overVoltage = 0;
   // Dynamically set limits for charge/discharge
+uint16_t _adjustStep = 2000;
 volatile uint32_t _chargeCurrentmA = 0;
 volatile uint32_t _dischargeCurrentmA = 0;
 volatile uint32_t _chargeAdjust = 0;
 uint32_t _dischargeAdjust = 0;
-uint32_t _minChargeCurrent = 6000;
+uint32_t _minChargeCurrent = 4000;
 uint32_t _minDischargeCurrent = 20000;
 
   // Max Current Limits for Inverter.
@@ -112,11 +111,10 @@ uint32_t _failedCanSendTotal = -1;
    these Varibles are used to feed the 
    json sent to the webpage for debugging */
 
-  uint16_t _tempChargeVolt;
-  uint16_t _tempDisCharVolt; 
-  uint16_t _tempChargeCurr;  
-  uint16_t _tempDisChargeCurr;
-
+uint16_t _tempChargeVolt;
+uint16_t _tempDisCharVolt; 
+uint16_t _tempChargeCurr;  
+uint16_t _tempDisChargeCurr;
 
 uint32_t LoopTimer; // store current time
 // The interval for sending the inverter updated information
@@ -140,6 +138,12 @@ public:
   bool CanBusAvailable = false;
   bool CanBusDataOK = false;
 
+  enum ChargingStates {
+    Bulk,
+    Level1,
+    Level2
+  };
+
   enum Command
   {
     ChargeDischargeLimits = 0x351,
@@ -157,20 +161,20 @@ public:
   bool SendCANData();
   bool DataChanged();
   void SetChargeVoltage(uint16_t Voltage);
-  u_int16_t GetChargeVoltage() {return _chargeVoltage; }
+  uint16_t GetChargeVoltage() {return _chargeVoltage; }
   void SetChargeCurrent(uint32_t CurrentmA);
   void SetDischargeCurrent(uint32_t CurrentmA);
   void SetMaxChargeCurrent(uint32_t CurrentmA) {_initialChargeCurrent = true; _maxChargeCurrentmA = CurrentmA;}
   void SetMaxDischargeCurrent(uint32_t CurrentmA) {_initialDischargeCurrent = true; _maxDischargeCurrentmA = CurrentmA;}
-  void SetFullVoltage(u_int16_t Voltage) { _fullVoltage = Voltage; }
-  void SetOverVoltage(u_int16_t Voltage) { _overVoltage = Voltage; }
-  u_int32_t GetChargeCurrent() {return _chargeCurrentmA; }
+  void SetFullVoltage(uint16_t Voltage) { _fullVoltage = Voltage; }
+  void SetOverVoltage(uint16_t Voltage) { _overVoltage = Voltage; }
+  uint32_t GetChargeCurrent() {return _chargeCurrentmA; }
   void SetDischargeVoltage(uint32_t Voltage);
   void SetBattCapacity(uint32_t BattCapacity){_battCapacity = BattCapacity;} 
-  u_int32_t GetBatteryCapacity() { return _battCapacity; }
-  u_int32_t GetDischargeVoltage() { return _dischargeVoltage; }
-  u_int16_t GetFullVoltage() { return _fullVoltage; }
-  u_int16_t GetOverVoltage() { return _overVoltage; }
+  uint32_t GetBatteryCapacity() { return _battCapacity; }
+  uint32_t GetDischargeVoltage() { return _dischargeVoltage; }
+  uint16_t GetFullVoltage() { return _fullVoltage; }
+  uint16_t GetOverVoltage() { return _overVoltage; }
 
   bool ManualAllowCharge(){return _ManualAllowCharge;}
   bool ManualAllowDischarge(){return _ManualAllowDischarge;}
@@ -178,13 +182,16 @@ public:
   void ManualAllowDischarge(bool Value){if(Value != _ManualAllowDischarge) {_ManualAllowDischarge = Value; _dataChanged = true;} }
   bool AutoCharge(){return _useAutoCharge;}
   void AutoCharge(bool Value) {_useAutoCharge = Value;}
+
   uint32_t GetChargeAdjust() { return _chargeAdjust;}
-  
+  void     SetChargeStepAdjust(uint16_t Value) {_adjustStep = Value;}
+  uint32_t MinChargeCurrent() { return _minChargeCurrent;}
+  void     MinChargeCurrent(uint32_t Value) { _minChargeCurrent = Value;}
+
   uint32_t GetDischargeCurrent() { return _dischargeCurrentmA; }
   uint32_t GetFailedTotalCount() { return _failedCanSendTotal; }
   uint32_t GetMaxChargeCurrent() { return _maxChargeCurrentmA; }
   uint32_t GetMaxDischargeCurrent() { return _maxDischargeCurrentmA; }
-  uint32_t GetChargeAdjustAmount() { return _chargeAdjust; }
   uint8_t GetLowSOCLimit() { return _lowSOCLimit; }
   void SetLowSOCLimit(uint8_t Limit) { _lowSOCLimit = Limit; }
   uint8_t GetHighSOCLimit() { return _highSOCLimit; }

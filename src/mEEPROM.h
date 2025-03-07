@@ -45,6 +45,9 @@ const char* const ccCanCSPin = "CAN_CS_PIN";
 const char* const ccOneWirePin = "onewirepin";
 const char* const ccFanPin = "fanpin";
 const char* const ccAutoAdjustCharge = "AutoAdjust";
+const char* const ccAdjustStep = "AdjustStep";
+const char* const ccMinCharge = "MinCharge";
+const char* const ccMinDischarge = "MinDischarge";
 
 const char* const ccVELOOPTIME = "VE_LOOP_TIME";
 const char* const ccCANBusEnabled  = "CANEnabled";
