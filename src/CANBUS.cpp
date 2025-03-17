@@ -19,6 +19,7 @@ void canSendTask(void * pointer){
 
   CANBUS *Inverter = (CANBUS *) pointer;
   log_i("Starting CAN Bus send task");
+
   for (;;) {
 //    taskENTER_CRITICAL(&CanMutex);
     if(!Inverter->SendAllUpdates())
@@ -58,6 +59,8 @@ bool CANBUS::Begin(uint8_t _CS_PIN) {
     _initialised = false;
     return false;
   }
+  
+  _lastChangeInterval = time(nullptr);
 
   return true;
 }
@@ -79,6 +82,9 @@ bool CANBUS::SendAllUpdates()
 
   if (Initialised() && Configured())
     {
+    
+    time_t t = time(nullptr);
+
     // Turn off force charge, this is defined in PylonTech Protocol
    // if (_battSOC > 96 && _forceCharge){
    //   ForceCharge(false);
@@ -123,7 +129,8 @@ bool CANBUS::SendAllUpdates()
       if(_useAutoCharge && _enableAutoCharge) 
       {
           // Calculate if an adjust is required
-          if(BatteryCharging && (_battVoltage > _tempFullVoltage)) {
+          if(BatteryCharging && (_battVoltage > _tempFullVoltage) &&  (abs(t - _lastChangeInterval) >= SMARTINTERVAL) ) {
+            _lastChangeInterval = t;
             //   25                   22                2               4 / 6
             if(((_tempChargingCurrent-_chargeAdjust) + _adjustStep) > (_minChargeCurrent+_adjustStep)) {
               _chargeAdjust+=_adjustStep;

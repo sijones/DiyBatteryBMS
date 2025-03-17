@@ -110,6 +110,7 @@ void setup()
     pref.putUInt8(ccBattCapacity, initBattCapacity);
     pref.putBool(ccPylonTech, false);
     pref.putBool(ccAutoAdjustCharge, true);
+    pref.putUInt8(ccSmartInterval,initSmartInterval);
     pref.putUInt8("VE_WAIT_TIME", VE_WAIT_TIME);
     pref.putUInt8("VE_STARTUP_TIME", VE_STARTUP_TIME);
     pref.putUInt8("VE_LCD_REFRESH", VE_LCD_REFRESH);
@@ -190,6 +191,7 @@ void setup()
     Inverter.SetSlowChargeSOCLimit(1, pref.getUInt8(ccSlowSOCCharge1, initSlowSOCCharge1));
     Inverter.SetSlowChargeSOCLimit(2, pref.getUInt8(ccSlowSOCCharge2, initSlowSOCCharge2));
     Inverter.AutoCharge(pref.getBool(ccAutoAdjustCharge, true));
+    Inverter.SmartInterval(pref.getUInt8(ccSmartInterval,initSmartInterval));
     Inverter.StartRunTask();
   }
   else

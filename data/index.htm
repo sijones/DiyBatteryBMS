@@ -222,6 +222,13 @@
                   <input class="form-check-input" type="checkbox" id="autocharge" onclick="SendJSONUpdate('autocharge')"></div>
               </div>
               </div>
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                  <div class="p-2 w-100 bd-highlight"><label for="smartinterval" class="label">Smart Interval (seconds)</label></div>
+                  <div class="p-2 flex-shrink-1 bd-highlight">
+                  <input class="form-control" type="number" id="smartinterval" onblur="SendJSONUpdate('smartinterval')"></div>
+                </div>
+              </div>
             </div>
 
           <p>
@@ -449,6 +456,7 @@
         if(obj.hasOwnProperty('fullvoltage')) document.getElementById('fullvoltage').value=obj.fullvoltage;
         if(obj.hasOwnProperty('minchargecurr')) document.getElementById('minchargecurr').value=obj.minchargecurr;
         if(obj.hasOwnProperty('adjuststep')) document.getElementById('adjuststep').value=obj.adjuststep;
+        if(obj.hasOwnProperty('smartinterval')) document.getElementById('smartinterval').value=obj.smartinterval;
         if(obj.hasOwnProperty('overvoltage')) document.getElementById('overvoltage').value=obj.overvoltage;
         if(obj.hasOwnProperty('dischargevoltage')) document.getElementById('dischargevoltage').value=obj.dischargevoltage;
         if(obj.hasOwnProperty('maxchargecurrent')) document.getElementById('maxchargecurrent').value=obj.maxchargecurrent;

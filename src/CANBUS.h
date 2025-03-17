@@ -120,6 +120,11 @@ uint32_t LoopTimer; // store current time
 // The interval for sending the inverter updated information
 // Normally around 5 seconds is ok, but for Pylontech protocol it's around every second.
 uint16_t _CanBusSendInterval = 1000; 
+
+// How long between change of charge current before making another change in seconds.
+time_t _lastChangeInterval;
+uint8_t SMARTINTERVAL = 2;
+
 // Task Handle
 TaskHandle_t tHandle = NULL;
 
@@ -176,6 +181,9 @@ public:
   uint16_t GetFullVoltage() { return _fullVoltage; }
   uint16_t GetOverVoltage() { return _overVoltage; }
 
+  uint8_t SmartInterval() { return SMARTINTERVAL; }
+  void SmartInterval(uint8_t Value) { SMARTINTERVAL = Value; }
+
   bool ManualAllowCharge(){return _ManualAllowCharge;}
   bool ManualAllowDischarge(){return _ManualAllowDischarge;}
   void ManualAllowCharge(bool Value){if(Value != _ManualAllowCharge) {_ManualAllowCharge = Value; _dataChanged = true;} }
@@ -228,7 +236,6 @@ public:
   bool ChargeEnable(){return _chargeEnabled;}
   bool DischargeEnable(){return _dischargeEnabled;}
   bool EnablePylonTech(){return _enablePYLONTECH;}
-  bool CanBusFailed(){
-    return (_failedCanSendCount > _maxFailedCanSendCount || !_initialised); }
+  bool CanBusFailed(){return (_failedCanSendCount > _maxFailedCanSendCount || !_initialised); }
 
 }; // End of Class

@@ -112,6 +112,7 @@ String generateDatatoJSON(bool All)
     doc["fanpin"] = pref.getUInt8(ccFanPin,0);
     doc["onewirepin"] = pref.getUInt8(ccOneWirePin,0);
     doc["autocharge"] = Inverter.AutoCharge();
+    doc["smartinterval"] = Inverter.SmartInterval();
   }
 
   doc["RealTime"] = true;
@@ -428,6 +429,14 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         Inverter.AutoCharge(value);
         pref.putBool(ccAutoAdjustCharge,value);
+        notifyWSClients();
+      }
+
+      if (doc.containsKey("smartinterval")) {
+        uint8_t value = (uint8_t) doc["smartinterval"];
+        handled = true;
+        pref.putUInt8(ccSmartInterval,value);
+        Inverter.SmartInterval(value);
         notifyWSClients();
       }
 
