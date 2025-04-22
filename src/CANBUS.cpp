@@ -48,7 +48,16 @@ bool CANBUS::Begin(uint8_t _CS_PIN) {
   {
     // Change to normal mode to allow messages to be transmitted
     CAN->setMode(MCP_NORMAL);  
-    log_i("CAN Bus initialised");
+    log_i("CAN Bus initialised at 8Mhz");
+    _initialised = true;
+    CanBusAvailable = true;
+    _failedCanSendTotal = 0;   
+  }
+  else if (CAN->begin(MCP_ANY, CAN_500KBPS, MCP_16MHZ) == CAN_OK) 
+  {
+    // Change to normal mode to allow messages to be transmitted
+    CAN->setMode(MCP_NORMAL);  
+    log_i("CAN Bus initialised at 16Mhz");
     _initialised = true;
     CanBusAvailable = true;
     _failedCanSendTotal = 0;   
