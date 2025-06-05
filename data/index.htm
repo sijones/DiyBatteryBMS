@@ -219,7 +219,7 @@
                 <div class="d-flex bd-highlight">
                 <div class="p-2 w-100 bd-highlight form-check form-switch"><label for="autocharge" class="form-check-label">Smart Adjust Enabled:</label></div>
                 <div class="p-2 flex-shrink-1 bd-highlight form-check form-switch">
-                  <input class="form-check-input" type="checkbox" id="autocharge" onclick="SendJSONUpdate('autocharge')"></div>
+                  <input class="form-check-input" type="checkbox" id="autocharge" onchange="SendJSONUpdate('autocharge')"></div>
               </div>
               </div>
               <div class="col-sm-6">
@@ -231,10 +231,22 @@
               </div>
             </div>
 
+            <div class="row">
+              <div class="col-sm-6">
+                <div class="d-flex bd-highlight">
+                <div class="p-2 w-100 bd-highlight form-check form-switch"><label for="can16mhz" class="form-check-label">Force MCP 16Mhz:</label></div>
+                <div class="p-2 flex-shrink-1 bd-highlight form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="can16mhz" onchange="SendJSONUpdate('can16mhz')"></div>
+              </div>
+              </div>
+              
+            </div>
+
           <p>
             <div>
               <button type="button" class="btn btn-success pull-right" id="SavetoEEPROM" onclick="saveAll();">Save to EEPROM</button>
               <button type="button" class="btn btn-warning pull-right" id="FactoryReset" onclick="eraseAll();">Factory Reset</button>
+              <button type="button" class="btn btn-danger pull-right" id="Reboot" onclick="rebootBMS();">Reboot & Apply</button>
             </div>
           </p>
           </div> <!-- End of BMS Content -->
@@ -247,7 +259,7 @@
                 <div class="d-flex bd-highlight">
                 <div class="p-2 w-100 bd-highlight form-check form-switch"><label for="canbusenabled" class="form-check-label">CAN Bus Enabled:</label></div>
                 <div class="p-2 flex-shrink-1 bd-highlight form-check form-switch">
-                  <input class="form-check-input" type="checkbox" id="canbusenabled" onclick="SendJSONUpdate('canbusenabled')"></div>
+                  <input class="form-check-input" type="checkbox" id="canbusenabled" onchange="SendJSONUpdate('canbusenabled')"></div>
                 </div>
               </div>
             </div>
@@ -303,7 +315,7 @@
                 <div class="d-flex bd-highlight">
                 <div class="p-2 w-100 bd-highlight form-check form-switch"><label for="pylontechenabled" class="form-check-label">PylonTech Protocol Enabled:</label></div>
                 <div class="p-2 flex-shrink-1 bd-highlight form-check form-switch">
-                  <input class="form-check-input" type="checkbox" id="pylontechenabled" onclick="SendJSONUpdate('pylontechenabled')"></div>
+                  <input class="form-check-input" type="checkbox" id="pylontechenabled" onchange="SendJSONUpdate('pylontechenabled')"></div>
               </div>
               </div>
             </div>
@@ -313,7 +325,7 @@
                 <div class="d-flex bd-highlight">
                 <div class="p-2 w-100 bd-highlight form-check form-switch"><label for="lcdenabled" class="form-check-label">LCD Enabled:</label></div>
                 <div class="p-2 flex-shrink-1 bd-highlight form-check form-switch">
-                  <input class="form-check-input" type="checkbox" id="lcdenabled" onclick="SendJSONUpdate('lcdenabled')"></div>
+                  <input class="form-check-input" type="checkbox" id="lcdenabled" onchange="SendJSONUpdate('lcdenabled')"></div>
               </div>
               </div>
             </div>
@@ -502,6 +514,7 @@
       if(obj.hasOwnProperty('ntpserver')) document.getElementById('ntpserver').value=obj.ntpserver;
       if(obj.hasOwnProperty('fanpin')) document.getElementById('fanpin').value=obj.fanpin;
       if(obj.hasOwnProperty('onewirepin')) document.getElementById('onewirepin').value=obj.onewirepin;
+      if(obj.hasOwnProperty('can16mhz')) document.getElementById('can16mhz').checked=obj.can16mhz;
 
       // handle any WS messages or errors
       if(obj.hasOwnProperty('Message'))

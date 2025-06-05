@@ -49,6 +49,7 @@ const char* const ccSmartInterval = "SmartInterval";
 const char* const ccAdjustStep = "AdjustStep";
 const char* const ccMinCharge = "MinCharge";
 const char* const ccMinDischarge = "MinDischarge";
+const char* const ccCAN16Mhz = "CAN16Mhz";
 
 const char* const ccVELOOPTIME = "VE_LOOP_TIME";
 const char* const ccCANBusEnabled  = "CANEnabled";

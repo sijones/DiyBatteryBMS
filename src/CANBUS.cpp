@@ -29,7 +29,7 @@ void canSendTask(void * pointer){
   }
 }
 
-bool CANBUS::Begin(uint8_t _CS_PIN) {
+bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
 
   if(_pref.isKey(ccCANBusEnabled))
     _canbusEnabled = _pref.getBool(ccCANBusEnabled,true);
@@ -42,9 +42,9 @@ bool CANBUS::Begin(uint8_t _CS_PIN) {
     delete(CAN);
   
   CAN = new MCP_CAN(_CS_PIN);
-
+  
   // Initialize MCP2515 running at 8MHz with a baudrate of 500kb/s and the masks and filters disabled.
-  if (CAN->begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) == CAN_OK) 
+  if ((!_CAN16Mhz) && (CAN->begin(MCP_ANY, CAN_500KBPS, MCP_8MHZ) == CAN_OK)) 
   {
     // Change to normal mode to allow messages to be transmitted
     CAN->setMode(MCP_NORMAL);  
@@ -55,9 +55,13 @@ bool CANBUS::Begin(uint8_t _CS_PIN) {
   }
   else if (CAN->begin(MCP_ANY, CAN_500KBPS, MCP_16MHZ) == CAN_OK) 
   {
+    delay(10);
     // Change to normal mode to allow messages to be transmitted
     CAN->setMode(MCP_NORMAL);  
-    log_i("CAN Bus initialised at 16Mhz");
+    if(_CAN16Mhz)
+      log_i("CAN Bus initialised at 16Mhz using Forced method");
+    else
+      log_i("CAN Bus initialised at 16Mhz using Auto");
     _initialised = true;
     CanBusAvailable = true;
     _failedCanSendTotal = 0;   

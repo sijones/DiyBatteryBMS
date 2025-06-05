@@ -113,6 +113,7 @@ String generateDatatoJSON(bool All)
     doc["onewirepin"] = pref.getUInt8(ccOneWirePin,0);
     doc["autocharge"] = Inverter.AutoCharge();
     doc["smartinterval"] = Inverter.SmartInterval();
+    doc["can16mhz"] = pref.getBool(ccCAN16Mhz,initCAN16Mhz);
   }
 
   doc["RealTime"] = true;
@@ -429,6 +430,14 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         Inverter.AutoCharge(value);
         pref.putBool(ccAutoAdjustCharge,value);
+        notifyWSClients();
+      }
+
+      if (doc.containsKey("can16mhz")) {
+        bool value = (bool) doc["can16mhz"];
+        handled = true;
+        log_i("CAN Speed Change: %i", value);
+        pref.putBool(ccCAN16Mhz,value);
         notifyWSClients();
       }
 

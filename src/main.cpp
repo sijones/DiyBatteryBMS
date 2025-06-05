@@ -89,6 +89,7 @@ void setup()
     // pref.putBool("WifiEnabled", true);
     pref.putBool(ccCANBusEnabled, true);
     pref.putBool(ccLcdEnabled, false);
+    pref.putBool(ccCAN16Mhz, initCAN16Mhz);
     // pref.putBool("MQTTEnabled", false);
     pref.putUInt8(ccCanCSPin, CAN_BUS_CS_PIN);
     pref.putUInt8(ccVictronRX, VEDIRECT_RX);
@@ -171,7 +172,7 @@ void setup()
 
   mqttsetup();
 
-  if (Inverter.Begin(pref.getUInt8(ccCanCSPin, (uint32_t)CAN_BUS_CS_PIN)))
+  if (Inverter.Begin(pref.getUInt8(ccCanCSPin, (uint32_t)CAN_BUS_CS_PIN), pref.getBool(ccCAN16Mhz,initCAN16Mhz)))
   {
     Lcd.Data.CANInit.setValue(true);
     Inverter.SetChargeVoltage((u_int16_t) pref.getUInt32(ccChargeVolt, initBattChargeVoltage));

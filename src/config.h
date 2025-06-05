@@ -40,7 +40,7 @@
 #define initSmartInterval 0               // Default Interval for Smart Adjust
 #define initMinChargeCurrent 0            // Minimum supported charging current, Inverter dependant.
 #define initMinDischargeCurrent 0         // Minimum supported discharging current
-
+#define initCAN16Mhz false                // This is the default MCP2515 8mhz Crystal speed, use 16mhz if true
 // To use strict PYLONTECH Protocol enable below
 //#define USE_PYLONTECH
 

@@ -158,7 +158,7 @@ public:
 
   //void CANBUSBMS();
   
-  bool Begin(uint8_t _CS_PIN);
+  bool Begin(uint8_t _CS_PIN, bool _CAN16Mhz);
   bool StartRunTask();
   bool SendBattUpdate(uint8_t SOC, uint16_t Voltage, int32_t CurrentmA, int16_t BattTemp, uint8_t SOH);
   bool SendAllUpdates();
