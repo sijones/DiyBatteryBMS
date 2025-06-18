@@ -14,7 +14,7 @@ As long as the Inverter accepts Pylontech protocol over CAN Bus this software sh
 
 The data is also sent over MQTT and allows commands to be sent back to control Charge/Discharge/Force Charge.
 
-This software uses a ESP32 developers board with a MCP2515 Can Bus adapter currently developed using Visual Studio code.
+This software supports both a ESP32 developers board with a MCP2515 Can Bus adapter or the built in CAN controller of a ESP32, if you don't use the Lilygo CAN485 board, then you will need to add a CAN transceiver to a ESP32 board.
 
 See the WIKI for more detailed documentation.
 
