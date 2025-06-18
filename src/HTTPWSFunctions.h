@@ -88,7 +88,10 @@ String generateDatatoJSON(bool All)
     doc["victronrxpin"] = pref.getUInt8(ccVictronRX,VEDIRECT_RX);
     doc["victrontxpin"] = pref.getUInt8(ccVictronTX,VEDIRECT_TX);
     doc["canbusenabled"] = Inverter.CANBusEnabled();
+    #ifndef ESPCAN
     doc["canbuscspin"] = pref.getUInt8(ccCanCSPin,CAN_BUS_CS_PIN);
+    doc["can16mhz"] = pref.getBool(ccCAN16Mhz,initCAN16Mhz);
+    #endif
     doc["pylontechenabled"] = Inverter.EnablePylonTech();
     doc["wifissid"] = wifiManager.GetWifiSSID();
     doc["wifipass"] = wifiManager.GetWifiPass();
@@ -113,7 +116,11 @@ String generateDatatoJSON(bool All)
     doc["onewirepin"] = pref.getUInt8(ccOneWirePin,0);
     doc["autocharge"] = Inverter.AutoCharge();
     doc["smartinterval"] = Inverter.SmartInterval();
-    doc["can16mhz"] = pref.getBool(ccCAN16Mhz,initCAN16Mhz);
+    #ifdef ESPCAN
+    doc["can_tx_pin"] = pref.getUInt8(ccCAN_TX_PIN,CAN_TX_PIN);
+    doc["can_rx_pin"] = pref.getUInt8(ccCAN_RX_PIN,CAN_RX_PIN);
+    doc["can_en_pin"] = pref.getUInt8(ccCAN_EN_PIN,CAN_EN_PIN);
+    #endif
   }
 
   doc["RealTime"] = true;
@@ -197,88 +204,89 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         bool handled = false;
         deserializeJson(doc,data);
        // pref.begin(PREF_NAME);
-      if (doc.containsKey("chargevoltage")) {
+
+      if (!doc["chargevoltage"].isNull()) {
         pref.putUInt32(ccChargeVolt,(uint32_t) doc["chargevoltage"]);
         Inverter.SetChargeVoltage((uint32_t) doc["chargevoltage"]); 
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("fullvoltage")) {
+      if (!doc["fullvoltage"].isNull()) {
         pref.putUInt32(ccFullVoltage,(uint32_t) doc["fullvoltage"]);
         Inverter.SetFullVoltage((uint32_t) doc["fullvoltage"]); 
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("overvoltage")) {
+      if (!doc["overvoltage"].isNull()) {
         pref.putUInt32(ccOverVoltage,(uint32_t) doc["overvoltage"]);
         Inverter.SetOverVoltage((uint32_t) doc["overvoltage"]); 
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("dischargevoltage")) {
+      if (!doc["dischargevoltage"].isNull()) {
         pref.putUInt32(ccDischargeVolt,(uint32_t) doc["dischargevoltage"]);
         Inverter.SetDischargeVoltage((uint32_t) doc["dischargevoltage"]); 
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("maxchargecurrent")) {
+      if (!doc["maxchargecurrent"].isNull()) {
         pref.putUInt32(ccChargeCurrent,(uint32_t) doc["maxchargecurrent"]);
         Inverter.SetMaxChargeCurrent((uint32_t) doc["maxchargecurrent"]); 
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("maxdischargecurrent")) {
+      if (!doc["maxdischargecurrent"].isNull()) {
         pref.putUInt32(ccDischargeCurrent,(uint32_t) doc["maxdischargecurrent"]);
         Inverter.SetMaxDischargeCurrent((uint32_t) doc["maxdischargecurrent"]); 
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("chargecurrent")) {
+      if (!doc["chargecurrent"].isNull()) {
         Inverter.SetChargeCurrent((uint32_t) doc["chargecurrent"]); 
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("dischargecurrent")) {
+      if (!doc["dischargecurrent"].isNull()) {
         Inverter.SetDischargeCurrent((uint32_t) doc["dischargecurrent"]); 
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("batterycapacity")) {
+      if (!doc["batterycapacity"].isNull()) {
         pref.putUInt32(ccBattCapacity,(uint32_t) doc["batterycapacity"]);
         Inverter.SetBattCapacity((uint32_t) doc["batterycapacity"]);
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("chargeenabled")) {
+      if (!doc["chargeenabled"].isNull()) {
         Inverter.ChargeEnable((bool) doc["chargeenabled"]); 
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("dischargeenabled")) {
+      if (!doc["dischargeenabled"].isNull()) {
         Inverter.DischargeEnable((bool) doc["dischargeenabled"]);
         handled = true;
         notifyWSClients(); }
       // Low SOC OFF
-      if (doc.containsKey("lowsoclimit")) {
+      if (!doc["lowsoclimit"].isNull()) {
         pref.putUInt8(ccLowSOCLimit,(uint8_t) doc["lowsoclimit"]);
         Inverter.SetLowSOCLimit((uint8_t) doc["lowsoclimit"]);
         handled = true;
         notifyWSClients(); }
       // High SOC Limit
-      if (doc.containsKey("highsoclimit")) {
+      if (!doc["highsoclimit"].isNull()) {
         pref.putUInt8(ccHighSOCLimit,(uint8_t) doc["highsoclimit"]);
         Inverter.SetHighSOCLimit((uint8_t) doc["highsoclimit"]);
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("canbusenabled")) {
+      if (!doc["canbusenabled"].isNull()) {
         pref.putBool(ccCANBusEnabled, doc["canbusenabled"]);
         Inverter.CANBusEnabled(doc["canbusenabled"]);
         handled = true;
         notifyWSClients(); }
 
-      if (doc.containsKey("adjuststep")) {
+      if (!doc["adjuststep"].isNull()) {
         pref.putUInt16(ccAdjustStep, doc["adjuststep"]);
         Inverter.SetChargeStepAdjust(doc["adjuststep"]);
         handled = true;
         notifyWSClients(); }
 
-      if (doc.containsKey("minchargecurr")) {
+      if (!doc["minchargecurr"].isNull()) {
         pref.putUInt32(ccMinCharge, doc["minchargecurr"]);
         Inverter.MinChargeCurrent(doc["minchargecurr"]);
         handled = true;
         notifyWSClients(); }
 
-      if (doc.containsKey("lcdenabled")) {
+      if (!doc["lcdenabled"].isNull()) {
         pref.putBool(ccLcdEnabled, doc["lcdenabled"]);
         if(doc["lcdenabled"])
           Lcd.Enable();
@@ -286,170 +294,174 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           Lcd.Disable();
         handled = true;
         notifyWSClients(); }
-        
-      if (doc.containsKey("canbuscspin")) {
+      
+      if (!doc["canbuscspin"].isNull()) {
         pref.putUInt8(ccCanCSPin, (uint8_t) doc["canbuscspin"]);
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("victronrxpin")) {
+
+      if (!doc["victronrxpin"].isNull()) {
         pref.putUInt8(ccVictronRX, (uint8_t) doc["victronrxpin"]);
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("victrontxpin")) {
+
+        if (!doc["victrontxpin"].isNull()) {
         pref.putUInt8(ccVictronTX, (uint8_t) doc["victrontxpin"]);
         handled = true;
         notifyWSClients(); }
-      if (doc.containsKey("wifissid")) {
+
+        if (!doc["can_rx_pin"].isNull()) {
+        pref.putUInt8(ccCAN_RX_PIN, (uint8_t) doc["can_rx_pin"]);
+        handled = true;
+        notifyWSClients(); }
+
+        if (!doc["can_tx_pin"].isNull()) {
+        pref.putUInt8(ccCAN_TX_PIN, (uint8_t) doc["can_tx_pin"]);
+        handled = true;
+        notifyWSClients(); }
+
+      if (!doc["wifissid"].isNull()) {
         String value = doc["wifissid"];
         handled = true;
         wifiManager.SetWifiSSID(value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("wifipass")) {
+        notifyWSClients();}
+
+      if (!doc["wifipass"].isNull()) {
         String value = doc["wifipass"];
         handled = true;
-        wifiManager.SetWifiPass(value);
-      }
-      if (doc.containsKey("mqttserverip")) {
+        wifiManager.SetWifiPass(value);}
+
+      if (!doc["mqttserverip"].isNull()) {
         String value = doc["mqttserverip"];
         handled = true;
         wifiManager.SetMQTTServerIP(value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("mqttuser")) {
+        notifyWSClients();}
+
+      if (!doc["mqttuser"].isNull()) {
         String value = doc["mqttuser"];
         handled = true;
         wifiManager.SetMQTTUser(value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("mqttpass")) {
+        notifyWSClients();}
+
+      if (!doc["mqttpass"].isNull()) {
         String value = doc["mqttpass"];
         handled = true;
-        wifiManager.SetMQTTPass(value);
-      //  notifyWSClients();
-      }
-      if (doc.containsKey("mqtttopic")) {
+        wifiManager.SetMQTTPass(value);}
+
+      if (!doc["mqtttopic"].isNull()) {
         String value = doc["mqtttopic"];
         handled = true;
         wifiManager.SetMQTTTopic(value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("mqttparameter")) {
+        notifyWSClients();}
+
+      if (!doc["mqttparameter"].isNull()) {
         String value = doc["mqttparameter"];
         handled = true;
         wifiManager.SetMQTTParameter(value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("mqttclientid")) {
+        notifyWSClients();}
+
+      if (!doc["mqttclientid"].isNull()) {
         String value = doc["mqttclientid"];
         handled = true;
         wifiManager.SetMQTTClientID(value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("mqttport")) {
+        notifyWSClients();}
+
+      if (!doc["mqttport"].isNull()) {
         uint16_t value = doc["mqttport"];
         handled = true;
         wifiManager.SetMQTTPort(value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("wifihostname")) {
+        notifyWSClients();}
+
+      if (!doc["wifihostname"].isNull()) {
         String value = doc["wifihostname"];
         handled = true;
         wifiManager.SetWifiHostName(value);
-        notifyWSClients();
-      }
+        notifyWSClients();}
 
-      if (doc.containsKey("slowchargesoc1")) {
+      if (!doc["slowchargesoc1"].isNull()) {
         uint8_t value = (uint8_t) doc["slowchargesoc1"];
         handled = true;
         pref.putUInt8(ccSlowSOCCharge1,value);
         Inverter.SetSlowChargeSOCLimit(1,value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("slowchargesoc1div")) {
+        notifyWSClients();}
+
+      if (!doc["slowchargesoc1div"].isNull()) {
         uint8_t value = (uint8_t) doc["slowchargesoc1div"];
         handled = true;
         pref.putUInt8(ccSlowSOCDivider1,value);
         Inverter.SetSlowChargeDivider(1,value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("slowchargesoc2")) {
+        notifyWSClients();}
+
+      if (!doc["slowchargesoc2"].isNull()) {
         uint8_t value = (uint8_t) doc["slowchargesoc2"];
         handled = true;
         pref.putUInt8(ccSlowSOCCharge2,value);
         Inverter.SetSlowChargeSOCLimit(2,value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("slowchargesoc2div")) {
+        notifyWSClients();}
+
+      if (!doc["slowchargesoc2div"].isNull()) {
         uint8_t value = (uint8_t) doc["slowchargesoc2div"];
         handled = true;
         pref.putUInt8(ccSlowSOCDivider2,value);
         Inverter.SetSlowChargeDivider(2,value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("pylontechenabled")) {
+        notifyWSClients();}
+
+      if (!doc["pylontechenabled"].isNull()) {
         boolean value = doc["pylontechenabled"];
         handled = true;
         pref.putBool(ccPylonTech, value);
         Inverter.EnablePylonTech(value);
-        notifyWSClients();
-      }
-      if (doc.containsKey("velooptime")) {
+        notifyWSClients();}
+
+      if (!doc["velooptime"].isNull()) {
         uint8_t value = doc["velooptime"];
         handled = true;
         VE_LOOP_TIME = value;
         pref.putUInt8(ccVELOOPTIME,VE_LOOP_TIME);
-        notifyWSClients();
-      }
+        notifyWSClients();}
       
-      if (doc.containsKey("ntpserver")) {
+      if (!doc["ntpserver"].isNull()) {
       String value = doc["ntpserver"];
       handled = true;
       pref.putString(ccNTPServer,value);
-      notifyWSClients();
-      }
+      notifyWSClients();}
 
-      if (doc.containsKey("fanpin")) {
+      if (!doc["fanpin"].isNull()) {
         uint8_t value = doc["fanpin"];
         handled = true;
         pref.putUInt8(ccFanPin,value);
         if (!FAN_INIT)
           FanInit(value);
-        notifyWSClients();
-      }
+        notifyWSClients();}
 
-      if (doc.containsKey("onewirepin")) {
+      if (!doc["onewirepin"].isNull()) {
         uint8_t value = doc["onewirepin"];
         handled = true;
         pref.putUInt8(ccOneWirePin,value);
-        notifyWSClients();
-      }
+        notifyWSClients();}
 
-      if (doc.containsKey("autocharge")) {
+      if (!doc["autocharge"].isNull()) {
         bool value = doc["autocharge"];
         handled = true;
         Inverter.AutoCharge(value);
         pref.putBool(ccAutoAdjustCharge,value);
-        notifyWSClients();
-      }
+        notifyWSClients();}
 
-      if (doc.containsKey("can16mhz")) {
+      if (!doc["can16mhz"].isNull()) {
         bool value = (bool) doc["can16mhz"];
         handled = true;
         log_i("CAN Speed Change: %i", value);
         pref.putBool(ccCAN16Mhz,value);
-        notifyWSClients();
-      }
+        notifyWSClients();}
 
-      if (doc.containsKey("smartinterval")) {
+      if (!doc["smartinterval"].isNull()) {
         uint8_t value = (uint8_t) doc["smartinterval"];
         handled = true;
         pref.putUInt8(ccSmartInterval,value);
         Inverter.SmartInterval(value);
-        notifyWSClients();
-      }
+        notifyWSClients();}
 
-      if (doc.containsKey("reboot")) {
+      if (!doc["reboot"].isNull()) {
         if(doc["reboot"])
         {
         //  ws.textAll("{ \"Message\" : \"Rebooting now\" }");
@@ -466,7 +478,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           wsclient->printf("{ \"Message\" : \"To reboot send value true. i.e. {\"reboot\":true } \"}");
         }
       }    
-      if (doc.containsKey("saveall")){
+      if (!doc["saveall"].isNull()){
         if(doc["saveall"]){
           pref.putUInt32(ccChargeCurrent,Inverter.GetMaxChargeCurrent());
           pref.putUInt32(ccDischargeCurrent,Inverter.GetMaxDischargeCurrent());
@@ -482,7 +494,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         }
       }
 
-      if (doc.containsKey("eraseall")){
+      if (!doc["eraseall"].isNull()){
         if(doc["eraseall"]){
           pref.clear(true);
           handled = true;
@@ -490,7 +502,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         }
       }
       
-      if (doc.containsKey("erasekeepwifi")){
+      if (!doc["erasekeepwifi"].isNull()){
         if(doc["erasekeepwifi"]){
           pref.clear(false);
           handled = true;
