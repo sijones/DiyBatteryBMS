@@ -1,17 +1,38 @@
 #include "CANBUS.h"
 #include "mEEPROM.h"
 
-/*
+#ifdef ESPCAN
 
-0x35E len: 8 50 59 4C 4F 4E 20 20 20 (ok) (ok)
-0x35C len: 2 C0 0 (ok) (ok)
-0x356 len: 6 2 13 0 0 4A 1 (ok) (ok)
-0x355 len: 4 E 0 64 0 (ok) (ok)
-0x351 len: 8 14 2 74 E 74 E CC 1 (ok) (ok)
-0x359 len: 7 0 0 0 0 A 50 4E (ok) (ok)
+CAN_device_t CAN_cfg;             // CAN Config
+const int interval = 1000;        // interval at which send CAN Messages (milliseconds)
+const int rx_queue_size = 10;     // Receive Queue size
 
-*/
+#else
 
+#endif
+
+bool CANBUS::SendToDriver(uint32_t CMD,uint8_t Length,uint8_t *Data) {
+  
+#ifdef ESPCAN
+    CAN_frame_t tx_frame;
+    tx_frame.FIR.B.FF = CAN_frame_std;
+    tx_frame.MsgID = CMD;
+    if (Length > 8) Length = 8; // Make sure a maximum of 8 bytes can be copied.
+    tx_frame.FIR.B.DLC = Length;
+    memcpy(tx_frame.data.u8,Data,Length);
+    tx_frame.FIR.B.RTR = CAN_no_RTR;
+    ESP32Can.CANWriteFrame(&tx_frame);
+    return true;
+#else
+  byte sndStat;
+  //sndStat = CAN->sendMsgBuf(0x35E, 0, 8, MSG_PYLON);
+  sndStat = CAN->sendMsgBuf(CMD, Length, Data);
+  if (sndStat == CAN_OK)
+    return true;
+  else
+    return false;
+#endif
+}
 
 void canSendTask(void * pointer){
   
@@ -22,15 +43,73 @@ void canSendTask(void * pointer){
 
   for (;;) {
 //    taskENTER_CRITICAL(&CanMutex);
-    if(!Inverter->SendAllUpdates())
-        log_e("Failure returned from SendAllUpdates");
-//    taskEXIT_CRITICAL(&CanMutex);
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
+
+#ifdef ESPCAN
+      CAN_frame_t rx_frame;
+
+      // Receive next CAN frame from queue
+      if (xQueueReceive(CAN_cfg.rx_queue, &rx_frame, 0) == pdTRUE)
+      {
+        if (rx_frame.FIR.B.FF == CAN_frame_std)
+        {
+          printf("New standard frame");
+        }
+        else
+        {
+          printf("New extended frame");
+        }
+
+        if (rx_frame.FIR.B.RTR == CAN_RTR)
+        {
+          printf(" RTR from 0x%08X, DLC %d\r\n", rx_frame.MsgID, rx_frame.FIR.B.DLC);
+        }
+        else
+        {
+          printf(" from 0x%08X, DLC %d, Data ", rx_frame.MsgID, rx_frame.FIR.B.DLC);
+          for (int i = 0; i < rx_frame.FIR.B.DLC; i++)
+          {
+            printf("0x%02X ", rx_frame.data.u8[i]);
+          }
+          printf("\n");
+        }
+      }
+#endif
+        if(!Inverter->SendAllUpdates())
+          log_e("Failure returned from SendAllUpdates");
+    //    taskEXIT_CRITICAL(&CanMutex);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }
 
+#ifdef ESPCAN
+bool CANBUS::Begin(uint8_t ESPCAN_TX_PIN, uint8_t ESPCAN_RX_PIN, uint8_t ESPCAN_EN_PIN) {
+#else
 bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
+#endif
 
+  #ifdef ESPCAN
+
+  if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN < 35)
+  {
+    pinMode(ESPCAN_EN_PIN, OUTPUT);
+    digitalWrite(ESPCAN_EN_PIN, 0);
+  }
+
+  CAN_cfg.speed = CAN_SPEED_500KBPS;
+  CAN_cfg.tx_pin_id = (gpio_num_t) ESPCAN_TX_PIN;
+  CAN_cfg.rx_pin_id = (gpio_num_t) ESPCAN_RX_PIN;
+  CAN_cfg.rx_queue = xQueueCreate(rx_queue_size, sizeof(CAN_frame_t));
+  // Init CAN Module
+  ESP32Can.CANInit();
+  log_i("CAN Bus initialised");
+
+  _initialised = true;
+  CanBusAvailable = true;
+  _failedCanSendTotal = 0;   
+  _lastChangeInterval = time(nullptr);
+  return true;
+
+  #else
   if(_pref.isKey(ccCANBusEnabled))
     _canbusEnabled = _pref.getBool(ccCANBusEnabled,true);
   else
@@ -76,13 +155,15 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
   _lastChangeInterval = time(nullptr);
 
   return true;
+
+  #endif
 }
 
 bool CANBUS::StartRunTask()
 {
     if(CanBusAvailable){
     // Create task and pin to Core1
-      xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,1);    
+      xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,0);    
       return true;
     }
     else
@@ -91,11 +172,12 @@ bool CANBUS::StartRunTask()
 
 bool CANBUS::SendAllUpdates()
 {
+  log_i("SendAllUpdates Called");
   if (!_canbusEnabled) return false;
-
+  log_i("Passed CANBUS Enabled");
   if (Initialised() && Configured())
     {
-    
+    log_i("CANBUS is Initialised and Configured");
     time_t t = time(nullptr);
 
     // Turn off force charge, this is defined in PylonTech Protocol
@@ -271,6 +353,8 @@ bool CANBUS::SendCANData(){
 
   if (!Initialised() && !Configured()) return false;
 
+  log_i("SendCanData Called");
+
   uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
   uint16_t _tempChargeVolt = (_chargeVoltage * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
@@ -283,8 +367,8 @@ bool CANBUS::SendCANData(){
 
   // Send PYLON String
   //if(_enablePYLONTECH) {
-  sndStat = CAN->sendMsgBuf(0x35E, 0, 8, MSG_PYLON);
-  if (sndStat != CAN_OK){
+  sndStat = SendToDriver(0x35E, 8, MSG_PYLON);
+  if (sndStat != false){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   }   
@@ -305,8 +389,8 @@ bool CANBUS::SendCANData(){
   //if (_chargeEnabled && _ManualAllowCharge) CAN_MSG[0] |= bmsChargeEnable;
   //if (_dischargeEnabled && _ManualAllowDischarge) CAN_MSG[0] |= bmsDischargeEnable;
   
-  sndStat = CAN->sendMsgBuf(0x35C, 2, CAN_MSG);
-  if (sndStat != CAN_OK){
+  sndStat = SendToDriver(0x35C, 2, CAN_MSG);
+  if (sndStat != false){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 
@@ -322,9 +406,9 @@ bool CANBUS::SendCANData(){
   CAN_MSG[4] = lowByte(_tempBattTemp);
   CAN_MSG[5] = highByte(_tempBattTemp);
 
-  sndStat = CAN->sendMsgBuf(0x356, 6, CAN_MSG);
+  sndStat = SendToDriver(0x356, 6, CAN_MSG);
 
-  if (sndStat != CAN_OK){
+  if (sndStat != false){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 
@@ -356,8 +440,8 @@ bool CANBUS::SendCANData(){
   CAN_MSG[2] = lowByte(_battSOH);
   CAN_MSG[3] = highByte(_battSOH);
 
-  sndStat = CAN->sendMsgBuf(0x355, 4, CAN_MSG);
-  if (sndStat != CAN_OK){
+  sndStat = SendToDriver(0x355, 4, CAN_MSG);
+  if (sndStat != false){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 
@@ -387,9 +471,9 @@ bool CANBUS::SendCANData(){
   CAN_MSG[6] = lowByte(_tempDisCharVolt);          // Currently not used by SOLIS
   CAN_MSG[7] = highByte(_tempDisCharVolt);         // Currently not used by SOLIS
 
-  sndStat = CAN->sendMsgBuf(0x351, 8, CAN_MSG);
+  sndStat = SendToDriver(0x351, 8, CAN_MSG);
 
-  if (sndStat != CAN_OK){
+  if (sndStat != false){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 
@@ -407,8 +491,8 @@ bool CANBUS::SendCANData(){
   CAN_MSG[6] = 0x4E;
   CAN_MSG[7] = 0x00;
 
-  sndStat = CAN->sendMsgBuf(0x359, 8, CAN_MSG);
-  if (sndStat != CAN_OK){
+  sndStat = SendToDriver(0x359, 8, CAN_MSG);
+  if (sndStat != false){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 

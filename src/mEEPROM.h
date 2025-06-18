@@ -41,6 +41,9 @@ const char* const ccMQTTParam = "MQTTParam";
 
 const char* const ccVictronRX = "VictronRX";
 const char* const ccVictronTX = "VictronTX";
+const char* const ccCAN_TX_PIN = "CAN_TX_PIN";
+const char* const ccCAN_RX_PIN = "CAN_RX_PIN";
+const char* const ccCAN_EN_PIN = "CAN_EN_PIN";
 const char* const ccCanCSPin = "CAN_CS_PIN";
 const char* const ccOneWirePin = "onewirepin";
 const char* const ccFanPin = "fanpin";
@@ -94,7 +97,6 @@ class mEEPROM {
     bool getBool(const char* key, boolean default_value);
     bool putBool(const char* key, boolean value);
     uint16_t freeentries();
-
 };
 
 

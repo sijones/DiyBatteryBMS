@@ -89,11 +89,18 @@ void setup()
     // pref.putBool("WifiEnabled", true);
     pref.putBool(ccCANBusEnabled, true);
     pref.putBool(ccLcdEnabled, false);
+#ifndef ESPCAN
     pref.putBool(ccCAN16Mhz, initCAN16Mhz);
     // pref.putBool("MQTTEnabled", false);
     pref.putUInt8(ccCanCSPin, CAN_BUS_CS_PIN);
+#endif
     pref.putUInt8(ccVictronRX, VEDIRECT_RX);
     pref.putUInt8(ccVictronTX, VEDIRECT_TX);
+#ifdef ESPCAN
+    pref.putUInt8(ccCAN_EN_PIN,CAN_EN_PIN);
+    pref.putUInt8(ccCAN_RX_PIN,CAN_RX_PIN);
+    pref.putUInt8(ccCAN_TX_PIN,CAN_TX_PIN);
+#endif
     pref.putUInt16(ccChargeVolt, initBattChargeVoltage);
     pref.putUInt16(ccFullVoltage,initBattFullVoltage);
     pref.putUInt16(ccOverVoltage, initBattOverVoltage);
@@ -171,8 +178,11 @@ void setup()
   }
 
   mqttsetup();
-
+#ifdef ESPCAN
+  if(Inverter.Begin(pref.getUInt8(ccCAN_TX_PIN,CAN_TX_PIN),pref.getUInt8(ccCAN_RX_PIN,CAN_RX_PIN),pref.getUInt8(ccCAN_EN_PIN,CAN_EN_PIN)))
+#else
   if (Inverter.Begin(pref.getUInt8(ccCanCSPin, (uint32_t)CAN_BUS_CS_PIN), pref.getBool(ccCAN16Mhz,initCAN16Mhz)))
+#endif
   {
     Lcd.Data.CANInit.setValue(true);
     Inverter.SetChargeVoltage((u_int16_t) pref.getUInt32(ccChargeVolt, initBattChargeVoltage));
@@ -258,6 +268,9 @@ void loop()
 
   if (abs(t - last_lcd_refresh) >= VE_LCD_REFRESH)
   {
+//#ifdef ESPCAN
+//    Inverter.SendAllUpdates();
+//#endif
     last_lcd_refresh = t;
     // Update LCD Screen Values
     Lcd.Data.ChargeVolts.setValue(Inverter.GetChargeVoltage());

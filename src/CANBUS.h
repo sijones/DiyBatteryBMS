@@ -1,3 +1,4 @@
+
 /*
 PYLON Protocol, messages sent every 1 second.
 
@@ -12,7 +13,14 @@ PYLON Protocol, messages sent every 1 second.
 
 #include <Arduino.h>
 #include <SPI.h>
+
+#ifdef ESPCAN
+#include <ESP32CAN.h>
+#include <CAN_config.h>
+#else
 #include <mcp_can.h>              // Library for CAN Interface      https://github.com/coryjfowler/MCP_CAN_lib
+#endif
+
 #include <mEEPROM.h>
 
 #define flagChargeEnable 7      // Bit 7
@@ -24,8 +32,10 @@ class CANBUS {
   private:
 //#pragma once
 
-  // CAN BUS Library
+#ifndef ESPCAN
 MCP_CAN *CAN;
+#endif
+
 uint8_t CAN_MSG[8];
 uint8_t MSG_PYLON[8] = {0x50,0x59,0x4C,0x4F,0x4E,0x20,0x20,0x20};
 
@@ -158,12 +168,18 @@ public:
 
   //void CANBUSBMS();
   
+  #ifdef ESPCAN
+  bool Begin(uint8_t ESPCAN_TX_PIN, uint8_t ESPCAN_RX_PIN, uint8_t ESPCAN_EN_PIN);
+  #else
   bool Begin(uint8_t _CS_PIN, bool _CAN16Mhz);
+  #endif
+
   bool StartRunTask();
   bool SendBattUpdate(uint8_t SOC, uint16_t Voltage, int32_t CurrentmA, int16_t BattTemp, uint8_t SOH);
   bool SendAllUpdates();
   bool SendBattUpdate();
   bool SendCANData();
+  bool SendToDriver(u_int32_t CMD,uint8_t Bytes, uint8_t * Data);
   bool DataChanged();
   void SetChargeVoltage(uint16_t Voltage);
   uint16_t GetChargeVoltage() {return _chargeVoltage; }
