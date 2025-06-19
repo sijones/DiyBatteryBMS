@@ -47,7 +47,7 @@ The device itself no longer requires internet as the NTP Servers are now configu
 See the Wiki page
 
 ## Hardware Recommended
-esp32dev or the esp32plus
+esp32dev, esp32plus, lilygo CAN485.
 
 Please use the recommended hardware, as a personal project it's difficult to support other configurations.
 
@@ -58,6 +58,9 @@ https://www.amazon.co.uk/gp/product/B0C9THDPXP/
 
 esp32plus
 https://www.amazon.co.uk/dp/B0BHZ8H6LM
+
+Lilygo CAN485
+https://www.aliexpress.com/item/1005003624034092.html
 
 LCD
 https://www.amazon.co.uk/dp/B07V5K3ZVB
