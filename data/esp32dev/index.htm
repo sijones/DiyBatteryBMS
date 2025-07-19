@@ -430,6 +430,17 @@
 
         </div> <!-- End of Wifi and MQTT Config -->
 
+          <!-- Firmware Update -->
+        <div class="tab-pane fade" id="v-pills-firmware" role="tabpanel" aria-labelledby="v-pills-firmware-tab">          
+          <div class="form-group mt-2">
+
+            <form action="update?name=firmware" enctype=multipart/form-data method=POST>Firmware:<br><input type=file
+              accept=.bin,.bin.gz name=firmware> <input class="btn btn-info" type=submit value="Update Firmware"></form>
+            <form action="update?name=filesystem" enctype=multipart/form-data method=POST>FileSystem:<br><input type=file
+              accept=.bin,.bin.gz name=filesystem> <input class="btn btn-info" type=submit value="Update FileSystem"></form>
+          </div>
+        </div> <!-- End of Firmware Update -->
+
       </div>
     </div> <!-- Div Col 9 -->
       <div class="d-flex align-items-baseline flex-row bd-highlight mb-3">

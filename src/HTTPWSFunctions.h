@@ -2,7 +2,8 @@
 
 #include <ArduinoJson.h>
 #include <WiFi.h>
-//#include <AsyncElegantOTA.h>
+#include <Update.h>
+
 
 void TaskSetClock(void * pointer) {
   
@@ -57,6 +58,11 @@ void TaskSetClock(void * pointer) {
     log_d("NTP time %s", asctime(&timeinfo));
     vTaskDelay(3600000 / portTICK_PERIOD_MS);
   }
+
+}
+
+void handleUpdate()
+{
 
 }
 
@@ -269,8 +275,10 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         notifyWSClients(); }
       if (!doc["canbusenabled"].isNull()) {
-        pref.putBool(ccCANBusEnabled, doc["canbusenabled"]);
-        Inverter.CANBusEnabled(doc["canbusenabled"]);
+        bool value = bool(doc["canbusenabled"]);
+        pref.putBool(ccCANBusEnabled, value);
+        Inverter.CANBusEnabled(value);
+        Inverter.StartRunTask(value);
         handled = true;
         notifyWSClients(); }
 
@@ -562,22 +570,32 @@ void StartWebServices()
     server.onNotFound([](AsyncWebServerRequest *request){
       request->redirect("/index-ap.htm");
     });
-    log_d("Redirecting root to index-ap.htm"); }
+    log_d("Redirecting root to index-ap.htm");
+    
+    server.on("/mobile/status.php", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->redirect("/index-ap.htm");});
+
+    server.on("/generate_204", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->redirect("/index-ap.htm");}); 
+  }
   else {
     server.rewrite("/", "/index.htm");
     log_d("Redirecting root to index.htm"); 
   }
- /* 
- server.on("/mobile/status.php", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->redirect("/index-ap.htm");
-  });
-    server.on("/generate_204", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->redirect("/index-ap.htm");
-  }); 
-  */   
 
-  AsyncElegantOTA.begin(&server);
-
+  //setup the updateServer with credentials
+  updateServer.setup(&server);
+  //hook to update events if you need to
+  updateServer.onUpdateBegin = [](const UpdateType type, int &result)
+  {
+      //you can force abort the update like this if you need to:
+      //result = UpdateResult::UPDATE_ABORT;        
+      Serial.println("Update started : " + String(type));
+  };
+  updateServer.onUpdateEnd = [](const UpdateType type, int &result)
+  {
+      Serial.println("Update finished : " + String(type) + " result: " + String(result));
+  };
   //server.rewrite("/index.htm", "/index-ap.htm").setFilter(ON_AP_FILTER);
   server.serveStatic("/", LittleFS, "/");
 
@@ -619,6 +637,7 @@ void StartWebServices()
     request->send(200, "application/json", json);
     json = String();
   });
+  
 }
 
 

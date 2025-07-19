@@ -41,8 +41,9 @@ void canSendTask(void * pointer){
   CANBUS *Inverter = (CANBUS *) pointer;
   log_i("Starting CAN Bus send task");
 
-  for (;;) {
-//    taskENTER_CRITICAL(&CanMutex);
+  while (Inverter->_ContinueTask)
+  {
+  //    taskENTER_CRITICAL(&CanMutex);
 
 #ifdef ESPCAN
       CAN_frame_t rx_frame;
@@ -79,7 +80,13 @@ void canSendTask(void * pointer){
     //    taskEXIT_CRITICAL(&CanMutex);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
+
+  vTaskDelete(nullptr);
+
 }
+
+// End of canSendTask
+
 
 #ifdef ESPCAN
 bool CANBUS::Begin(uint8_t ESPCAN_TX_PIN, uint8_t ESPCAN_RX_PIN, uint8_t ESPCAN_EN_PIN) {
@@ -158,26 +165,59 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
 
   #endif
 }
+bool CANBUS::StartRunTask(bool Run)
+{
+  _ContinueTask = Run;
+  if (tHandle != nullptr && Run) {
+    eTaskState state = eTaskGetState(tHandle);
+    switch (state) {
+    case eRunning:
+        log_i("Task is running.");
+        break;
+    case eReady:
+        log_i("Task is ready to run.");
+        StartRunTask();
+        break;
+    case eBlocked:
+        log_i("Task is blocked (e.g. waiting on a delay or semaphore).");
+        break;
+    case eSuspended:
+        Serial.println("Task is suspended.");
+        break;
+    case eDeleted:
+        log_i("Task has been deleted.");
+        StartRunTask();
+        break;
+    default:
+        log_i("Unknown task state.");
+        StartRunTask();
+        break;
+    }
+  } else
+  {
+    log_i("Starting CAN Bus Task");
+    StartRunTask();
+  }
+  return true;
+}
 
 bool CANBUS::StartRunTask()
 {
-    if(CanBusAvailable){
-    // Create task and pin to Core1
-      xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,0);    
-      return true;
-    }
-    else
-      return false;
+  if(CanBusAvailable){
+  // Create task and pin to Core
+    xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,0);    
+    return true;
+  }
+  else
+    return false;
 }
 
 bool CANBUS::SendAllUpdates()
 {
-  log_i("SendAllUpdates Called");
+
   if (!_canbusEnabled) return false;
-  log_i("Passed CANBUS Enabled");
   if (Initialised() && Configured())
     {
-    log_i("CANBUS is Initialised and Configured");
     time_t t = time(nullptr);
 
     // Turn off force charge, this is defined in PylonTech Protocol
@@ -352,8 +392,6 @@ bool CANBUS::DataChanged(){
 bool CANBUS::SendCANData(){
 
   if (!Initialised() && !Configured()) return false;
-
-  log_i("SendCanData Called");
 
   uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
   uint16_t _tempChargeVolt = (_chargeVoltage * 0.01);
