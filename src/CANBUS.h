@@ -150,7 +150,6 @@ inline uint8_t bit_set_to(uint8_t number, uint8_t n, bool x) {
 
 public:
 
-  volatile bool _ContinueTask = true;
   bool CanBusAvailable = false;
   bool CanBusDataOK = false;
 

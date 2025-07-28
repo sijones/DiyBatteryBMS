@@ -2,11 +2,9 @@
 #include "mEEPROM.h"
 
 #ifdef ESPCAN
-
 CAN_device_t CAN_cfg;             // CAN Config
 const int interval = 1000;        // interval at which send CAN Messages (milliseconds)
 const int rx_queue_size = 10;     // Receive Queue size
-
 #else
 
 #endif
@@ -41,7 +39,7 @@ void canSendTask(void * pointer){
   CANBUS *Inverter = (CANBUS *) pointer;
   log_i("Starting CAN Bus send task");
 
-  while (Inverter->_ContinueTask)
+  while (true)
   {
   //    taskENTER_CRITICAL(&CanMutex);
 
@@ -53,25 +51,24 @@ void canSendTask(void * pointer){
       {
         if (rx_frame.FIR.B.FF == CAN_frame_std)
         {
-          printf("New standard frame");
+          log_i("New standard frame");
         }
         else
         {
-          printf("New extended frame");
+          log_i("New extended frame");
         }
 
         if (rx_frame.FIR.B.RTR == CAN_RTR)
         {
-          printf(" RTR from 0x%08X, DLC %d\r\n", rx_frame.MsgID, rx_frame.FIR.B.DLC);
+          log_i(" RTR from 0x%08X, DLC %d", rx_frame.MsgID, rx_frame.FIR.B.DLC);
         }
         else
         {
-          printf(" from 0x%08X, DLC %d, Data ", rx_frame.MsgID, rx_frame.FIR.B.DLC);
+          log_i(" from 0x%08X, DLC %d, Data ", rx_frame.MsgID, rx_frame.FIR.B.DLC);
           for (int i = 0; i < rx_frame.FIR.B.DLC; i++)
           {
-            printf("0x%02X ", rx_frame.data.u8[i]);
+            log_i("0x%02X ", rx_frame.data.u8[i]);
           }
-          printf("\n");
         }
       }
 #endif
@@ -86,7 +83,6 @@ void canSendTask(void * pointer){
 }
 
 // End of canSendTask
-
 
 #ifdef ESPCAN
 bool CANBUS::Begin(uint8_t ESPCAN_TX_PIN, uint8_t ESPCAN_RX_PIN, uint8_t ESPCAN_EN_PIN) {
@@ -167,7 +163,14 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
 }
 bool CANBUS::StartRunTask(bool Run)
 {
-  _ContinueTask = Run;
+ 
+  if (tHandle != nullptr && !Run) {
+    log_i("Stopping CAN Bus Task");
+    vTaskDelete(tHandle);
+    tHandle = nullptr;
+    return true;
+  }
+
   if (tHandle != nullptr && Run) {
     eTaskState state = eTaskGetState(tHandle);
     switch (state) {
@@ -203,7 +206,7 @@ bool CANBUS::StartRunTask(bool Run)
 
 bool CANBUS::StartRunTask()
 {
-  if(CanBusAvailable){
+  if(CanBusAvailable && _canbusEnabled){
   // Create task and pin to Core
     xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,0);    
     return true;

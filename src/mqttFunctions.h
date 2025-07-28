@@ -7,9 +7,14 @@ extern "C" {
 	#include "freertos/FreeRTOS.h"
 	#include "freertos/timers.h"
 }
-#include <AsyncMqttClient.h>
+//#include <AsyncMqttClient.h>
+#include <PsychicMqttClient.h>
+#define MAX_PENDING_MSGS 10
+#define MQTT_BUFFER_SIZE 2048
+const unsigned long MQTT_TIMEOUT_MS = 5000;  
 
-AsyncMqttClient mqttClient;
+PsychicMqttClient mqttClient;
+
 TimerHandle_t mqttReconnectTimer;
 //mEEPROM pref;
 bool mqttEnabled = false;
@@ -19,7 +24,21 @@ String sServer;
 String sSubscribe;
 String sTopic;
 String sTopicData;
-char buffer[10];
+String sClientid;
+uint16_t iPort = 1883; // Default MQTT Port
+
+//char buffer[10];
+
+typedef struct 
+{
+  char *payloadbuffer;
+  char *topicbuffer;
+  int msg_id;
+  uint32_t millis;
+  bool active;
+} mqtt_msg_t;
+
+static mqtt_msg_t pending_msgs[MAX_PENDING_MSGS];
 
 bool mqttPublish(String topic, String payload, bool retain)
 {
@@ -28,11 +47,65 @@ bool mqttPublish(String topic, String payload, bool retain)
 
 bool mqttPublish(const char* topic, const char* payload, bool retain)
 {
-  if (mqttClient.connected())
-    return mqttClient.publish(topic,0,retain,payload);
-  else 
-    return false;
-    
+  if (!mqttClient.connected()) return false;
+
+  // Remove from pending messages
+  for (int i = 0; i < MAX_PENDING_MSGS; i++) {
+    if (pending_msgs[i].active && millis() - pending_msgs[i].millis > MQTT_TIMEOUT_MS) {
+      free(pending_msgs[i].payloadbuffer);
+      free(pending_msgs[i].topicbuffer);
+      log_d("Time out, removed msg_id %d from pending messages", pending_msgs[i].msg_id);
+      pending_msgs[i].payloadbuffer = nullptr;
+      pending_msgs[i].topicbuffer = nullptr;
+      pending_msgs[i].msg_id = -1;
+      pending_msgs[i].active = false;
+      
+    }
+  }
+
+  size_t lenPayload = strlen(payload);
+  size_t lenTopic = strlen(topic);
+
+  char *payloadBuffer = (char*)malloc(lenPayload+1);
+  char *topicBuffer = (char*)malloc(lenTopic+1);
+  if (!payloadBuffer || !topicBuffer) {
+      log_e("Failed to allocate memory");
+      free(payloadBuffer);
+      free(topicBuffer);
+      return false;
+  }
+
+  bool addedToQueue = false;
+  strcpy(payloadBuffer, payload);
+  strcpy(topicBuffer, topic);
+  int msg_id = mqttClient.publish(topicBuffer,1,retain,payloadBuffer,strlen(payloadBuffer),true);
+
+  if (msg_id < 0) {
+      log_e("Failed to enqueue message");
+      free(payloadBuffer);
+      free(topicBuffer);
+      return false;
+  } 
+
+  // Track buffer for cleanup
+  for (int i = 0; i < MAX_PENDING_MSGS; i++) {
+      if (!pending_msgs[i].active) {
+          pending_msgs[i].payloadbuffer = payloadBuffer;
+          pending_msgs[i].topicbuffer = topicBuffer;
+          pending_msgs[i].msg_id = msg_id;
+          pending_msgs[i].millis = millis();
+          pending_msgs[i].active = true;
+          addedToQueue = true;
+          break;
+      }
+  }
+  if (!addedToQueue) {
+      log_e("No space in pending messages");
+      free(payloadBuffer);
+      free(topicBuffer);
+      return false;
+  }
+  return true;
 }
 
 bool sendUpdateMQTTData()
@@ -46,7 +119,10 @@ bool sendUpdateMQTTData()
     return true;
   } 
   else  
-    return false; 
+  {
+    log_e("MQTT not connected, cannot send update data.");
+    return false;
+  }
 }
 
 //
@@ -70,187 +146,175 @@ bool sendVE2MQTT() {
         }
     } 
   } */
-
-  // Send Voltage
-  sprintf (buffer, "%u", Inverter.BattVoltage());
-  mqttPublish((sTopic + "/V").c_str(),buffer,false);
-  // Send Current
-  sprintf (buffer, "%i", Inverter.BattCurrentmA());
-  mqttPublish((sTopic + "/I").c_str(),buffer,false);
-  // Send SOC
-  sprintf (buffer, "%i", Inverter.BattSOC());
-  mqttPublish((sTopic + "/SOC").c_str(),buffer,false);
-
   // Publish Json with more details in.
-  mqttPublish(sTopicData.c_str(),generateDatatoJSON(false).c_str(),false);
+  mqttPublish((sTopic + "/Data").c_str(),generateDatatoJSON(false).c_str(),false);
+  // Send Voltage
+  //sprintf (buffer, "%u", Inverter.BattVoltage());
+  //mqttPublish((sTopic + "/V").c_str(),buffer,false);
+  // Send Current
+  //sprintf (buffer, "%i", Inverter.BattCurrentmA());
+  //mqttPublish((sTopic + "/I").c_str(),buffer,false);
+  // Send SOC
+  //sprintf (buffer, "%i", Inverter.BattSOC());
+  //mqttPublish((sTopic + "/SOC").c_str(),buffer,false);
+
   return true;
 }
 
 void connectToMqtt() {
     if (!mqttEnabled) return;
     log_i("Connecting to MQTT...");
-    //if (sUser.length()>0)
-    log_i("Using User: %s, Password: %s",sUser,sPass);
-    //mqttClient.setCredentials(sUser.c_str(),sPass.c_str());
-    mqttClient.setCredentials(sUser.c_str(),sPass.c_str());
     mqttClient.connect();
-}
-
-void WiFiEvent(WiFiEvent_t event) {
-    log_d("[WiFi-event] event: %d\n", event);
-    switch(event) {
-    case SYSTEM_EVENT_STA_GOT_IP:
-        log_d("WiFi connected, IP Address: %s",WiFi.localIP().toString());
-        connectToMqtt();
-        break;
-    case SYSTEM_EVENT_STA_DISCONNECTED:
-        log_d("WiFi lost connection");
-        xTimerStop(mqttReconnectTimer, 0); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
-        break;
-    }
 }
 
 void onMqttConnect(bool sessionPresent) {
   log_d("Connected to MQTT.");
   Lcd.Data.MQTTConnected.setValue(true);
-  sSubscribe = pref.getString(ccMQTTTopic,"");
-  if (!sSubscribe.endsWith("/"))
-    sSubscribe += "/";
-
-  //uint16_t packetIdSub = mqttClient.subscribe((sSubscribe + "set/#").c_str(), 0);
-
-  mqttClient.subscribe((sSubscribe + "set/ChargeEnable").c_str(),2);
-  mqttClient.subscribe((sSubscribe + "set/DischargeEnable").c_str(),2);
-  mqttClient.subscribe((sSubscribe + "set/ForceCharge").c_str(),2);
-  mqttClient.subscribe((sSubscribe + "set/EnablePYLONTECH").c_str(),2);
-  mqttClient.subscribe((sSubscribe + "set/ChargeVoltage").c_str(),2);
-  mqttClient.subscribe((sSubscribe + "set/ChargeCurrent").c_str(),2);
-  
+  mqttClient.setWill((sTopic + "/status").c_str(), 2, true, "offline");
+  yield();
+  mqttClient.subscribe((sTopic + "/set/#").c_str(), 2);
+  yield();
+  mqttPublish((sTopic + "/status").c_str(), "online", true);
 }
 
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
-
-  switch (reason)
-  {
-    case AsyncMqttClientDisconnectReason::TCP_DISCONNECTED:
-      log_d("Disconnected from MQTT due to TCP Disconnection");
-      break;
-    case AsyncMqttClientDisconnectReason::ESP8266_NOT_ENOUGH_SPACE:
-      log_d("Disconnected from MQTT due to Not Enough Space");
-      break;
-    case AsyncMqttClientDisconnectReason::MQTT_IDENTIFIER_REJECTED:
-      log_d("Disconnected from MQTT, due to MQTT Identifier Rejected");
-      break;
-    case AsyncMqttClientDisconnectReason::MQTT_MALFORMED_CREDENTIALS:
-      log_d("Disconnected from MQTT, due to Malformed Credentials");
-      break;
-    case AsyncMqttClientDisconnectReason::MQTT_NOT_AUTHORIZED:
-      log_d("Disconnected from MQTT, due to Not Authorised");
-      break;
-    case AsyncMqttClientDisconnectReason::MQTT_SERVER_UNAVAILABLE:
-      log_d("Disconnected from MQTT, due to Server Unavailable");
-      break;
-    case AsyncMqttClientDisconnectReason::MQTT_UNACCEPTABLE_PROTOCOL_VERSION:
-      log_d("Disconnected from MQTT, Unacceptable Protocol Version");
-      break;
-    case AsyncMqttClientDisconnectReason::TLS_BAD_FINGERPRINT:
-      log_d("Disconnected from MQTT, due to Bad TLS Fingerprint");
-      break;
-    default:
-      log_d("Disconnected from MQTT for Unknown Reason");
-      break;
-  }
-
+void onMqttDisconnect(bool sessionPresent) {
+  log_d("Disconnected from MQTT, sessionPresent: %d, Cleaning up pending messages.", sessionPresent);
   Lcd.Data.MQTTConnected.setValue(false);
-
-  if (WiFi.isConnected()) {
-      xTimerStart(mqttReconnectTimer, 0);
-  }
-
-}
-
-void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
-  log_d("Subscribe acknowledged. packetId: %d qos: %d", packetId, qos);
-}
-
-void onMqttUnsubscribe(uint16_t packetId) {
-  log_d("Unsubscribe acknowledged.");
-}
-
-void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
-  log_d("Message received. Topic: %s, Payload: %s",topic,payload);
-  
-String sTopic = String(topic);
-String message = String(payload,len);
-
-if (sTopic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
-    Inverter.SetDischargeCurrent(message.toInt());
-  }
-  else if (sTopic == (wifiManager.GetMQTTTopic() + "/set/ChargeVoltage")) {
-    if (message.toInt() > 0) {
-      Inverter.SetChargeVoltage(message.toInt());
+  for (int i = 0; i < MAX_PENDING_MSGS; i++) {
+  if (pending_msgs[i].active) {
+    free(pending_msgs[i].payloadbuffer);
+    free(pending_msgs[i].topicbuffer);
+    pending_msgs[i].payloadbuffer = nullptr;
+    pending_msgs[i].topicbuffer = nullptr;
+    pending_msgs[i].msg_id = -1;
+    pending_msgs[i].active = false;
     }
   }
-  else if (sTopic == wifiManager.GetMQTTTopic() + "/set/ChargeCurrent") {
-   Inverter.SetChargeCurrent(message.toInt());
+}
+
+void onMqttSubscribe(uint16_t msg_id) {
+  log_d("Subscribe acknowledged. Msg ID: %d", msg_id);
+}
+
+void onMqttUnsubscribe(uint16_t msg_id) {
+  log_d("Unsubscribe acknowledged. Msg ID: %d", msg_id);
+}
+
+void onMqttError(esp_mqtt_error_codes_t error) {
+  log_e("MQTT Error: %s, Type: %d, Connect Return Code: %d, ESP Transport Sock Errno: %d",
+        esp_err_to_name(error.esp_tls_last_esp_err), error.error_type, error.connect_return_code, error.esp_transport_sock_errno);
+}
+
+void onMqttMessage(char* topic, char* payload, int retain, int qos, bool dup) {
+   
+String _Topic = String(topic);
+String message = String(payload);
+log_i("MQTT Message: %s, Topic: %s", message.c_str(), _Topic.c_str());
+
+if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
+
+    Inverter.SetDischargeCurrent(message.toInt());
+    log_d("Discharge current set to: %d", message.toInt());
   }
-  else if (sTopic == wifiManager.GetMQTTTopic() + "/set/ForceCharge") {
+  else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/ChargeVoltage")) {
+    if (message.toInt() > 0) {
+      Inverter.SetChargeVoltage(message.toInt());
+      log_d("Charge voltage set to: %d", message.toInt());
+    }
+  }
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ChargeCurrent") {
+   Inverter.SetChargeCurrent(message.toInt());
+   log_d("Charge current set to: %d", message.toInt());
+  }
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ForceCharge") {
     bool forcecharge = (message == "ON") ? true : false;
     Inverter.ForceCharge((message == "ON") ? true : false);
     log_d("Force charge set to: %d", forcecharge);
-   }
-  else if (sTopic == wifiManager.GetMQTTTopic() + "/set/DischargeEnable") {
-    Inverter.ManualAllowDischarge((message == "ON") ? true : false); 
-   }
-  else if (sTopic == wifiManager.GetMQTTTopic() + "/set/ChargeEnable") {
-    Inverter.ManualAllowCharge((message == "ON") ? true : false); 
-   }
-  else if (sTopic == wifiManager.GetMQTTTopic() + "/set/EnablePYLONTECH") {
-    Inverter.EnablePylonTech((message == "ON") ? true : false); 
-   }
+  }
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/DischargeEnable") {
+    Inverter.ManualAllowDischarge((message == "ON") ? true : false);
+    log_d("Discharge enable set to: %s", (message == "ON") ? "ON" : "OFF");
+  }
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ChargeEnable") {
+    Inverter.ManualAllowCharge((message == "ON") ? true : false);
+    log_d("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
+  }
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/EnablePYLONTECH") {
+    Inverter.EnablePylonTech((message == "ON") ? true : false);
+    log_d("Enable PylonTech set to: %s", (message == "ON") ? "ON" : "OFF");
+  }
   
 }
 
-void onMqttPublish(uint16_t packetId) {
-  //log_d("Publish acknowledged. packetId: %d", packetId);
+void onMqttPublish(uint16_t msg_id) {
+ 
+  // Free buffer associated with this msg_id
+  log_i("MQTT Publish acknowledged. Msg ID: %d", msg_id);
+  for (int i = 0; i < MAX_PENDING_MSGS; i++) {
+    if (pending_msgs[i].msg_id == msg_id) {
+      free(pending_msgs[i].payloadbuffer);
+      free(pending_msgs[i].topicbuffer);
+      pending_msgs[i].payloadbuffer = nullptr;
+      pending_msgs[i].topicbuffer = nullptr;
+      pending_msgs[i].msg_id = -1;
+      pending_msgs[i].active = false;
+      break;
+    }
+  }
+
 }
 
 void mqttsetup() {
 
-    sServer = wifiManager.GetMQTTServerIP();
-    sUser = wifiManager.GetMQTTUser();
-    sPass = wifiManager.GetMQTTPass();
-    sTopic = wifiManager.GetMQTTTopic();
-    sTopicData = wifiManager.GetMQTTTopic() + "/Data";
-    uint16_t mqttPort = (uint16_t) pref.getUInt16(ccMQTTPort,mqttPort);
-    IPAddress _ip;
-    bool useIP = false;
-    
-    mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
+  portMUX_TYPE MqttMutex = portMUX_INITIALIZER_UNLOCKED;
+  memset(pending_msgs, 0, sizeof(pending_msgs));
+  for (int i = 0; i < MAX_PENDING_MSGS; i++) {
+      pending_msgs[i].payloadbuffer = nullptr;
+      pending_msgs[i].topicbuffer = nullptr;
+      pending_msgs[i].msg_id = -1;
+      pending_msgs[i].active = false;
+  }
 
-    WiFi.onEvent(WiFiEvent);
+  taskENTER_CRITICAL(&MqttMutex);
+    sServer = String(wifiManager.GetMQTTServerIP().c_str());
+    sUser = String(wifiManager.GetMQTTUser().c_str());
+    sPass = String(wifiManager.GetMQTTPass().c_str());
+    sTopic = String(wifiManager.GetMQTTTopic().c_str());
+    sTopicData = String((wifiManager.GetMQTTTopic() + wifiManager.GetMQTTParameter()).c_str());
+    sClientid = String(wifiManager.GetMQTTClientID().c_str());
+    iPort = wifiManager.GetMQTTPort();
+    if (sServer.length() == 0 || iPort < 1) {
+      log_i("MQTT details not set, not connecting to MQTT.");
+      mqttEnabled = false;
+      taskEXIT_CRITICAL(&MqttMutex);
+      return;
+    }
+    if(sServer.startsWith("mqtt://") || sServer.startsWith("ws://")) {
+      sServer += String(":") + String(iPort);
+      mqttClient.setServer(sServer.c_str());
+    } else {
+      sServer = String("mqtt://") + sServer + String(":") + String(iPort);
+      mqttClient.setServer(sServer.c_str());
+    }
+   
+    mqttClient.setBufferSize(MQTT_BUFFER_SIZE);
+    log_d("Setting MQTT Server to: %s", sServer.c_str());
+   
+    mqttClient.setCredentials(sUser.c_str(),sPass.c_str());
+    mqttEnabled = true;
 
+    if (sClientid.length() < 2) {
+      sClientid = "DiyBatteryBMS_" + String(WiFi.macAddress());
+      log_d("MQTT Client ID not set, using default: %s", sClientid.c_str());
+    }
+    mqttClient.setClientId(sClientid.c_str());
+    mqttClient.onPublish(onMqttPublish);
     mqttClient.onConnect(onMqttConnect);
     mqttClient.onDisconnect(onMqttDisconnect);
-  //  mqttClient.onSubscribe(onMqttSubscribe);
+    mqttClient.onSubscribe(onMqttSubscribe);
   //  mqttClient.onUnsubscribe(onMqttUnsubscribe);
-    mqttClient.onMessage(onMqttMessage);
-  //  mqttClient.onPublish(onMqttPublish);
+    mqttClient.onMessage(onMqttMessage);  
 
-    if (sServer.length()>0)
-    {
-        if (_ip.fromString(sServer))
-        {
-            mqttEnabled = true;
-            log_d("Using IP Address method to connect.");
-            mqttClient.setServer(_ip,mqttPort);
-        }
-        else {
-            log_d("Using Hostname method to connect.");
-            mqttClient.setServer(sServer.c_str(),mqttPort);
-        }
-
-    }
-    else return;
-
+  taskEXIT_CRITICAL(&MqttMutex);
+    
 }

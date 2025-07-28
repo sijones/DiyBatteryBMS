@@ -77,6 +77,7 @@ time_t last_lcd_refresh;
 time_t last_mqtt_reconnect;
 time_t last_loop;
 TaskHandle_t tHandleWeb = NULL;
+bool FirstRun = true;
 
 void setup()
 {
@@ -226,7 +227,7 @@ void setup()
   // Set the lcd timer
   time_t t = time(nullptr);
   last_lcd_refresh = t;
-
+  log_d("Setup complete, starting loop.");
   return;
 }
 
@@ -235,6 +236,10 @@ void loop()
 
   time_t t = time(nullptr);
  
+  if(WiFi.isConnected() && FirstRun && mqttEnabled) {
+    connectToMqtt();
+    FirstRun = false; }
+  
   wifiManager.loop(); 
 
   while(Serial1.available() > 0)
@@ -267,12 +272,9 @@ void loop()
     sendUpdateMQTTData();
   }
 
-
   if (abs(t - last_lcd_refresh) >= VE_LCD_REFRESH)
   {
-//#ifdef ESPCAN
-//    Inverter.SendAllUpdates();
-//#endif
+
     last_lcd_refresh = t;
     // Update LCD Screen Values
     Lcd.Data.ChargeVolts.setValue(Inverter.GetChargeVoltage());

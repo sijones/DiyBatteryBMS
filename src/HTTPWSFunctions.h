@@ -61,11 +61,6 @@ void TaskSetClock(void * pointer) {
 
 }
 
-void handleUpdate()
-{
-
-}
-
 String generateDatatoJSON(bool All)
 {
   JsonDocument doc;
@@ -313,18 +308,23 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         notifyWSClients(); }
 
-        if (!doc["victrontxpin"].isNull()) {
+      if (!doc["victrontxpin"].isNull()) {
         pref.putUInt8(ccVictronTX, (uint8_t) doc["victrontxpin"]);
         handled = true;
         notifyWSClients(); }
 
-        if (!doc["can_rx_pin"].isNull()) {
+      if (!doc["can_rx_pin"].isNull()) {
         pref.putUInt8(ccCAN_RX_PIN, (uint8_t) doc["can_rx_pin"]);
         handled = true;
         notifyWSClients(); }
 
-        if (!doc["can_tx_pin"].isNull()) {
+      if (!doc["can_tx_pin"].isNull()) {
         pref.putUInt8(ccCAN_TX_PIN, (uint8_t) doc["can_tx_pin"]);
+        handled = true;
+        notifyWSClients(); }
+
+      if (!doc["can_en_pin"].isNull()) {
+        pref.putUInt8(ccCAN_EN_PIN, (uint8_t) doc["can_en_pin"]);
         handled = true;
         notifyWSClients(); }
 
@@ -528,18 +528,18 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
 void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEventType type, void * arg, uint8_t *data, size_t len){
   if(type == WS_EVT_CONNECT){
     //client connected
-    log_i("ws[%s][%u] connected\n", wsserver->url(), wsclient->id());
+    log_i("ws[%s][%u] connected", wsserver->url(), wsclient->id());
     //wsclient->printf("Your Client %u :)", wsclient->id());
     wsclient->ping();
   } else if(type == WS_EVT_DISCONNECT){
     //client disconnected
-    log_i("ws[%s][%u] disconnect: %u\n", wsserver->url(), wsclient->id());
+    log_i("ws[%s][%u] disconnect: %u", wsserver->url(), wsclient->id());
   } else if(type == WS_EVT_ERROR){
     //error was received from the other end
-    log_d("ws[%s][%u] error(%u): %s\n", wsserver->url(), wsclient->id(), *((uint16_t*)arg), (char*)data);
+    log_d("ws[%s][%u] error(%u): %s", wsserver->url(), wsclient->id(), *((uint16_t*)arg), (char*)data);
   } else if(type == WS_EVT_PONG){
     //pong message was received (in response to a ping request maybe)
-    log_i("ws[%s][%u] pong[%u]: %s\n", wsserver->url(), wsclient->id(), len, (len)?(char*)data:"");
+    log_i("ws[%s][%u] pong[%u]: %s", wsserver->url(), wsclient->id(), len, (len)?(char*)data:"");
     log_i("Sending All Data to All WS Clients");
     notifyWSClients();
   } else if(type == WS_EVT_DATA){

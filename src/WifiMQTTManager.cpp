@@ -31,10 +31,12 @@ bool WifiMQTTManagerClass::begin()
         m_pref.putString(ccMQTTParam,_mqttParameter);
     else
         _mqttParameter = m_pref.getString(ccMQTTParam,_mqttParameter);
+        
     if(!m_pref.isKey(ccMQTTTopic))
         m_pref.putString(ccMQTTTopic,_mqttTopic);
     else
         _mqttTopic = m_pref.getString(ccMQTTTopic,_mqttTopic);
+
     if(!m_pref.isKey(ccMQTTUser))
         m_pref.putString(ccMQTTUser,_mqttUser);
     else
@@ -86,6 +88,8 @@ bool WifiMQTTManagerClass::begin()
         else {
             log_d("MQTT details stored are not valid.");
             log_d("MQTT Server IP: %s, MQTT Port %d, MQTT Client ID: %s",_mqttServer,_mqttPort,_mqttClientID);
+            if(_mqttTopic.length() < 2)
+                log_d("MQTT Topic: %s",_mqttTopic);
         } 
 
     } else 
