@@ -70,15 +70,15 @@ bool mqttPublish(const char* topic, const char* payload, bool retain)
   char *topicBuffer = (char*)malloc(lenTopic+1);
   if (!payloadBuffer || !topicBuffer) {
       log_e("Failed to allocate memory");
-      free(payloadBuffer);
-      free(topicBuffer);
+      if (payloadBuffer) free(payloadBuffer);
+      if (topicBuffer) free(topicBuffer);
       return false;
   }
 
   bool addedToQueue = false;
   strcpy(payloadBuffer, payload);
   strcpy(topicBuffer, topic);
-  int msg_id = mqttClient.publish(topicBuffer,1,retain,payloadBuffer,strlen(payloadBuffer),true);
+  int msg_id = mqttClient.publish(topicBuffer,1,retain,payloadBuffer,lenPayload+1,true);
 
   if (msg_id < 0) {
       log_e("Failed to enqueue message");
@@ -264,9 +264,11 @@ void onMqttPublish(uint16_t msg_id) {
 
 }
 
+// Declare the mutex as a static variable at file scope
+static portMUX_TYPE MqttMutex = portMUX_INITIALIZER_UNLOCKED;
+
 void mqttsetup() {
 
-  portMUX_TYPE MqttMutex = portMUX_INITIALIZER_UNLOCKED;
   memset(pending_msgs, 0, sizeof(pending_msgs));
   for (int i = 0; i < MAX_PENDING_MSGS; i++) {
       pending_msgs[i].payloadbuffer = nullptr;
@@ -283,10 +285,10 @@ void mqttsetup() {
     sTopicData = String((wifiManager.GetMQTTTopic() + wifiManager.GetMQTTParameter()).c_str());
     sClientid = String(wifiManager.GetMQTTClientID().c_str());
     iPort = wifiManager.GetMQTTPort();
+    taskEXIT_CRITICAL(&MqttMutex);
     if (sServer.length() == 0 || iPort < 1) {
       log_i("MQTT details not set, not connecting to MQTT.");
       mqttEnabled = false;
-      taskEXIT_CRITICAL(&MqttMutex);
       return;
     }
     if(sServer.startsWith("mqtt://") || sServer.startsWith("ws://")) {
@@ -315,6 +317,6 @@ void mqttsetup() {
   //  mqttClient.onUnsubscribe(onMqttUnsubscribe);
     mqttClient.onMessage(onMqttMessage);  
 
-  taskEXIT_CRITICAL(&MqttMutex);
+
     
 }
