@@ -2,7 +2,8 @@
 
 #include <ArduinoJson.h>
 #include <WiFi.h>
-//#include <AsyncElegantOTA.h>
+#include <Update.h>
+
 
 void TaskSetClock(void * pointer) {
   
@@ -269,8 +270,10 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         notifyWSClients(); }
       if (!doc["canbusenabled"].isNull()) {
-        pref.putBool(ccCANBusEnabled, doc["canbusenabled"]);
-        Inverter.CANBusEnabled(doc["canbusenabled"]);
+        bool value = bool(doc["canbusenabled"]);
+        pref.putBool(ccCANBusEnabled, value);
+        Inverter.CANBusEnabled(value);
+        Inverter.StartRunTask(value);
         handled = true;
         notifyWSClients(); }
 
@@ -305,18 +308,23 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         notifyWSClients(); }
 
-        if (!doc["victrontxpin"].isNull()) {
+      if (!doc["victrontxpin"].isNull()) {
         pref.putUInt8(ccVictronTX, (uint8_t) doc["victrontxpin"]);
         handled = true;
         notifyWSClients(); }
 
-        if (!doc["can_rx_pin"].isNull()) {
+      if (!doc["can_rx_pin"].isNull()) {
         pref.putUInt8(ccCAN_RX_PIN, (uint8_t) doc["can_rx_pin"]);
         handled = true;
         notifyWSClients(); }
 
-        if (!doc["can_tx_pin"].isNull()) {
+      if (!doc["can_tx_pin"].isNull()) {
         pref.putUInt8(ccCAN_TX_PIN, (uint8_t) doc["can_tx_pin"]);
+        handled = true;
+        notifyWSClients(); }
+
+      if (!doc["can_en_pin"].isNull()) {
+        pref.putUInt8(ccCAN_EN_PIN, (uint8_t) doc["can_en_pin"]);
         handled = true;
         notifyWSClients(); }
 
@@ -520,18 +528,18 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
 void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEventType type, void * arg, uint8_t *data, size_t len){
   if(type == WS_EVT_CONNECT){
     //client connected
-    log_i("ws[%s][%u] connected\n", wsserver->url(), wsclient->id());
+    log_i("ws[%s][%u] connected", wsserver->url(), wsclient->id());
     //wsclient->printf("Your Client %u :)", wsclient->id());
     wsclient->ping();
   } else if(type == WS_EVT_DISCONNECT){
     //client disconnected
-    log_i("ws[%s][%u] disconnect: %u\n", wsserver->url(), wsclient->id());
+    log_i("ws[%s][%u] disconnect: %u", wsserver->url(), wsclient->id());
   } else if(type == WS_EVT_ERROR){
     //error was received from the other end
-    log_d("ws[%s][%u] error(%u): %s\n", wsserver->url(), wsclient->id(), *((uint16_t*)arg), (char*)data);
+    log_d("ws[%s][%u] error(%u): %s", wsserver->url(), wsclient->id(), *((uint16_t*)arg), (char*)data);
   } else if(type == WS_EVT_PONG){
     //pong message was received (in response to a ping request maybe)
-    log_i("ws[%s][%u] pong[%u]: %s\n", wsserver->url(), wsclient->id(), len, (len)?(char*)data:"");
+    log_i("ws[%s][%u] pong[%u]: %s", wsserver->url(), wsclient->id(), len, (len)?(char*)data:"");
     log_i("Sending All Data to All WS Clients");
     notifyWSClients();
   } else if(type == WS_EVT_DATA){
@@ -562,22 +570,32 @@ void StartWebServices()
     server.onNotFound([](AsyncWebServerRequest *request){
       request->redirect("/index-ap.htm");
     });
-    log_d("Redirecting root to index-ap.htm"); }
+    log_d("Redirecting root to index-ap.htm");
+    
+    server.on("/mobile/status.php", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->redirect("/index-ap.htm");});
+
+    server.on("/generate_204", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->redirect("/index-ap.htm");}); 
+  }
   else {
     server.rewrite("/", "/index.htm");
     log_d("Redirecting root to index.htm"); 
   }
- /* 
- server.on("/mobile/status.php", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->redirect("/index-ap.htm");
-  });
-    server.on("/generate_204", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->redirect("/index-ap.htm");
-  }); 
-  */   
 
-  AsyncElegantOTA.begin(&server);
-
+  //setup the updateServer with credentials
+  updateServer.setup(&server);
+  //hook to update events if you need to
+  updateServer.onUpdateBegin = [](const UpdateType type, int &result)
+  {
+      //you can force abort the update like this if you need to:
+      //result = UpdateResult::UPDATE_ABORT;        
+      Serial.println("Update started : " + String(type));
+  };
+  updateServer.onUpdateEnd = [](const UpdateType type, int &result)
+  {
+      Serial.println("Update finished : " + String(type) + " result: " + String(result));
+  };
   //server.rewrite("/index.htm", "/index-ap.htm").setFilter(ON_AP_FILTER);
   server.serveStatic("/", LittleFS, "/");
 
@@ -619,6 +637,7 @@ void StartWebServices()
     request->send(200, "application/json", json);
     json = String();
   });
+  
 }
 
 

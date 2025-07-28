@@ -2,11 +2,9 @@
 #include "mEEPROM.h"
 
 #ifdef ESPCAN
-
 CAN_device_t CAN_cfg;             // CAN Config
 const int interval = 1000;        // interval at which send CAN Messages (milliseconds)
 const int rx_queue_size = 10;     // Receive Queue size
-
 #else
 
 #endif
@@ -41,8 +39,9 @@ void canSendTask(void * pointer){
   CANBUS *Inverter = (CANBUS *) pointer;
   log_i("Starting CAN Bus send task");
 
-  for (;;) {
-//    taskENTER_CRITICAL(&CanMutex);
+  while (true)
+  {
+  //    taskENTER_CRITICAL(&CanMutex);
 
 #ifdef ESPCAN
       CAN_frame_t rx_frame;
@@ -52,25 +51,24 @@ void canSendTask(void * pointer){
       {
         if (rx_frame.FIR.B.FF == CAN_frame_std)
         {
-          printf("New standard frame");
+          log_i("New standard frame");
         }
         else
         {
-          printf("New extended frame");
+          log_i("New extended frame");
         }
 
         if (rx_frame.FIR.B.RTR == CAN_RTR)
         {
-          printf(" RTR from 0x%08X, DLC %d\r\n", rx_frame.MsgID, rx_frame.FIR.B.DLC);
+          log_i(" RTR from 0x%08X, DLC %d", rx_frame.MsgID, rx_frame.FIR.B.DLC);
         }
         else
         {
-          printf(" from 0x%08X, DLC %d, Data ", rx_frame.MsgID, rx_frame.FIR.B.DLC);
+          log_i(" from 0x%08X, DLC %d, Data ", rx_frame.MsgID, rx_frame.FIR.B.DLC);
           for (int i = 0; i < rx_frame.FIR.B.DLC; i++)
           {
-            printf("0x%02X ", rx_frame.data.u8[i]);
+            log_i("0x%02X ", rx_frame.data.u8[i]);
           }
-          printf("\n");
         }
       }
 #endif
@@ -79,7 +77,12 @@ void canSendTask(void * pointer){
     //    taskEXIT_CRITICAL(&CanMutex);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
+
+  vTaskDelete(nullptr);
+
 }
+
+// End of canSendTask
 
 #ifdef ESPCAN
 bool CANBUS::Begin(uint8_t ESPCAN_TX_PIN, uint8_t ESPCAN_RX_PIN, uint8_t ESPCAN_EN_PIN) {
@@ -158,26 +161,66 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
 
   #endif
 }
+bool CANBUS::StartRunTask(bool Run)
+{
+ 
+  if (tHandle != nullptr && !Run) {
+    log_i("Stopping CAN Bus Task");
+    vTaskDelete(tHandle);
+    tHandle = nullptr;
+    return true;
+  }
+
+  if (tHandle != nullptr && Run) {
+    eTaskState state = eTaskGetState(tHandle);
+    switch (state) {
+    case eRunning:
+        log_i("Task is running.");
+        break;
+    case eReady:
+        log_i("Task is ready to run.");
+        StartRunTask();
+        break;
+    case eBlocked:
+        log_i("Task is blocked (e.g. waiting on a delay or semaphore).");
+        break;
+    case eSuspended:
+        Serial.println("Task is suspended.");
+        break;
+    case eDeleted:
+        log_i("Task has been deleted.");
+        StartRunTask();
+        break;
+    default:
+        log_i("Unknown task state.");
+        StartRunTask();
+        break;
+    }
+  } else
+  {
+    log_i("Starting CAN Bus Task");
+    StartRunTask();
+  }
+  return true;
+}
 
 bool CANBUS::StartRunTask()
 {
-    if(CanBusAvailable){
-    // Create task and pin to Core1
-      xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,0);    
-      return true;
-    }
-    else
-      return false;
+  if(CanBusAvailable && _canbusEnabled){
+  // Create task and pin to Core
+    xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,0);    
+    return true;
+  }
+  else
+    return false;
 }
 
 bool CANBUS::SendAllUpdates()
 {
-  log_i("SendAllUpdates Called");
+
   if (!_canbusEnabled) return false;
-  log_i("Passed CANBUS Enabled");
   if (Initialised() && Configured())
     {
-    log_i("CANBUS is Initialised and Configured");
     time_t t = time(nullptr);
 
     // Turn off force charge, this is defined in PylonTech Protocol
@@ -352,8 +395,6 @@ bool CANBUS::DataChanged(){
 bool CANBUS::SendCANData(){
 
   if (!Initialised() && !Configured()) return false;
-
-  log_i("SendCanData Called");
 
   uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
   uint16_t _tempChargeVolt = (_chargeVoltage * 0.01);

@@ -175,6 +175,7 @@ public:
   #endif
 
   bool StartRunTask();
+  bool StartRunTask(bool Run);
   bool SendBattUpdate(uint8_t SOC, uint16_t Voltage, int32_t CurrentmA, int16_t BattTemp, uint8_t SOH);
   bool SendAllUpdates();
   bool SendBattUpdate();
