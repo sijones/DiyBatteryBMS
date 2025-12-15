@@ -2,13 +2,11 @@
 #include "mEEPROM.h"
 
 #ifdef ESPCAN
-  #ifdef ESPCAN_S3
-    // ESP32-S3 TWAI specific variables
-    const int rx_queue_size = 10;
-  #else
+  const int rx_queue_size = 10;     // Receive Queue size (common for ESP32 and ESP32-S3)
+  
+  #ifndef ESPCAN_S3
     // Original ESP32 CAN config
     CAN_device_t CAN_cfg;             // CAN Config
-    const int rx_queue_size = 10;     // Receive Queue size
   #endif
 #else
 
