@@ -4,7 +4,6 @@
 #ifdef ESPCAN
   #ifdef ESPCAN_S3
     // ESP32-S3 TWAI specific variables
-    twai_handle_t twai_bus = NULL;
     const int rx_queue_size = 10;
   #else
     // Original ESP32 CAN config
