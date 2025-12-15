@@ -2,9 +2,16 @@
 #include "mEEPROM.h"
 
 #ifdef ESPCAN
-CAN_device_t CAN_cfg;             // CAN Config
-const int interval = 1000;        // interval at which send CAN Messages (milliseconds)
-const int rx_queue_size = 10;     // Receive Queue size
+  #ifdef ESPCAN_S3
+    // ESP32-S3 TWAI specific variables
+    twai_handle_t twai_bus = NULL;
+    const int rx_queue_size = 10;
+  #else
+    // Original ESP32 CAN config
+    CAN_device_t CAN_cfg;             // CAN Config
+    const int interval = 1000;        // interval at which send CAN Messages (milliseconds)
+    const int rx_queue_size = 10;     // Receive Queue size
+  #endif
 #else
 
 #endif
@@ -12,6 +19,21 @@ const int rx_queue_size = 10;     // Receive Queue size
 bool CANBUS::SendToDriver(uint32_t CMD,uint8_t Length,uint8_t *Data) {
   
 #ifdef ESPCAN
+  #ifdef ESPCAN_S3
+    // ESP32-S3 TWAI implementation
+    twai_message_t tx_msg;
+    tx_msg.identifier = CMD;
+    tx_msg.data_length_code = (Length > 8) ? 8 : Length;
+    tx_msg.flags = TWAI_MSG_FLAG_NONE;  // Standard frame, no RTR
+    memcpy(tx_msg.data, Data, tx_msg.data_length_code);
+    
+    if (twai_transmit(&tx_msg, pdMS_TO_TICKS(1000)) == ESP_OK) {
+      return true;
+    } else {
+      return false;
+    }
+  #else
+    // Original ESP32 implementation
     CAN_frame_t tx_frame;
     tx_frame.FIR.B.FF = CAN_frame_std;
     tx_frame.MsgID = CMD;
@@ -21,6 +43,7 @@ bool CANBUS::SendToDriver(uint32_t CMD,uint8_t Length,uint8_t *Data) {
     tx_frame.FIR.B.RTR = CAN_no_RTR;
     ESP32Can.CANWriteFrame(&tx_frame);
     return true;
+  #endif
 #else
   byte sndStat;
   //sndStat = CAN->sendMsgBuf(0x35E, 0, 8, MSG_PYLON);
@@ -44,6 +67,37 @@ void canSendTask(void * pointer){
   //    taskENTER_CRITICAL(&CanMutex);
 
 #ifdef ESPCAN
+  #ifdef ESPCAN_S3
+      // ESP32-S3 TWAI receive implementation
+      twai_message_t rx_msg;
+      
+      // Receive next CAN frame (non-blocking)
+      if (twai_receive(&rx_msg, 0) == ESP_OK)
+      {
+        if (rx_msg.flags & TWAI_MSG_FLAG_EXTD)
+        {
+          log_i("New extended frame");
+        }
+        else
+        {
+          log_i("New standard frame");
+        }
+
+        if (rx_msg.flags & TWAI_MSG_FLAG_RTR)
+        {
+          log_i(" RTR from 0x%08X, DLC %d", rx_msg.identifier, rx_msg.data_length_code);
+        }
+        else
+        {
+          log_i(" from 0x%08X, DLC %d, Data ", rx_msg.identifier, rx_msg.data_length_code);
+          for (int i = 0; i < rx_msg.data_length_code; i++)
+          {
+            log_i("0x%02X ", rx_msg.data[i]);
+          }
+        }
+      }
+  #else
+      // Original ESP32 implementation
       CAN_frame_t rx_frame;
 
       // Receive next CAN frame from queue
@@ -71,6 +125,7 @@ void canSendTask(void * pointer){
           }
         }
       }
+  #endif
 #endif
         if(!Inverter->SendAllUpdates())
           log_e("Failure returned from SendAllUpdates");
@@ -91,26 +146,70 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
 #endif
 
   #ifdef ESPCAN
+  #ifdef ESPCAN_S3
+    // ESP32-S3 TWAI initialization
+    if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN < 49)
+    {
+      pinMode(ESPCAN_EN_PIN, OUTPUT);
+      digitalWrite(ESPCAN_EN_PIN, LOW);
+    }
 
-  if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN < 35)
-  {
-    pinMode(ESPCAN_EN_PIN, OUTPUT);
-    digitalWrite(ESPCAN_EN_PIN, 0);
-  }
+    // Configure TWAI general configuration
+    twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)ESPCAN_TX_PIN, (gpio_num_t)ESPCAN_RX_PIN, TWAI_MODE_NORMAL);
+    
+    // Configure TWAI timing configuration for 500kbps
+    twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
+    
+    // Configure TWAI filter configuration (accept all)
+    twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
 
-  CAN_cfg.speed = CAN_SPEED_500KBPS;
-  CAN_cfg.tx_pin_id = (gpio_num_t) ESPCAN_TX_PIN;
-  CAN_cfg.rx_pin_id = (gpio_num_t) ESPCAN_RX_PIN;
-  CAN_cfg.rx_queue = xQueueCreate(rx_queue_size, sizeof(CAN_frame_t));
-  // Init CAN Module
-  ESP32Can.CANInit();
-  log_i("CAN Bus initialised");
+    // Install TWAI driver
+    if (twai_driver_install(&g_config, &t_config, &f_config) == ESP_OK) {
+      log_i("TWAI driver installed");
+    } else {
+      log_e("Failed to install TWAI driver");
+      _initialised = false;
+      return false;
+    }
 
-  _initialised = true;
-  CanBusAvailable = true;
-  _failedCanSendTotal = 0;   
-  _lastChangeInterval = time(nullptr);
-  return true;
+    // Start TWAI driver
+    if (twai_start() == ESP_OK) {
+      log_i("TWAI driver started");
+    } else {
+      log_e("Failed to start TWAI driver");
+      _initialised = false;
+      return false;
+    }
+
+    log_i("ESP32-S3 CAN Bus (TWAI) initialised");
+    _initialised = true;
+    CanBusAvailable = true;
+    _failedCanSendTotal = 0;   
+    _lastChangeInterval = time(nullptr);
+    return true;
+
+  #else
+    // Original ESP32 CAN initialization
+    if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN < 35)
+    {
+      pinMode(ESPCAN_EN_PIN, OUTPUT);
+      digitalWrite(ESPCAN_EN_PIN, 0);
+    }
+
+    CAN_cfg.speed = CAN_SPEED_500KBPS;
+    CAN_cfg.tx_pin_id = (gpio_num_t) ESPCAN_TX_PIN;
+    CAN_cfg.rx_pin_id = (gpio_num_t) ESPCAN_RX_PIN;
+    CAN_cfg.rx_queue = xQueueCreate(rx_queue_size, sizeof(CAN_frame_t));
+    // Init CAN Module
+    ESP32Can.CANInit();
+    log_i("CAN Bus initialised");
+
+    _initialised = true;
+    CanBusAvailable = true;
+    _failedCanSendTotal = 0;   
+    _lastChangeInterval = time(nullptr);
+    return true;
+  #endif
 
   #else
   if(_pref.isKey(ccCANBusEnabled))

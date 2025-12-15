@@ -15,8 +15,14 @@ PYLON Protocol, messages sent every 1 second.
 #include <SPI.h>
 
 #ifdef ESPCAN
-#include <ESP32CAN.h>
-#include <CAN_config.h>
+  #ifdef ESPCAN_S3
+    // ESP32-S3 uses TWAI driver
+    #include <driver/twai.h>
+  #else
+    // Original ESP32 uses ESP32CAN library
+    #include <ESP32CAN.h>
+    #include <CAN_config.h>
+  #endif
 #else
 #include <mcp_can.h>              // Library for CAN Interface      https://github.com/coryjfowler/MCP_CAN_lib
 #endif
