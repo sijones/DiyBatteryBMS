@@ -67,6 +67,8 @@ void canSendTask(void * pointer){
 #ifdef ESPCAN
   #ifdef ESPCAN_S3
       // ESP32-S3 TWAI receive implementation
+      // Note: This task monitors incoming CAN frames for debugging.
+      // Actual Pylontech protocol processing happens in SendAllUpdates().
       twai_message_t rx_msg;
       
       // Receive next CAN frame (non-blocking)
@@ -147,14 +149,15 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
   #ifdef ESPCAN_S3
     // ESP32-S3 TWAI initialization
     // Validate GPIO pins (ESP32-S3 supports GPIO 0-48)
-    if (ESPCAN_TX_PIN > 48 || ESPCAN_RX_PIN > 48) {
-      log_e("Invalid CAN TX/RX pins. ESP32-S3 supports GPIO 0-48.");
+    // Avoid GPIO 0 for TX/RX as it's used for boot mode selection
+    if (ESPCAN_TX_PIN < 1 || ESPCAN_TX_PIN > 48 || ESPCAN_RX_PIN < 1 || ESPCAN_RX_PIN > 48) {
+      log_e("Invalid CAN TX/RX pins. ESP32-S3 TX/RX should use GPIO 1-48 (avoid GPIO 0).");
       _initialised = false;
       return false;
     }
     
     // ESP32-S3 supports GPIO 1-48 for enable pin (GPIO 0 reserved for boot mode)
-    if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN < 49)
+    if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN <= 48)
     {
       pinMode(ESPCAN_EN_PIN, OUTPUT);
       digitalWrite(ESPCAN_EN_PIN, 0);
