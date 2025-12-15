@@ -147,10 +147,11 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
   #ifdef ESPCAN
   #ifdef ESPCAN_S3
     // ESP32-S3 TWAI initialization
+    // ESP32-S3 supports GPIO 0-48, hence the check for < 49
     if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN < 49)
     {
       pinMode(ESPCAN_EN_PIN, OUTPUT);
-      digitalWrite(ESPCAN_EN_PIN, LOW);
+      digitalWrite(ESPCAN_EN_PIN, 0);
     }
 
     // Configure TWAI general configuration
