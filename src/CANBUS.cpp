@@ -8,7 +8,6 @@
   #else
     // Original ESP32 CAN config
     CAN_device_t CAN_cfg;             // CAN Config
-    const int interval = 1000;        // interval at which send CAN Messages (milliseconds)
     const int rx_queue_size = 10;     // Receive Queue size
   #endif
 #else
@@ -147,7 +146,7 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
   #ifdef ESPCAN
   #ifdef ESPCAN_S3
     // ESP32-S3 TWAI initialization
-    // ESP32-S3 supports GPIO 0-48, hence the check for < 49
+    // ESP32-S3 supports GPIO 1-48 for enable pin (GPIO 0 reserved for boot mode)
     if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN < 49)
     {
       pinMode(ESPCAN_EN_PIN, OUTPUT);
