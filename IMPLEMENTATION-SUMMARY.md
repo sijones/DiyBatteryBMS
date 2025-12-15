@@ -126,5 +126,5 @@ This implementation addresses the issue: **"ESP32-S3 requires a different implem
 
 - The TWAI driver is native to ESP-IDF and more robust for ESP32-S3
 - No external libraries required beyond ESP-IDF (included in Arduino framework)
-- Pin constraints differ: ESP32-S3 supports GPIO 0-48 vs ESP32's 0-34
+- Pin constraints differ: ESP32-S3 supports GPIO 0-48 (49 pins total) vs ESP32's 0-39
 - All Pylontech protocol functionality remains identical across platforms

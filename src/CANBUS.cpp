@@ -146,6 +146,13 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
   #ifdef ESPCAN
   #ifdef ESPCAN_S3
     // ESP32-S3 TWAI initialization
+    // Validate GPIO pins (ESP32-S3 supports GPIO 0-48)
+    if (ESPCAN_TX_PIN > 48 || ESPCAN_RX_PIN > 48) {
+      log_e("Invalid CAN TX/RX pins. ESP32-S3 supports GPIO 0-48.");
+      _initialised = false;
+      return false;
+    }
+    
     // ESP32-S3 supports GPIO 1-48 for enable pin (GPIO 0 reserved for boot mode)
     if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN < 49)
     {

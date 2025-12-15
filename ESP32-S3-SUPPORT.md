@@ -67,8 +67,10 @@ The ESP32-S3 TWAI driver is configured with:
 ### Pin Configuration
 
 The ESP32-S3 has different GPIO constraints:
-- Enable pin range: 0-48 (vs 0-34 for original ESP32)
-- TX and RX pins are configurable via the TWAI driver
+- GPIO range: 0-48 (49 pins total: GPIO0, GPIO1, ..., GPIO47, GPIO48)
+- Enable pin: Typically use GPIO 1-48 (avoid GPIO 0 due to boot mode strapping)
+- TX and RX pins: Configurable via the TWAI driver (GPIO 0-48)
+- Original ESP32 for comparison: GPIO 0-39 (with some restrictions)
 
 ### Differences from Original ESP32
 
