@@ -15,8 +15,8 @@ PYLON Protocol, messages sent every 1 second.
 #include <SPI.h>
 
 #ifdef ESPCAN
-#include <ESP32CAN.h>
-#include <CAN_config.h>
+// Both ESP32 and ESP32-S3 use TWAI driver
+#include <driver/twai.h>
 #else
 #include <mcp_can.h>              // Library for CAN Interface      https://github.com/coryjfowler/MCP_CAN_lib
 #endif
@@ -138,8 +138,6 @@ uint8_t SMARTINTERVAL = 2;
 // Task Handle
 TaskHandle_t tHandle = NULL;
 
-portMUX_TYPE CANMutex = portMUX_INITIALIZER_UNLOCKED;
-
 mEEPROM _pref;
 
 // Number is the value to alter, n is the bit to change, 
@@ -149,6 +147,8 @@ inline uint8_t bit_set_to(uint8_t number, uint8_t n, bool x) {
 }
 
 public:
+
+  portMUX_TYPE CANMutex = portMUX_INITIALIZER_UNLOCKED;
 
   bool CanBusAvailable = false;
   bool CanBusDataOK = false;

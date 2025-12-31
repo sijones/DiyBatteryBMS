@@ -64,6 +64,12 @@ bool VeDirectFrameHandler::OpenSerial(uint8_t _rxPin,uint8_t _txPin)
 {
     Serial1.end();
 
+	// Check if pins are configured via web interface
+	if (_rxPin == 0 || _txPin == 0) {
+		log_e("VE.Direct RX/TX pins not configured. Please configure via web interface.");
+		return false;
+	}
+
 	#ifdef ESP32
 	if (_txPin > 33) // ESP32 can't use pins higher than 34 for output.
 		return false;

@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html charset="UTF-8" lang="en">
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DIY Battery BMS</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #333;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+    
+    .header img {
+      max-width: 200px;
+      margin-bottom: 15px;
+    }
+    
+    .header h1 {
+      font-size: 28px;
+      margin-bottom: 5px;
+    }
+    
+    .tabs {
+      display: flex;
+      border-bottom: 2px solid #e0e0e0;
+      background: #f8f8f8;
+      flex-wrap: wrap;
+    }
+    
+    .tab-button {
+      flex: 1;
+      min-width: 120px;
+      padding: 15px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #666;
+      transition: all 0.3s ease;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+    }
+    
+    .tab-button:hover {
+      background: #f0f0f0;
+      color: #667eea;
+    }
+    
+    .tab-button.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+      background: white;
+    }
+    
+    .content {
+      padding: 30px;
+    }
+    
+    .tab-pane {
+      display: none;
+    }
+    
+    .tab-pane.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    
+    .form-row.full {
+      grid-template-columns: 1fr;
+    }
+    
+    .stat-box {
+      background: #f8f8f8;
+      border-radius: 8px;
+      padding: 15px;
+      text-align: center;
+      margin-bottom: 15px;
+    }
+    
+    .stat-label {
+      font-size: 16px;
+      color: #666;
+      margin-bottom: 5px;
+    }
+    
+    .stat-value {
+      font-size: 28px;
+      color: #667eea;
+      font-weight: 600;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: #333;
+      font-size: 14px;
+    }
+    
+    input[type="text"],
+    input[type="textbox"],
+    input[type="password"],
+    input[type="number"],
+    input[type="file"],
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+    
+    input[type="text"]:focus,
+    input[type="textbox"]:focus,
+    input[type="password"]:focus,
+    input[type="number"]:focus,
+    select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    input[type="checkbox"] {
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+    }
+    
+    button {
+      padding: 10px 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+    }
+    
+    button:active {
+      transform: translateY(0);
+    }
+    
+    .section-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #667eea;
+      margin-top: 25px;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #f0f0f0;
+    }
+    
+    .section-title:first-child {
+      margin-top: 0;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+    }
+    
+    .button-group button {
+      flex: 1;
+      min-width: 150px;
+    }
+    
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+    
+    .checkbox-row label {
+      margin-bottom: 0;
+    }
+    
+    .wifi-controls {
+      display: flex;
+      gap: 10px;
+    }
+    
+    .wifi-controls select {
+      flex: 1;
+    }
+    
+    .wifi-controls button {
+      flex: 0;
+      padding: 10px 20px;
+    }
+    
+    @media (max-width: 768px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="diy-logo-hoz-web.jpg" alt="DIY Battery Integration BMS">
+      <h1>DIY Battery BMS</h1>
+      <p>System Control & Configuration</p>
+    </div>
+    
+    <div class="tabs">
+      <button class="tab-button active" onclick="switchTab(event, 'home')">Home</button>
+      <button class="tab-button" onclick="switchTab(event, 'bms')">BMS</button>
+      <button class="tab-button" onclick="switchTab(event, 'settings')">Settings</button>
+      <button class="tab-button" onclick="switchTab(event, 'wifimqtt')">WiFi/MQTT</button>
+      <button class="tab-button" onclick="switchTab(event, 'firmware')">Firmware</button>
+    </div>
+    
+    <div class="content">
+      <!-- Home Tab -->
+      <div id="home" class="tab-pane active">
+        <h2 style="margin-bottom: 20px; color: #667eea;">Battery Status</h2>
+        <div class="stat-box">
+          <div class="stat-label">State of Charge</div>
+          <div class="stat-value"><label id="battsoc">0</label>%</div>
+        </div>
+        
+        <div class="form-row">
+          <div class="stat-box">
+            <div class="stat-label">Battery Voltage</div>
+            <div class="stat-value"><label id="battvoltage">0</label>V</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Battery Current</div>
+            <div class="stat-value"><label id="battcurrent">0</label>A</div>
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="stat-box">
+            <div class="stat-label">Charge Limit</div>
+            <div class="stat-value"><label id="chargecurrent">0</label>A</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Discharge Limit</div>
+            <div class="stat-value"><label id="dischargecurrent">0</label>A</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- BMS Tab -->
+      <div id="bms" class="tab-pane">
+        <div class="section-title">Voltage Configuration</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="chargevoltage">Charge Voltage (mV):</label>
+            <input type="number" id="chargevoltage" onblur="SendJSONUpdate('chargevoltage')">
+          </div>
+          <div class="form-group">
+            <label for="dischargevoltage">Discharge Voltage (mV):</label>
+            <input type="number" id="dischargevoltage" onblur="SendJSONUpdate('dischargevoltage')">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="fullvoltage">Battery Full Voltage (mV):</label>
+            <input type="number" id="fullvoltage" onblur="SendJSONUpdate('fullvoltage')">
+          </div>
+          <div class="form-group">
+            <label for="overvoltage">Battery Over Voltage (mV):</label>
+            <input type="number" id="overvoltage" onblur="SendJSONUpdate('overvoltage')">
+          </div>
+        </div>
+        
+        <div class="section-title">Current Configuration</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="maxchargecurrent">Max Charge (mA):</label>
+            <input type="number" id="maxchargecurrent" onblur="SendJSONUpdate('maxchargecurrent')">
+          </div>
+          <div class="form-group">
+            <label for="maxdischargecurrent">Max Discharge (mA):</label>
+            <input type="number" id="maxdischargecurrent" onblur="SendJSONUpdate('maxdischargecurrent')">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="adjuststep">Charge Adjust Step (mA):</label>
+            <input type="number" id="adjuststep" onblur="SendJSONUpdate('adjuststep')">
+          </div>
+          <div class="form-group">
+            <label for="minchargecurr">Min Charge (mA):</label>
+            <input type="number" id="minchargecurr" onblur="SendJSONUpdate('minchargecurr')">
+          </div>
+        </div>
+        
+        <div class="form-row full">
+          <div class="form-group">
+            <label for="batterycapacity">Battery Capacity (mA):</label>
+            <input type="number" id="batterycapacity" onblur="SendJSONUpdate('batterycapacity')">
+          </div>
+        </div>
+        
+        <div class="section-title">SOC Limits</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="lowsoclimit">Low SOC (Stop Discharge):</label>
+            <input type="number" id="lowsoclimit" onblur="SendJSONUpdate('lowsoclimit')">
+          </div>
+          <div class="form-group">
+            <label for="highsoclimit">High SOC (Stop Charge):</label>
+            <input type="number" id="highsoclimit" onblur="SendJSONUpdate('highsoclimit')">
+          </div>
+        </div>
+        
+        <div class="section-title">Slow Charge Configuration</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="slowchargesoc1">Slow Charge SOC 1:</label>
+            <input type="number" id="slowchargesoc1" onblur="SendJSONUpdate('slowchargesoc1')">
+          </div>
+          <div class="form-group">
+            <label for="slowchargesoc1div">Slow Charge 1 (divider):</label>
+            <input type="number" id="slowchargesoc1div" onblur="SendJSONUpdate('slowchargesoc1div')">
+          </div>
+        </div>
+        
+        <div class="form-row">
+          <div class="form-group">
+            <label for="slowchargesoc2">Slow Charge SOC 2:</label>
+            <input type="number" id="slowchargesoc2" onblur="SendJSONUpdate('slowchargesoc2')">
+          </div>
+          <div class="form-group">
+            <label for="slowchargesoc2div">Slow Charge 2 (divider):</label>
+            <input type="number" id="slowchargesoc2div" onblur="SendJSONUpdate('slowchargesoc2div')">
+          </div>
+        </div>
+        
+        <div class="section-title">Advanced Settings</div>
+        <div class="form-row">
+          <div class="checkbox-row">
+            <input type="checkbox" id="autocharge" onchange="SendJSONUpdate('autocharge')">
+            <label for="autocharge">Smart Adjust Enabled</label>
+          </div>
+          <div class="form-group">
+            <label for="smartinterval">Smart Interval (seconds):</label>
+            <input type="number" id="smartinterval" onblur="SendJSONUpdate('smartinterval')">
+          </div>
+        </div>
+        
+        <div class="button-group">
+          <button onclick="saveAll()">Save to EEPROM</button>
+          <button onclick="eraseAll()">Factory Reset</button>
+          <button onclick="rebootBMS()">Reboot & Apply</button>
+        </div>
+      </div>
+      
+      <!-- Settings Tab -->
+      <div id="settings" class="tab-pane">
+        <div class="section-title">CAN Bus Configuration</div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="canbusenabled" onchange="SendJSONUpdate('canbusenabled')">
+          <label for="canbusenabled">CAN Bus Enabled</label>
+        </div>
+        
+        <div class="section-title">Victron Configuration</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="victronrxpin">Victron RX Pin:</label>
+            <input type="number" id="victronrxpin" onblur="SendJSONUpdate('victronrxpin')">
+          </div>
+          <div class="form-group">
+            <label for="victrontxpin">Victron TX Pin:</label>
+            <input type="number" id="victrontxpin" onblur="SendJSONUpdate('victrontxpin')">
+          </div>
+        </div>
+        
+        <!-- BEGIN_CAN_CONFIG -->
+        <div class="section-title">{{CAN_CONFIG_TITLE}}</div>
+        <div class="form-row">
+          {{CAN_CONFIG_FIELDS}}
+          {{FAN_PIN_FIELD}}
+        </div>
+        <!-- END_CAN_CONFIG -->
+        
+        <div class="section-title">Protocol Settings</div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="pylontechenabled" onchange="SendJSONUpdate('pylontechenabled')">
+          <label for="pylontechenabled">PylonTech Protocol Enabled</label>
+        </div>
+        
+        <div class="checkbox-row">
+          <input type="checkbox" id="lcdenabled" onchange="SendJSONUpdate('lcdenabled')">
+          <label for="lcdenabled">LCD Enabled</label>
+        </div>
+        
+        <div class="section-title">Network Configuration</div>
+        <div class="form-group">
+          <label for="ntpserver">NTP Server:</label>
+          <input type="textbox" id="ntpserver" onblur="SendJSONUpdate('ntpserver')">
+        </div>
+        
+        <div class="button-group">
+          <button onclick="eraseAll()">Factory Reset</button>
+          <button onclick="erasekeepwifi()">Factory Reset Keeping WiFi</button>
+          <button onclick="rebootBMS()">Reboot & Apply</button>
+        </div>
+      </div>
+      
+      <!-- WiFi/MQTT Tab -->
+      <div id="wifimqtt" class="tab-pane">
+        <div class="section-title">WiFi Configuration</div>
+        <div class="form-group">
+          <label for="wifissid">WiFi Network:</label>
+          <div class="wifi-controls">
+            <select id="wifissid" onblur="SendJSONUpdate('wifissid')"></select>
+            <button onclick="GetWifiList()">Scan</button>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="wifipass">WiFi Password:</label>
+          <input type="password" id="wifipass" onblur="SendJSONUpdate('wifipass')">
+        </div>
+        
+        <div class="form-group">
+          <label for="wifihostname">mDNS Hostname:</label>
+          <input type="textbox" id="wifihostname" onblur="SendJSONUpdate('wifihostname')">
+        </div>
+        
+        <div class="section-title">MQTT Server Configuration</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="mqttserverip">MQTT Server IP:</label>
+            <input type="textbox" id="mqttserverip" onblur="SendJSONUpdate('mqttserverip')">
+          </div>
+          <div class="form-group">
+            <label for="mqttport">MQTT Port:</label>
+            <input type="number" id="mqttport" onblur="SendJSONUpdate('mqttport')">
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label for="mqttclientid">MQTT Client ID:</label>
+          <input type="textbox" id="mqttclientid" onblur="SendJSONUpdate('mqttclientid')">
+        </div>
+        
+        <div class="section-title">MQTT Topic Configuration</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="mqtttopic">MQTT Topic:</label>
+            <input type="textbox" id="mqtttopic" onblur="SendJSONUpdate('mqtttopic')">
+          </div>
+          <div class="form-group">
+            <label for="mqttparameter">MQTT Parameter:</label>
+            <input type="textbox" id="mqttparameter" onblur="SendJSONUpdate('mqttparameter')">
+          </div>
+        </div>
+        
+        <div class="section-title">MQTT Authentication (Optional)</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="mqttuser">MQTT Username:</label>
+            <input type="textbox" id="mqttuser" onblur="SendJSONUpdate('mqttuser')">
+          </div>
+          <div class="form-group">
+            <label for="mqttpass">MQTT Password:</label>
+            <input type="password" id="mqttpass" onblur="SendJSONUpdate('mqttpass')">
+          </div>
+        </div>
+        
+        <div class="section-title">Update Interval</div>
+        <div class="form-group">
+          <label for="velooptime">WiFi and MQTT Refresh Rate (seconds):</label>
+          <input type="number" id="velooptime" onblur="SendJSONUpdate('velooptime')">
+        </div>
+        
+        <div class="button-group">
+          <button onclick="rebootBMS()">Reboot & Apply</button>
+        </div>
+      </div>
+      
+      <!-- Firmware Tab -->
+      <div id="firmware" class="tab-pane">
+        <div class="section-title">Firmware Updates</div>
+        <div class="form-group">
+          <form action="update?name=firmware" enctype="multipart/form-data" method="POST">
+            <label>Firmware:</label>
+            <input type="file" accept=".bin,.bin.gz" name="firmware" style="margin-bottom: 10px;">
+            <button type="submit">Update Firmware</button>
+          </form>
+        </div>
+        
+        <div class="form-group" style="margin-top: 20px;">
+          <form action="update?name=filesystem" enctype="multipart/form-data" method="POST">
+            <label>FileSystem:</label>
+            <input type="file" accept=".bin,.bin.gz" name="filesystem" style="margin-bottom: 10px;">
+            <button type="submit">Update FileSystem</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var gateway = `ws://${window.location.hostname}/ws`; 
+    var websocket;
+    const PIN_FIELDS = ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin','canbuscspin','fanpin','onewirepin'];
+
+    window.addEventListener('load', onLoad);
+
+    function switchTab(event, tabName) {
+      const panes = document.querySelectorAll('.tab-pane');
+      panes.forEach(pane => pane.classList.remove('active'));
+      
+      const buttons = document.querySelectorAll('.tab-button');
+      buttons.forEach(btn => btn.classList.remove('active'));
+      
+      document.getElementById(tabName).classList.add('active');
+      event.target.classList.add('active');
+    }
+
+    function initWebSocket() {
+      console.log('Trying to open a WebSocket connection...');
+      websocket = new WebSocket(gateway);
+      websocket.onopen = onOpen;
+      websocket.onclose = onClose;
+      websocket.onmessage = onMessage;
+    }
+
+    function onOpen(event) {
+      console.log('Connection opened');
+    }
+
+    function onClose(event) {
+      console.log('Connection closed');
+      setTimeout(initWebSocket, 2000);
+    }
+
+    function onMessage(event) {
+      console.log(event.data);
+      const obj = JSON.parse(event.data);
+
+      if(obj.hasOwnProperty('BMS') && obj.BMS) {
+        if(obj.hasOwnProperty('chargevoltage')) document.getElementById('chargevoltage').value=obj.chargevoltage;
+        if(obj.hasOwnProperty('fullvoltage')) document.getElementById('fullvoltage').value=obj.fullvoltage;
+        if(obj.hasOwnProperty('minchargecurr')) document.getElementById('minchargecurr').value=obj.minchargecurr;
+        if(obj.hasOwnProperty('adjuststep')) document.getElementById('adjuststep').value=obj.adjuststep;
+        if(obj.hasOwnProperty('smartinterval')) document.getElementById('smartinterval').value=obj.smartinterval;
+        if(obj.hasOwnProperty('overvoltage')) document.getElementById('overvoltage').value=obj.overvoltage;
+        if(obj.hasOwnProperty('dischargevoltage')) document.getElementById('dischargevoltage').value=obj.dischargevoltage;
+        if(obj.hasOwnProperty('maxchargecurrent')) document.getElementById('maxchargecurrent').value=obj.maxchargecurrent;
+        if(obj.hasOwnProperty('maxdischargecurrent')) document.getElementById('maxdischargecurrent').value=obj.maxdischargecurrent;
+        if(obj.hasOwnProperty('batterycapacity')) document.getElementById('batterycapacity').value=obj.batterycapacity;
+        if(obj.hasOwnProperty('lowsoclimit')) document.getElementById('lowsoclimit').value=obj.lowsoclimit;
+        if(obj.hasOwnProperty('highsoclimit')) document.getElementById('highsoclimit').value=obj.highsoclimit;
+        if(obj.hasOwnProperty('velooptime')) document.getElementById('velooptime').value=obj.velooptime;
+        if(obj.hasOwnProperty('canbusenabled')) document.getElementById('canbusenabled').checked=obj.canbusenabled;
+      }
+
+      if(obj.hasOwnProperty('RealTime') && obj.RealTime) {
+        if(obj.hasOwnProperty('battsoc')) document.getElementById('battsoc').innerHTML=obj.battsoc;
+        if(obj.hasOwnProperty('battvoltage')) document.getElementById('battvoltage').innerHTML=(obj.battvoltage*0.01).toFixed(1);
+        if(obj.hasOwnProperty('battcurrent')) document.getElementById('battcurrent').innerHTML=(obj.battcurrent*0.1).toFixed(1);
+        if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').innerHTML=(obj.chargecurrent*0.001).toFixed(0);
+        if(obj.hasOwnProperty('dischargecurrent')) document.getElementById('dischargecurrent').innerHTML=(obj.dischargecurrent*0.001).toFixed(0);
+      }
+
+      if(obj.hasOwnProperty('pylontechenabled')) document.getElementById('pylontechenabled').checked=obj.pylontechenabled;
+      if(obj.hasOwnProperty('autocharge')) document.getElementById('autocharge').checked=obj.autocharge;
+      if(obj.hasOwnProperty('wifissid')) document.getElementById('wifissid').value=obj.wifissid;
+      if(obj.hasOwnProperty('wifipass')) document.getElementById('wifipass').value=obj.wifipass;
+      if(obj.hasOwnProperty('wifihostname')) document.getElementById('wifihostname').value=obj.wifihostname;
+      if(obj.hasOwnProperty('victronrxpin')) document.getElementById('victronrxpin').value=obj.victronrxpin;
+      if(obj.hasOwnProperty('victrontxpin')) document.getElementById('victrontxpin').value=obj.victrontxpin;
+      {{CAN_FIELD_HANDLERS}}
+      if(obj.hasOwnProperty('mqttport')) document.getElementById('mqttport').value=obj.mqttport;
+      if(obj.hasOwnProperty('mqttserverip')) document.getElementById('mqttserverip').value=obj.mqttserverip;
+      if(obj.hasOwnProperty('mqttclientid')) document.getElementById('mqttclientid').value=obj.mqttclientid;
+      if(obj.hasOwnProperty('mqtttopic')) document.getElementById('mqtttopic').value=obj.mqtttopic;
+      if(obj.hasOwnProperty('mqttparameter')) document.getElementById('mqttparameter').value=obj.mqttparameter;
+      if(obj.hasOwnProperty('mqttuser')) document.getElementById('mqttuser').value=obj.mqttuser;
+      if(obj.hasOwnProperty('mqttpass')) document.getElementById('mqttpass').value=obj.mqttpass;
+      if(obj.hasOwnProperty('slowchargesoc1')) document.getElementById('slowchargesoc1').value=obj.slowchargesoc1;
+      if(obj.hasOwnProperty('slowchargesoc2')) document.getElementById('slowchargesoc2').value=obj.slowchargesoc2;
+      if(obj.hasOwnProperty('slowchargesoc1div')) document.getElementById('slowchargesoc1div').value=obj.slowchargesoc1div;
+      if(obj.hasOwnProperty('slowchargesoc2div')) document.getElementById('slowchargesoc2div').value=obj.slowchargesoc2div;
+      if(obj.hasOwnProperty('lcdenabled')) document.getElementById('lcdenabled').checked=obj.lcdenabled;
+      if(obj.hasOwnProperty('ntpserver')) document.getElementById('ntpserver').value=obj.ntpserver;
+      {{FAN_PIN_HANDLER}}
+
+      if(obj.hasOwnProperty('Message')) alert(obj.Message);
+      if(obj.hasOwnProperty('ERROR')) alert(obj.ERROR);
+    }
+
+    function onLoad(event) {
+      initWebSocket();
+    }
+
+
+    function saveAll() {
+      console.log('Sending Save All command');
+      var jsonobj = '{"saveall" : true}';
+      websocket.send(jsonobj);
+    }
+
+    function eraseAll() {
+      console.log('Sending Erase All (EEPROM) command');
+      var jsonobj = '{"eraseall" : true}';
+      websocket.send(jsonobj);
+    }
+
+    function erasekeepwifi() {
+      console.log('Sending Erase All Keep Wifi (EEPROM) command');
+      var jsonobj = '{"erasekeepwifi" : true}';
+      websocket.send(jsonobj);
+    }
+
+    function rebootBMS() {
+      console.log('Sending Reboot command');
+      var jsonobj = '{"reboot" : true}';
+      websocket.send(jsonobj);
+    }
+
+    function SendJSONUpdate(textboxid) {
+      const element = document.getElementById(textboxid);
+      if (!element) {
+        console.log('getElementById returned null.');
+        return;
+      }
+
+      const rawValue = element.value;
+      const trimmed = (rawValue === undefined || rawValue === null) ? '' : rawValue.toString().trim();
+      const isPinField = PIN_FIELDS.includes(textboxid);
+
+      let payload;
+
+      if (textboxid === 'wifissid') {
+        payload = { [textboxid]: element.options[element.selectedIndex].value };
+      } else if (element.type === 'checkbox') {
+        payload = { [textboxid]: element.checked };
+      } else {
+        if (trimmed === '') {
+          if (element.type === 'number' || isPinField) {
+            console.log('Ignoring empty value for ' + textboxid);
+            return;
+          }
+          payload = { [textboxid]: '' };
+        } else {
+          if (isPinField) {
+            const parsedPin = Number(trimmed);
+            if (!Number.isFinite(parsedPin) || parsedPin <= 0) {
+              console.log('Ignoring invalid/zero pin value for ' + textboxid);
+              return;
+            }
+          }
+
+          const numericValue = Number(trimmed);
+          if (!Number.isNaN(numericValue)) {
+            payload = { [textboxid]: numericValue };
+          } else {
+            payload = { [textboxid]: trimmed };
+          }
+        }
+      }
+
+      const jsonString = JSON.stringify(payload);
+      console.log('Sending to Websocket: ' + jsonString);
+      websocket.send(jsonString);
+    }
+
+    function GetWifiList() {
+      console.log("Getting Wifi List");
+      var serverurl = `http://${window.location.hostname}/scan`; 
+    
+      fetch(serverurl)
+        .then(response => response.json())
+        .then(json => {
+          var select = document.getElementById("wifissid");
+          var previous = '';
+
+          document.getElementById('wifissid').innerHTML = '';
+
+          json.forEach(user => {
+            var el = document.createElement("option");
+            if (user.ssid != previous) {
+              previous = user.ssid;
+              el.textContent = user.ssid;
+              el.value = user.ssid;
+              el.className = "dropdown-item";
+              select.appendChild(el);
+              console.log('Adding Option: ' + user.ssid); 
+            } else {
+              console.log('Ignoring duplicate SSID: ' + user.ssid);
+            }
+          });
+        });
+    }
+  </script>
+</body>
+</html>

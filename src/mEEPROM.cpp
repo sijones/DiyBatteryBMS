@@ -19,8 +19,10 @@ void mEEPROM::begin() {
 }
 
 void mEEPROM::begin(const char * nvsspace) {
-  if (!_preferences.begin(nvsspace))
+  if (!_preferences.begin(nvsspace)) {
     log_e("Failed to Open EEPROM in RW Mode for %c.",nvsspace);
+  }
+
 }
 
 void mEEPROM::end() {
@@ -60,23 +62,31 @@ bool mEEPROM::clear(bool all = false)
   return _cleared;
 }
 
-int32_t mEEPROM::getInt32(const char* key, int default_value = 0) {
+int32_t mEEPROM::getInt32(const char* key, int32_t default_value) {
   int32_t ret = _preferences.getInt(key, default_value);
   return ret;
 }
 
 bool mEEPROM::putInt32(const char* key, int32_t value) {
-  _preferences.putInt(key, value);
+  size_t result = _preferences.putInt(key, value);
+  if (result == 0) {
+    log_e("Failed to write Int32 key: %s", key);
+    return false;
+  }
   return true;
 }
 
-uint32_t mEEPROM::getUInt32(const char* key, uint32_t default_value = 0) {
+uint32_t mEEPROM::getUInt32(const char* key, uint32_t default_value) {
   uint32_t ret = _preferences.getUInt(key, default_value);
   return ret;
 }
 
 bool mEEPROM::putUInt32(const char* key, uint32_t value) {
-  _preferences.putUInt(key, value);
+  size_t result = _preferences.putUInt(key, value);
+  if (result == 0) {
+    log_e("Failed to write UInt32 key: %s", key);
+    return false;
+  }
   return true;
 }
 
@@ -88,7 +98,11 @@ int16_t mEEPROM::getInt16(const char* key, int16_t default_value = 0) {
 }
 
 bool mEEPROM::putInt16(const char* key, int16_t value) {
-  _preferences.putShort(key, value);
+  size_t result = _preferences.putShort(key, value);
+  if (result == 0) {
+    log_e("Failed to write Int16 key: %s", key);
+    return false;
+  }
   return true;
 }
 
@@ -98,7 +112,11 @@ uint16_t mEEPROM::getUInt16(const char* key, uint16_t default_value = 0) {
 }
 
 bool mEEPROM::putUInt16(const char* key, uint16_t value) {
-  _preferences.putUShort(key, value);
+  size_t result = _preferences.putUShort(key, value);
+  if (result == 0) {
+    log_e("Failed to write UInt16 key: %s", key);
+    return false;
+  }
   return true;
 }
 
@@ -112,7 +130,11 @@ int8_t mEEPROM::getInt8(const char* key, int8_t default_value = 0) {
 }
 
 bool mEEPROM::putInt8(const char* key, int8_t value) {
-  _preferences.putChar(key, value);
+  size_t result = _preferences.putChar(key, value);
+  if (result == 0) {
+    log_e("Failed to write Int8 key: %s", key);
+    return false;
+  }
   return true;
 }
 
@@ -122,7 +144,11 @@ uint8_t mEEPROM::getUInt8(const char* key, uint8_t default_value = 0) {
 }
 
 bool mEEPROM::putUInt8(const char* key, uint8_t value) {
-  _preferences.putUChar(key, value);
+  size_t result = _preferences.putUChar(key, value);
+  if (result == 0) {
+    log_e("Failed to write UInt8 key: %s", key);
+    return false;
+  }
   return true;
 }
 
@@ -139,12 +165,20 @@ String mEEPROM::getString(const char* key, String default_value = String("")) {
 }
 
 bool mEEPROM::putString(String key, String value) {
-  _preferences.putString(key.c_str(), value);
+  size_t result = _preferences.putString(key.c_str(), value);
+  if (result == 0) {
+    log_e("Failed to write String key: %s", key.c_str());
+    return false;
+  }
   return true;
 }
 
 bool mEEPROM::putString(const char* key, String value) {
-  _preferences.putString(key, value);
+  size_t result = _preferences.putString(key, value);
+  if (result == 0) {
+    log_e("Failed to write String key: %s", key);
+    return false;
+  }
   return true;
 }
 
@@ -159,7 +193,11 @@ bool mEEPROM::getBool(String key, boolean default_value = false) {
 }
 
 bool mEEPROM::putBool(const char* key, boolean value) {
-  _preferences.putBool(key, value);
+  size_t result = _preferences.putBool(key, value);
+  if (result == 0) {
+    log_e("Failed to write Bool key: %s", key);
+    return false;
+  }
   return true;
 }
 

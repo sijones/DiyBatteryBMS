@@ -25,10 +25,10 @@ void VEDataProcess()
     {
       log_i("Battery Voltage Update: %sV", parsedValue.c_str());
       if (dataValid) {
-       // taskENTER_CRITICAL(&MainMutex);
+        taskENTER_CRITICAL(&(Inverter.CANMutex));
         Inverter.BattVoltage((uint16_t) round(parsedValue.toInt() * 0.1));
         Lcd.Data.BattVolts.setValue(Inverter.BattVoltage());
-       // taskEXIT_CRITICAL(&MainMutex);
+        taskEXIT_CRITICAL(&(Inverter.CANMutex));
       }
     }
     
@@ -36,11 +36,10 @@ void VEDataProcess()
     {
       log_i("Battery Current Update: %smA",parsedValue.c_str());
       if (dataValid) {
-       // taskENTER_CRITICAL(&MainMutex);
+        taskENTER_CRITICAL(&(Inverter.CANMutex));
         Inverter.BattCurrentmA((int32_t) (parsedValue.toInt() *0.01 ));
         Lcd.Data.BattAmps.setValue(Inverter.BattCurrentmA());
-        
-       // taskEXIT_CRITICAL(&MainMutex);
+        taskEXIT_CRITICAL(&(Inverter.CANMutex));
       }
     }
 
@@ -48,10 +47,10 @@ void VEDataProcess()
     {
       log_i("Battery SOC Update: %s%%",parsedValue.c_str());
       if (dataValid) {
-      //  taskENTER_CRITICAL(&MainMutex);
+        taskENTER_CRITICAL(&(Inverter.CANMutex));
         Inverter.BattSOC((uint8_t) round((parsedValue.toInt()*0.1)));
         Lcd.Data.BattSOC.setValue(Inverter.BattSOC());
-      //  taskEXIT_CRITICAL(&MainMutex);
+        taskEXIT_CRITICAL(&(Inverter.CANMutex));
       }
     }
     

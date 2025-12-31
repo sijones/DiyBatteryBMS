@@ -14,7 +14,12 @@ As long as the Inverter accepts Pylontech protocol over CAN Bus this software sh
 
 The data is also sent over MQTT and allows commands to be sent back to control Charge/Discharge/Force Charge.
 
-This software supports both a ESP32 developers board with a MCP2515 Can Bus adapter or the built in CAN controller of a ESP32, if you don't use the Lilygo CAN485 board, then you will need to add a CAN transceiver to a ESP32 board.
+This software supports:
+- ESP32 developer boards with MCP2515 CAN Bus adapter
+- ESP32 with built-in CAN controller
+- **NEW**: ESP32-S3 with built-in CAN controller (using TWAI driver)
+
+If you don't use the Lilygo CAN485 board, you will need to add a CAN transceiver to your ESP32 or ESP32-S3 board.
 
 See the WIKI for more detailed documentation.
 
@@ -47,9 +52,48 @@ The device itself no longer requires internet as the NTP Servers are now configu
 See the Wiki page
 
 ## Hardware Recommended
-esp32dev, esp32plus, lilygo CAN485.
+esp32dev, esp32plus, lilygo CAN485, ESP32-S3 with built-in CAN (TWAI).
 
 Please use the recommended hardware, as a personal project it's difficult to support other configurations.
+
+**NEW**: ESP32-S3 support with built-in CAN controller (TWAI) is now available.
+
+## Recommended PIN Configuration
+
+### esp32dev Environment
+- **CAN_BUS_CS_PIN**: 2
+- **CAN0_INT**: 22
+- **VEDIRECT_RX**: 33
+- **VEDIRECT_TX**: 32
+
+### esp32plus Environment
+- **CAN_BUS_CS_PIN**: 5
+- **CAN0_INT**: 13
+- **VEDIRECT_RX**: 33
+- **VEDIRECT_TX**: 32
+
+### esp32-ESPCAN Environment (Built-in CAN)
+- **CAN_TX_PIN**: 27
+- **CAN_RX_PIN**: 26
+- **CAN_EN_PIN**: 23
+- **VEDIRECT_RX**: 33
+- **VEDIRECT_TX**: 32
+
+### esp32s3-ESPCAN Environment (Built-in CAN)
+- **CAN_TX_PIN**: 27
+- **CAN_RX_PIN**: 26
+- **CAN_EN_PIN**: 23
+- **VEDIRECT_RX**: 33
+- **VEDIRECT_TX**: 32
+
+### esp32c3-ESPCAN Environment (Built-in CAN)
+- **CAN_TX_PIN**: 6
+- **CAN_RX_PIN**: 7
+- **CAN_EN_PIN**: 5
+- **VEDIRECT_RX**: 21
+- **VEDIRECT_TX**: 20
+
+**Note**: These PINs can be configured through the web interface after flashing. The forbidden GPIO lists for each environment prevent selection of pins that should not be used.
 
 Links:
 

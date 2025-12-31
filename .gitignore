@@ -5,3 +5,7 @@
 .vscode/ipch
 .vscode/iisexpress.json
 DiyBatteryBMS.code-workspace
+dist/
+data/index.htm
+data/index-ap.htm
+HTML_CONSOLIDATION.md

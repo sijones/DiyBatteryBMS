@@ -1,5 +1,7 @@
 #pragma once
 #include <Arduino.h>
+
+#if !defined(ESPCAN_C3)
 #include "soc/mcpwm_struct.h"
 #include "driver/mcpwm.h"
 
@@ -35,5 +37,12 @@ void FanUpdate(float Speed)
         mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, Speed);
         FAN_PWM = Speed;
     }
-
 }
+
+#else
+// ESP32-C3 stub (no MCPWM support)
+uint8_t FAN_PWM = 0;
+bool FAN_INIT = false;
+void FanInit(uint8_t FAN_PIN) { log_w("FAN not supported on C3"); }
+void FanUpdate(float Speed) { /* No-op on C3 */ }
+#endif

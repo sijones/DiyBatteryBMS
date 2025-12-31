@@ -1,0 +1,8 @@
+# Name,   Type, SubType, Offset,  Size, Flags
+# Custom partition for 8MB flash (ESP32-S3) with large app partitions for OTA
+nvs,      data, nvs,     0x9000,  0x6000,
+otadata,  data, ota,     0x10000, 0x2000,
+app0,     app,  ota_0,   0x20000, 0x200000,
+app1,     app,  ota_1,   0x220000,0x200000,
+spiffs,   data, spiffs,  0x420000,0x3D0000,
+coredump, data, coredump,0x7F0000,0x10000,

@@ -1,10 +1,12 @@
 #include "CANBUS.h"
 #include "mEEPROM.h"
 
+// Implements Pylontech CAN BUS communication
+// using either MCP2515 or ESP32 TWAI peripheral
+// Sijones 2025
+
 #ifdef ESPCAN
-CAN_device_t CAN_cfg;             // CAN Config
-const int interval = 1000;        // interval at which send CAN Messages (milliseconds)
-const int rx_queue_size = 10;     // Receive Queue size
+const int rx_queue_size = 10; // Receive Queue size (common for ESP32 and ESP32-S3)
 #else
 
 #endif
@@ -12,15 +14,26 @@ const int rx_queue_size = 10;     // Receive Queue size
 bool CANBUS::SendToDriver(uint32_t CMD,uint8_t Length,uint8_t *Data) {
   
 #ifdef ESPCAN
-    CAN_frame_t tx_frame;
-    tx_frame.FIR.B.FF = CAN_frame_std;
-    tx_frame.MsgID = CMD;
-    if (Length > 8) Length = 8; // Make sure a maximum of 8 bytes can be copied.
-    tx_frame.FIR.B.DLC = Length;
-    memcpy(tx_frame.data.u8,Data,Length);
-    tx_frame.FIR.B.RTR = CAN_no_RTR;
-    ESP32Can.CANWriteFrame(&tx_frame);
+  // TWAI implementation (unified for ESP32 and ESP32-S3)
+  twai_message_t tx_msg;
+  tx_msg.identifier = CMD;
+  tx_msg.data_length_code = (Length > 8) ? 8 : Length;
+  tx_msg.flags = TWAI_MSG_FLAG_NONE; // Standard frame, no RTR
+  memcpy(tx_msg.data, Data, tx_msg.data_length_code);
+
+  // Use a short timeout to avoid blocking the task and triggering WDT
+  esp_err_t result = twai_transmit(&tx_msg, pdMS_TO_TICKS(10));
+  if (result == ESP_OK) {
     return true;
+  } else {
+    // Log specific error for debugging
+    if (result == ESP_ERR_TIMEOUT) {
+      log_d("TWAI TX timeout for ID 0x%03X", CMD);
+    } else if (result == ESP_ERR_INVALID_STATE) {
+      log_w("TWAI TX invalid state (bus-off?) for ID 0x%03X", CMD);
+    }
+    return false;
+  }
 #else
   byte sndStat;
   //sndStat = CAN->sendMsgBuf(0x35E, 0, 8, MSG_PYLON);
@@ -34,47 +47,70 @@ bool CANBUS::SendToDriver(uint32_t CMD,uint8_t Length,uint8_t *Data) {
 
 void canSendTask(void * pointer){
   
-//  portMUX_TYPE CanMutex = portMUX_INITIALIZER_UNLOCKED;
-
   CANBUS *Inverter = (CANBUS *) pointer;
   log_i("Starting CAN Bus send task");
 
   while (true)
   {
-  //    taskENTER_CRITICAL(&CanMutex);
+    // Critical section not needed here - only reading from CAN RX
 
 #ifdef ESPCAN
-      CAN_frame_t rx_frame;
+  // Check for TWAI alerts
+  uint32_t alerts_triggered;
+  if (twai_read_alerts(&alerts_triggered, 0) == ESP_OK) {
+    twai_status_info_t status_info;
+    twai_get_status_info(&status_info);
+    
+    if (alerts_triggered & TWAI_ALERT_BUS_OFF) {
+      log_e("Alert: Bus-Off state. CAN bus may be disconnected.");
+      log_e("TX error counter: %lu, RX error counter: %lu", status_info.tx_error_counter, status_info.rx_error_counter);
+    }
+    if (alerts_triggered & TWAI_ALERT_BUS_ERROR) {
+      log_w("Alert: Bus error detected. Bus error count: %lu", status_info.bus_error_count);
+    }
+    if (alerts_triggered & TWAI_ALERT_TX_FAILED) {
+      log_w("Alert: TX failed. TX buffered: %lu, TX failed: %lu", status_info.msgs_to_tx, status_info.tx_failed_count);
+    }
+    if (alerts_triggered & TWAI_ALERT_ERR_PASS) {
+      log_w("Alert: Error passive state. TX errors: %lu, RX errors: %lu", status_info.tx_error_counter, status_info.rx_error_counter);
+    }
+  }
 
-      // Receive next CAN frame from queue
-      if (xQueueReceive(CAN_cfg.rx_queue, &rx_frame, 0) == pdTRUE)
+  // TWAI receive implementation (unified for ESP32 and ESP32-S3)
+  // Note: This task monitors incoming CAN frames for debugging.
+  // Actual Pylontech protocol processing happens in SendAllUpdates().
+  twai_message_t rx_msg;
+
+  // Receive next CAN frame (non-blocking)
+  if (twai_receive(&rx_msg, 0) == ESP_OK)
+  {
+    if (rx_msg.flags & TWAI_MSG_FLAG_EXTD)
+    {
+      log_i("New extended frame");
+    }
+    else
+    {
+      log_i("New standard frame");
+    }
+
+    if (rx_msg.flags & TWAI_MSG_FLAG_RTR)
+    {
+      log_i(" RTR from 0x%08X, DLC %d", rx_msg.identifier, rx_msg.data_length_code);
+    }
+    else
+    {
+      log_i(" from 0x%08X, DLC %d, Data ", rx_msg.identifier, rx_msg.data_length_code);
+      for (int i = 0; i < rx_msg.data_length_code; i++)
       {
-        if (rx_frame.FIR.B.FF == CAN_frame_std)
-        {
-          log_i("New standard frame");
-        }
-        else
-        {
-          log_i("New extended frame");
-        }
-
-        if (rx_frame.FIR.B.RTR == CAN_RTR)
-        {
-          log_i(" RTR from 0x%08X, DLC %d", rx_frame.MsgID, rx_frame.FIR.B.DLC);
-        }
-        else
-        {
-          log_i(" from 0x%08X, DLC %d, Data ", rx_frame.MsgID, rx_frame.FIR.B.DLC);
-          for (int i = 0; i < rx_frame.FIR.B.DLC; i++)
-          {
-            log_i("0x%02X ", rx_frame.data.u8[i]);
-          }
-        }
+        log_i("0x%02X ", rx_msg.data[i]);
       }
+    }
+  }
 #endif
+        // Send updates without holding the CAN mutex to avoid long blocking
+        // TWAI transmit calls may block; wrapping them in a critical section can starve other tasks.
         if(!Inverter->SendAllUpdates())
           log_e("Failure returned from SendAllUpdates");
-    //    taskEXIT_CRITICAL(&CanMutex);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 
@@ -91,21 +127,86 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
 #endif
 
   #ifdef ESPCAN
+  // TWAI initialization (unified for ESP32 and ESP32-S3)
+  // Check if pins are configured via web interface
+  if (ESPCAN_TX_PIN == 0 || ESPCAN_RX_PIN == 0) {
+    log_e("CAN TX/RX pins not configured. Please configure via web interface.");
+    _initialised = false;
+    return false;
+  }
+
+#ifdef ESPCAN_S3
+  // Validate GPIO pins (ESP32-S3 supports GPIO 0-48)
+  // Avoid GPIO 0 for TX/RX as it's used for boot mode selection
+  if (ESPCAN_TX_PIN < 1 || ESPCAN_TX_PIN > 48 || ESPCAN_RX_PIN < 1 || ESPCAN_RX_PIN > 48) {
+    log_e("Invalid CAN TX/RX pins. ESP32-S3 TX/RX should use GPIO 1-48 (avoid GPIO 0).");
+    _initialised = false;
+    return false;
+  }
+
+  // ESP32-S3 supports GPIO 1-48 for enable pin (GPIO 0 reserved for boot mode)
+  if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN <= 48)
+  {
+    pinMode(ESPCAN_EN_PIN, OUTPUT);
+    digitalWrite(ESPCAN_EN_PIN, 0);
+  }
+#else
+  // Validate GPIO pins for ESP32 (supports GPIO 0-39)
+  if (ESPCAN_TX_PIN > 39 || ESPCAN_RX_PIN > 39) {
+    log_e("Invalid CAN TX/RX pins. ESP32 should use GPIO 0-39.");
+    _initialised = false;
+    return false;
+  }
 
   if (ESPCAN_EN_PIN > 0 && ESPCAN_EN_PIN < 35)
   {
     pinMode(ESPCAN_EN_PIN, OUTPUT);
     digitalWrite(ESPCAN_EN_PIN, 0);
   }
+#endif
 
-  CAN_cfg.speed = CAN_SPEED_500KBPS;
-  CAN_cfg.tx_pin_id = (gpio_num_t) ESPCAN_TX_PIN;
-  CAN_cfg.rx_pin_id = (gpio_num_t) ESPCAN_RX_PIN;
-  CAN_cfg.rx_queue = xQueueCreate(rx_queue_size, sizeof(CAN_frame_t));
-  // Init CAN Module
-  ESP32Can.CANInit();
-  log_i("CAN Bus initialised");
+  // Configure TWAI general configuration
+  twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)ESPCAN_TX_PIN, (gpio_num_t)ESPCAN_RX_PIN, TWAI_MODE_NORMAL);
 
+  // Configure TWAI timing configuration for 500kbps
+  twai_timing_config_t t_config = TWAI_TIMING_CONFIG_500KBITS();
+
+  // Configure TWAI filter configuration (accept all)
+  twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+
+  // Install TWAI driver
+  if (twai_driver_install(&g_config, &t_config, &f_config) == ESP_OK) {
+    log_i("TWAI driver installed");
+  } else {
+    log_e("Failed to install TWAI driver");
+    _initialised = false;
+    return false;
+  }
+
+  // Start TWAI driver
+  if (twai_start() == ESP_OK) {
+    log_i("TWAI driver started");
+  } else {
+    log_e("Failed to start TWAI driver");
+    _initialised = false;
+    return false;
+  }
+
+  // Configure alerts to monitor TX status and bus errors
+  uint32_t alerts_to_enable = TWAI_ALERT_TX_IDLE | TWAI_ALERT_TX_SUCCESS | 
+                               TWAI_ALERT_TX_FAILED | TWAI_ALERT_ERR_PASS | 
+                               TWAI_ALERT_BUS_ERROR | TWAI_ALERT_BUS_OFF;
+  if (twai_reconfigure_alerts(alerts_to_enable, NULL) == ESP_OK) {
+    log_i("TWAI alerts configured");
+  } else {
+    log_w("Failed to configure TWAI alerts");
+  }
+
+#ifdef ESPCAN_S3
+  log_i("ESP32-S3 CAN Bus (TWAI) initialised");
+#else
+  log_i("ESP32 CAN Bus (TWAI) initialised");
+#endif
   _initialised = true;
   CanBusAvailable = true;
   _failedCanSendTotal = 0;   
@@ -113,12 +214,29 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
   return true;
 
   #else
+  // MCP2515 initialization
+  // Check if CS pin is configured via web interface
+  if (_CS_PIN == 0) {
+    log_e("CAN CS pin not configured. Please configure via web interface.");
+    _initialised = false;
+    return false;
+  }
+
+  // Initialize preferences for NVS access
+  _pref.begin(PREF_NAME);
+
   if(_pref.isKey(ccCANBusEnabled))
     _canbusEnabled = _pref.getBool(ccCANBusEnabled,true);
   else
     _canbusEnabled = _pref.putBool(ccCANBusEnabled,true);
+  
+  // Close preferences after reading/writing
+  _pref.end();
 
-  if (!_canbusEnabled) return false;
+  if (!_canbusEnabled) {
+    log_i("CAN Bus disabled in settings");
+    return false;
+  }
 
   if (CAN != NULL)
     delete(CAN);
@@ -394,8 +512,9 @@ bool CANBUS::DataChanged(){
 
 bool CANBUS::SendCANData(){
 
-  if (!Initialised() && !Configured()) return false;
-
+  if (!Initialised() && !Configured()) {
+    return false;
+  }
   uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
   uint16_t _tempChargeVolt = (_chargeVoltage * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
@@ -413,7 +532,7 @@ bool CANBUS::SendCANData(){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   }   
-  delay(_canSendDelay);
+  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
   // 0x35C – C0 00 – Battery charge request flags - means allow charge and discharge
@@ -436,7 +555,7 @@ bool CANBUS::SendCANData(){
     _failedCanSendTotal++;
   } 
 
-  delay(_canSendDelay); 
+  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
 
     // Current measured values of the BMS battery voltage, battery current, battery temperature
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
@@ -453,7 +572,7 @@ bool CANBUS::SendCANData(){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 
-  delay(_canSendDelay); 
+  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
 
@@ -487,7 +606,7 @@ bool CANBUS::SendCANData(){
     _failedCanSendTotal++;
   } 
 
-  delay(_canSendDelay);
+  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
 
@@ -539,6 +658,7 @@ bool CANBUS::SendCANData(){
   } 
   //delay(_canSendDelay); 
 
+log_i("CAN send cycle complete - Current failures: %d, Total failures: %d", _failedCanSendCount, _failedCanSendTotal);
 if(_failedCanSendCount > 0)
 {
   log_e("Failed to Send CAN Packets: %i",_failedCanSendCount);

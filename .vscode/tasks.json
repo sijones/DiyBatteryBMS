@@ -9,6 +9,78 @@
 			],
 			"group": "build",
 			"label": "PlatformIO: Build"
+		},
+		{
+			"label": "Release: Build+Zip (esp32-ESPCAN)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32-ESPCAN; Start-Process explorer.exe \"C:\\Users\\sijon\\OneDrive\\Documents\\PlatformIO\\Projects\\DiyBatteryBMS\\dist\"",
+			"group": "build"
+		},
+		{
+			"label": "Release: Build+Zip (esp32dev)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32dev; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32dev; Start-Process explorer.exe \"C:\\Users\\sijon\\OneDrive\\Documents\\PlatformIO\\Projects\\DiyBatteryBMS\\dist\"",
+			"group": "build"
+		},
+		{
+			"label": "Release: Build+Zip (esp32plus)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32plus; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32plus; Start-Process explorer.exe \"C:\\Users\\sijon\\OneDrive\\Documents\\PlatformIO\\Projects\\DiyBatteryBMS\\dist\"",
+			"group": "build"
+		},
+		{
+			"label": "Release: Build+Zip (esp32s3-ESPCAN)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32s3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32s3-ESPCAN; Start-Process explorer.exe \"C:\\Users\\sijon\\OneDrive\\Documents\\PlatformIO\\Projects\\DiyBatteryBMS\\dist\"",
+			"group": "build"
+		},
+		{
+			"label": "Release: Build+Zip (esp32c3-ESPCAN)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32c3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32c3-ESPCAN; Start-Process explorer.exe \"C:\\Users\\sijon\\OneDrive\\Documents\\PlatformIO\\Projects\\DiyBatteryBMS\\dist\"",
+			"group": "build"
+		},
+		{
+			"label": "Release: Build+Zip (All Envs)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32dev; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32dev; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32plus; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32plus; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32s3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32s3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32c3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32c3-ESPCAN; Start-Process explorer.exe \"C:\\Users\\sijon\\OneDrive\\Documents\\PlatformIO\\Projects\\DiyBatteryBMS\\dist\"",
+			"group": "build"
+		},
+		{
+			"label": "Release: Clean Dist",
+			"type": "shell",
+			"command": "if (Test-Path \"C:\\Users\\sijon\\OneDrive\\Documents\\PlatformIO\\Projects\\DiyBatteryBMS\\dist\") { Remove-Item \"C:\\Users\\sijon\\OneDrive\\Documents\\PlatformIO\\Projects\\DiyBatteryBMS\\dist\\*\" -Recurse -Force }; Write-Host \"Dist cleaned\"",
+			"group": "build"
+		},
+		{
+			"label": "Erase+Upload (esp32dev)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32dev; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32dev",
+			"group": "build"
+		},
+		{
+			"label": "Erase+Upload (esp32plus)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32plus; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32plus",
+			"group": "build"
+		},
+		{
+			"label": "Erase+Upload (esp32-ESPCAN)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32-ESPCAN",
+			"group": "build"
+		},
+		{
+			"label": "Erase+Upload (esp32s3-ESPCAN)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32s3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32s3-ESPCAN",
+			"group": "build"
+		},
+		{
+			"label": "Erase+Upload (esp32c3-ESPCAN)",
+			"type": "shell",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32c3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32c3-ESPCAN",
+			"group": "build"
 		}
 	]
 }

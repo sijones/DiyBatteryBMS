@@ -3,6 +3,8 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <Update.h>
+#include <LittleFS.h>
+#include "GPIOForbidden.h"
 
 
 void TaskSetClock(void * pointer) {
@@ -86,11 +88,11 @@ String generateDatatoJSON(bool All)
     doc["mqttclientid"] = wifiManager.GetMQTTClientID();
     doc["mqttserverip"] = wifiManager.GetMQTTServerIP();
     doc["mqttport"] = wifiManager.GetMQTTPort();
-    doc["victronrxpin"] = pref.getUInt8(ccVictronRX,VEDIRECT_RX);
-    doc["victrontxpin"] = pref.getUInt8(ccVictronTX,VEDIRECT_TX);
+    doc["victronrxpin"] = pref.getUInt8(ccVictronRX, 0);
+    doc["victrontxpin"] = pref.getUInt8(ccVictronTX, 0);
     doc["canbusenabled"] = Inverter.CANBusEnabled();
     #ifndef ESPCAN
-    doc["canbuscspin"] = pref.getUInt8(ccCanCSPin,CAN_BUS_CS_PIN);
+    doc["canbuscspin"] = pref.getUInt8(ccCanCSPin, 0);
     doc["can16mhz"] = pref.getBool(ccCAN16Mhz,initCAN16Mhz);
     #endif
     doc["pylontechenabled"] = Inverter.EnablePylonTech();
@@ -118,16 +120,20 @@ String generateDatatoJSON(bool All)
     doc["autocharge"] = Inverter.AutoCharge();
     doc["smartinterval"] = Inverter.SmartInterval();
     #ifdef ESPCAN
-    doc["can_tx_pin"] = pref.getUInt8(ccCAN_TX_PIN,CAN_TX_PIN);
-    doc["can_rx_pin"] = pref.getUInt8(ccCAN_RX_PIN,CAN_RX_PIN);
-    doc["can_en_pin"] = pref.getUInt8(ccCAN_EN_PIN,CAN_EN_PIN);
+    doc["can_tx_pin"] = pref.getUInt8(ccCAN_TX_PIN, 0);
+    doc["can_rx_pin"] = pref.getUInt8(ccCAN_RX_PIN, 0);
+    doc["can_en_pin"] = pref.getUInt8(ccCAN_EN_PIN, 0);
     #endif
   }
 
   doc["RealTime"] = true;
+  // CRITICAL: Protect battery state reads with mutex
+  taskENTER_CRITICAL(&(Inverter.CANMutex));
   doc["battsoc"] = Inverter.BattSOC();
   doc["battvoltage"] = Inverter.BattVoltage();
   doc["battcurrent"] = Inverter.BattCurrentmA();
+  taskEXIT_CRITICAL(&(Inverter.CANMutex));
+  
   doc["chargeadjust"] = Inverter.GetChargeAdjust();
   doc["chargeenabled"] = (Inverter.ChargeEnable() && Inverter.ManualAllowCharge()) ? true : false;
   doc["dischargeenabled"] = (Inverter.DischargeEnable() && Inverter.ManualAllowDischarge()) ? true : false;
@@ -178,12 +184,24 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       wsclient->printf(GetWSDataJson((String) "maxchargecurrent",(String) Inverter.GetMaxChargeCurrent()));
     else if (strncmp(data,"GetMaxDischargeCurrent",len)==0)
       wsclient->printf(GetWSDataJson((String) "maxdischargecurrent",(String) Inverter.GetMaxDischargeCurrent()));
-    else if (strncmp(data,"GetSOC()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "battsoc",(String) Inverter.BattSOC()));
-    else if (strncmp(data,"GetBattCurrent()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "battcurrent",(String) Inverter.BattCurrentmA()));
-    else if (strncmp(data,"GetBattVoltage()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "battvoltage",(String) Inverter.BattVoltage()));
+    else if (strncmp(data,"GetSOC()",len)==0) {
+      taskENTER_CRITICAL(&(Inverter.CANMutex));
+      uint8_t soc = Inverter.BattSOC();
+      taskEXIT_CRITICAL(&(Inverter.CANMutex));
+      wsclient->printf(GetWSDataJson((String) "battsoc",(String) soc));
+    }
+    else if (strncmp(data,"GetBattCurrent()",len)==0) {
+      taskENTER_CRITICAL(&(Inverter.CANMutex));
+      int32_t current = Inverter.BattCurrentmA();
+      taskEXIT_CRITICAL(&(Inverter.CANMutex));
+      wsclient->printf(GetWSDataJson((String) "battcurrent",(String) current));
+    }
+    else if (strncmp(data,"GetBattVoltage()",len)==0) {
+      taskENTER_CRITICAL(&(Inverter.CANMutex));
+      uint16_t voltage = Inverter.BattVoltage();
+      taskEXIT_CRITICAL(&(Inverter.CANMutex));
+      wsclient->printf(GetWSDataJson((String) "battvoltage",(String) voltage));
+    }
     else if (strncmp(data,"GetChargeEnabled()",len)==0)
       wsclient->printf(GetWSDataJson((String) "chargeenabled",(String) Inverter.ChargeEnable()));
     else if (strncmp(data,"GetDischargeEnabled()",len)==0)
@@ -299,34 +317,94 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         notifyWSClients(); }
       
       if (!doc["canbuscspin"].isNull()) {
-        pref.putUInt8(ccCanCSPin, (uint8_t) doc["canbuscspin"]);
-        handled = true;
-        notifyWSClients(); }
+        uint8_t value = (uint8_t) doc["canbuscspin"];
+        if (value == 0) {
+          log_w("Ignoring canbuscspin value 0");
+          handled = true;
+        } else if (IsForbiddenPin(value)) {
+          wsclient->printf("{\"ERROR\" : \"canbuscspin %u is forbidden\"}", value);
+          handled = true;
+        } else {
+          pref.putUInt8(ccCanCSPin, value);
+          handled = true;
+          notifyWSClients();
+        }
+      }
 
       if (!doc["victronrxpin"].isNull()) {
-        pref.putUInt8(ccVictronRX, (uint8_t) doc["victronrxpin"]);
-        handled = true;
-        notifyWSClients(); }
+        uint8_t value = (uint8_t) doc["victronrxpin"];
+        if (value == 0) {
+          log_w("Ignoring victronrxpin value 0");
+          handled = true;
+        } else if (IsForbiddenPin(value)) {
+          wsclient->printf("{\"ERROR\" : \"victronrxpin %u is forbidden\"}", value);
+          handled = true;
+        } else {
+          pref.putUInt8(ccVictronRX, value);
+          handled = true;
+          notifyWSClients();
+        }
+      }
 
       if (!doc["victrontxpin"].isNull()) {
-        pref.putUInt8(ccVictronTX, (uint8_t) doc["victrontxpin"]);
-        handled = true;
-        notifyWSClients(); }
+        uint8_t value = (uint8_t) doc["victrontxpin"];
+        if (value == 0) {
+          log_w("Ignoring victrontxpin value 0");
+          handled = true;
+        } else if (IsForbiddenPin(value)) {
+          wsclient->printf("{\"ERROR\" : \"victrontxpin %u is forbidden\"}", value);
+          handled = true;
+        } else {
+          pref.putUInt8(ccVictronTX, value);
+          handled = true;
+          notifyWSClients();
+        }
+      }
 
       if (!doc["can_rx_pin"].isNull()) {
-        pref.putUInt8(ccCAN_RX_PIN, (uint8_t) doc["can_rx_pin"]);
-        handled = true;
-        notifyWSClients(); }
+        uint8_t value = (uint8_t) doc["can_rx_pin"];
+        if (value == 0) {
+          log_w("Ignoring can_rx_pin value 0");
+          handled = true;
+        } else if (IsForbiddenPin(value)) {
+          wsclient->printf("{\"ERROR\" : \"can_rx_pin %u is forbidden\"}", value);
+          handled = true;
+        } else {
+          pref.putUInt8(ccCAN_RX_PIN, value);
+          handled = true;
+          notifyWSClients();
+        }
+      }
 
       if (!doc["can_tx_pin"].isNull()) {
-        pref.putUInt8(ccCAN_TX_PIN, (uint8_t) doc["can_tx_pin"]);
-        handled = true;
-        notifyWSClients(); }
+        uint8_t value = (uint8_t) doc["can_tx_pin"];
+        if (value == 0) {
+          log_w("Ignoring can_tx_pin value 0");
+          handled = true;
+        } else if (IsForbiddenPin(value)) {
+          wsclient->printf("{\"ERROR\" : \"can_tx_pin %u is forbidden\"}", value);
+          handled = true;
+        } else {
+          pref.putUInt8(ccCAN_TX_PIN, value);
+          handled = true;
+          notifyWSClients();
+        }
+      }
 
       if (!doc["can_en_pin"].isNull()) {
-        pref.putUInt8(ccCAN_EN_PIN, (uint8_t) doc["can_en_pin"]);
-        handled = true;
-        notifyWSClients(); }
+        uint8_t value = (uint8_t) doc["can_en_pin"];
+        if (value == 0) {
+          log_w("Ignoring can_en_pin value 0");
+          handled = true;
+        } else if (IsForbiddenPin(value)) {
+          wsclient->printf("{\"ERROR\" : \"can_en_pin %u is forbidden\"}", value);
+          handled = true;
+        } else {
+          pref.putUInt8(ccCAN_EN_PIN, value);
+          handled = true;
+          notifyWSClients();
+        }
+      }
 
       if (!doc["wifissid"].isNull()) {
         String value = doc["wifissid"];
@@ -436,17 +514,35 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
 
       if (!doc["fanpin"].isNull()) {
         uint8_t value = doc["fanpin"];
-        handled = true;
-        pref.putUInt8(ccFanPin,value);
-        if (!FAN_INIT)
-          FanInit(value);
-        notifyWSClients();}
+        if (value == 0) {
+          log_w("Ignoring fanpin value 0");
+          handled = true;
+        } else if (IsForbiddenPin(value)) {
+          wsclient->printf("{\"ERROR\" : \"fanpin %u is forbidden\"}", value);
+          handled = true;
+        } else {
+          handled = true;
+          pref.putUInt8(ccFanPin,value);
+          if (!FAN_INIT)
+            FanInit(value);
+          notifyWSClients();
+        }
+      }
 
       if (!doc["onewirepin"].isNull()) {
         uint8_t value = doc["onewirepin"];
-        handled = true;
-        pref.putUInt8(ccOneWirePin,value);
-        notifyWSClients();}
+        if (value == 0) {
+          log_w("Ignoring onewirepin value 0");
+          handled = true;
+        } else if (IsForbiddenPin(value)) {
+          wsclient->printf("{\"ERROR\" : \"onewirepin %u is forbidden\"}", value);
+          handled = true;
+        } else {
+          handled = true;
+          pref.putUInt8(ccOneWirePin,value);
+          notifyWSClients();
+        }
+      }
 
       if (!doc["autocharge"].isNull()) {
         bool value = doc["autocharge"];
@@ -560,27 +656,92 @@ void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEven
 void StartWebServices()
 {
   log_d("Configuring Web Services.");
-  //server.rewrite("/", "/index.html");
-  
-  // Serve the file "/www/index-ap.htm" in AP, and the file "/www/index.htm" on STA
-  
-  if (wifiManager.GetMode() == WIFI_MODE_AP) {
-    server.rewrite("/", "/index-ap.htm");
-     // replay to all requests with same HTML
-    server.onNotFound([](AsyncWebServerRequest *request){
-      request->redirect("/index-ap.htm");
-    });
-    log_d("Redirecting root to index-ap.htm");
-    
-    server.on("/mobile/status.php", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->redirect("/index-ap.htm");});
+  bool littlefsMounted = Lcd.Data.LittleFSMounted.getValue();
 
-    server.on("/generate_204", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->redirect("/index-ap.htm");}); 
+  // Helpers: serve captive page if present, otherwise fall back to /update.
+  // For onNotFound: check if file exists before serving AP page (allows static files through)
+  auto sendIndexAP = [](AsyncWebServerRequest *request){
+    if (LittleFS.exists("/index-ap.htm"))
+      request->send(LittleFS, "/index-ap.htm", "text/html");
+    else
+      request->redirect("/update");
+  };
+  
+  auto sendIndexAPFallback = [](AsyncWebServerRequest *request){
+    // Only serve AP page for root-like requests; let static files pass through
+    String path = request->url();
+    if (path == "/" || path.indexOf(".") == -1) {  // root or no extension = likely a route
+      if (LittleFS.exists("/index-ap.htm"))
+        request->send(LittleFS, "/index-ap.htm", "text/html");
+      else
+        request->redirect("/update");
+    } else {
+      // Has extension (file request) - let it 404 so static serving can try
+      request->send(404);
+    }
+  };
+
+  auto sendIndexSTA = [](AsyncWebServerRequest *request){
+    if (LittleFS.exists("/index.htm"))
+      request->send(LittleFS, "/index.htm", "text/html");
+    else
+      request->redirect("/update");
+  };
+  
+  auto sendIndexSTAFallback = [](AsyncWebServerRequest *request){
+    // Only serve STA page for root-like requests; let static files pass through
+    String path = request->url();
+    if (path == "/" || path.indexOf(".") == -1) {
+      if (LittleFS.exists("/index.htm"))
+        request->send(LittleFS, "/index.htm", "text/html");
+      else
+        request->redirect("/update");
+    } else {
+      request->send(404);
+    }
+  };
+
+  if (wifiManager.GetMode() == WIFI_MODE_AP) {
+    // Check if filesystem is flashed - redirect accordingly
+    if (LittleFS.exists("/index-ap.htm")) {
+      server.rewrite("/", "/index-ap.htm");
+      log_d("LittleFS mounted with index-ap.htm - captive portal mode serving index-ap.htm");
+    } else {
+      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->redirect("/update");
+      });
+      log_w("LittleFS not flashed or missing index-ap.htm - redirecting root to /update");
+    }
+    
+    // Captive portal handlers - serve the page directly; fallback to /update if missing
+    server.on("/generate_204", HTTP_GET, sendIndexAP);
+    // Windows NCSI: serve plain text responses to stabilize connectivity classification
+    server.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request){
+      request->send(200, "text/plain", "Microsoft Connect Test");
+    });
+    server.on("/redirect", HTTP_GET, sendIndexAP);
+    server.on("/hotspot-detect.html", HTTP_GET, sendIndexAP);
+    server.on("/library/test/success.html", HTTP_GET, sendIndexAP);
+    server.on("/kindle-wifi/wifistub.html", HTTP_GET, sendIndexAP);
+    server.on("/mobile/status.php", HTTP_GET, sendIndexAP);
+    server.on("/ncsi.txt", HTTP_GET, [](AsyncWebServerRequest *request){
+      request->send(200, "text/plain", "Microsoft NCSI");
+    });
+    server.on("/success.txt", HTTP_GET, sendIndexAP);
+    server.onNotFound(sendIndexAPFallback);  // Smart fallback: allow static files through
   }
   else {
-    server.rewrite("/", "/index.htm");
-    log_d("Redirecting root to index.htm"); 
+    // Check if filesystem is flashed - redirect accordingly
+    if (LittleFS.exists("/index.htm")) {
+      server.rewrite("/", "/index.htm");
+      log_d("LittleFS mounted with index.htm - redirecting root to index.htm");
+    } else {
+      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->redirect("/update");
+      });
+      log_w("LittleFS not flashed or missing index.htm - redirecting root to /update");
+    }
+    server.onNotFound(sendIndexSTAFallback);  // Smart fallback: allow static files through
   }
 
   //setup the updateServer with credentials
@@ -588,6 +749,16 @@ void StartWebServices()
   //hook to update events if you need to
   updateServer.onUpdateBegin = [](const UpdateType type, int &result)
   {
+      // Ensure LittleFS is mounted so LittleFS.totalBytes() returns the partition size.
+      // Without mounting, the library passes size 0 to Update.begin(), causing "Bad Size Given".
+      if (type == UpdateType::FILE_SYSTEM) {
+        if (!LittleFS.begin(false)) {
+          log_w("LittleFS mount failed before OTA FS update, formatting and retrying");
+          if (!LittleFS.begin(true)) {
+            log_e("LittleFS format/mount failed; filesystem OTA may still fail");
+          }
+        }
+      }
       //you can force abort the update like this if you need to:
       //result = UpdateResult::UPDATE_ABORT;        
       Serial.println("Update started : " + String(type));
@@ -596,8 +767,12 @@ void StartWebServices()
   {
       Serial.println("Update finished : " + String(type) + " result: " + String(result));
   };
+
+  // Serve static files only if FS is mounted
   //server.rewrite("/index.htm", "/index-ap.htm").setFilter(ON_AP_FILTER);
-  server.serveStatic("/", LittleFS, "/");
+  if (Lcd.Data.LittleFSMounted.getValue()) {
+    server.serveStatic("/", LittleFS, "/");
+  }
 
   // Web Socket handler
   ws.onEvent(onEvent);

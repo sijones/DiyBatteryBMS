@@ -7,8 +7,10 @@ bool WifiMQTTManagerClass::begin()
     m_pref.begin("network");
     log_d("Attempting to get WiFi/MQTT details from NVS");
 
-    _wifiSSID = m_pref.getString(ccWifiSSID,_wifiSSID);
-    _wifiPass = m_pref.getString(ccWifiPass,_wifiPass);
+    if(m_pref.isKey(ccWifiSSID))
+        _wifiSSID = m_pref.getString(ccWifiSSID,_wifiSSID);
+    if(m_pref.isKey(ccWifiPass))
+        _wifiPass = m_pref.getString(ccWifiPass,_wifiPass);
 
     log_d("Wifi SSID: %s, Password Length: %i",_wifiSSID,_wifiPass.length());
 
@@ -64,7 +66,12 @@ bool WifiMQTTManagerClass::begin()
         log_d("Wifi needs configuring, Starting AP Mode");
         _needConfig = true;
         WiFi.mode(WIFI_MODE_AP);
-        WiFi.softAP(_wifiHostName.c_str(),NULL);
+        // Prevent AP-side modem sleep to reduce idle disconnects
+        WiFi.setSleep(false);
+        // Explicit AP network config (gateway = AP IP)
+        WiFi.softAPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
+        // Start SoftAP on a non-DFS, common channel (1) to reduce roaming
+        WiFi.softAP(_wifiHostName.c_str(), NULL, 1);
         /* Setup the DNS server redirecting all the domains to the apIP */
         delay(50);
         _dnsserver.setErrorReplyCode(DNSReplyCode::NoError);

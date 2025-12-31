@@ -36,6 +36,8 @@
 // #include <AsyncElegantOTA.h>
 #include <Wire.h>
 
+#include "GPIOForbidden.h"
+
 WiFiClient _wifiClient;
 
 #include "mEEPROM.h"
@@ -97,14 +99,14 @@ void setup()
 #ifndef ESPCAN
     pref.putBool(ccCAN16Mhz, initCAN16Mhz);
     // pref.putBool("MQTTEnabled", false);
-    pref.putUInt8(ccCanCSPin, CAN_BUS_CS_PIN);
+    pref.putUInt8(ccCanCSPin, 0); // Must be set via web interface
 #endif
-    pref.putUInt8(ccVictronRX, VEDIRECT_RX);
-    pref.putUInt8(ccVictronTX, VEDIRECT_TX);
+    pref.putUInt8(ccVictronRX, 0); // Must be set via web interface
+    pref.putUInt8(ccVictronTX, 0); // Must be set via web interface
 #ifdef ESPCAN
-    pref.putUInt8(ccCAN_EN_PIN,CAN_EN_PIN);
-    pref.putUInt8(ccCAN_RX_PIN,CAN_RX_PIN);
-    pref.putUInt8(ccCAN_TX_PIN,CAN_TX_PIN);
+    pref.putUInt8(ccCAN_EN_PIN, 0); // Must be set via web interface
+    pref.putUInt8(ccCAN_RX_PIN, 0); // Must be set via web interface
+    pref.putUInt8(ccCAN_TX_PIN, 0); // Must be set via web interface
 #endif
     pref.putUInt16(ccChargeVolt, initBattChargeVoltage);
     pref.putUInt16(ccFullVoltage,initBattFullVoltage);
@@ -144,8 +146,15 @@ void setup()
   VE_MQTT_RECONNECT = pref.getUInt8("VE_MQTT_REC", VE_MQTT_RECONNECT);
   VE_LOOP_TIME = pref.getUInt8(ccVELOOPTIME, VE_LOOP_TIME);
   
-  // Setup FAN, will only complete if a PIN number is assigned.
-  FanInit(pref.getUInt8(ccFanPin,0));
+  // Setup FAN, will only complete if a valid, non-forbidden PIN number is assigned.
+  {
+    uint8_t fanpin = pref.getUInt8(ccFanPin,0);
+    if (fanpin > 0 && !IsForbiddenPin(fanpin)) {
+      FanInit(fanpin);
+    } else if (fanpin > 0) {
+      log_w("FAN pin %u is forbidden; skipping FanInit", fanpin);
+    }
+  }
 
   // Setup LCD Screen if Enabled
   if(pref.getBool(ccLcdEnabled,false)) {
@@ -163,6 +172,7 @@ void setup()
   if (LittleFS.begin(false))
   {
     Lcd.Data.LittleFSMounted.setValue(true);
+    log_d("LittleFS storage mounted successfully.");
   }
   else
   {
@@ -181,12 +191,45 @@ void setup()
 
   mqttsetup();
 #ifdef ESPCAN
-  if(Inverter.Begin(pref.getUInt8(ccCAN_TX_PIN,CAN_TX_PIN),pref.getUInt8(ccCAN_RX_PIN,CAN_RX_PIN),pref.getUInt8(ccCAN_EN_PIN,CAN_EN_PIN)))
-#else
-  if (Inverter.Begin(pref.getUInt8(ccCanCSPin, (uint32_t)CAN_BUS_CS_PIN), pref.getBool(ccCAN16Mhz,initCAN16Mhz)))
-#endif
   {
-    Lcd.Data.CANInit.setValue(true);
+    uint8_t tx = pref.getUInt8(ccCAN_TX_PIN, 0);
+    uint8_t rx = pref.getUInt8(ccCAN_RX_PIN, 0);
+    uint8_t en = pref.getUInt8(ccCAN_EN_PIN, 0);
+    if (tx && rx && en && !IsForbiddenPin(tx) && !IsForbiddenPin(rx) && !IsForbiddenPin(en)) {
+      if(Inverter.Begin(tx, rx, en))
+      {
+        Lcd.Data.CANInit.setValue(true);
+      }
+      else {
+        Lcd.Data.CANInit.setValue(false);
+      }
+    } else {
+      log_e("Forbidden or zero GPIO for CAN pins: TX=%u RX=%u EN=%u", tx, rx, en);
+      Lcd.Data.CANInit.setValue(false);
+    }
+  }
+#else
+  {
+    uint8_t cs = pref.getUInt8(ccCanCSPin, 0);
+    bool mhz16 = pref.getBool(ccCAN16Mhz, initCAN16Mhz);
+    if (cs && !IsForbiddenPin(cs)) {
+      if (Inverter.Begin(cs, mhz16))
+      {
+        Lcd.Data.CANInit.setValue(true);
+      }
+      else {
+        Lcd.Data.CANInit.setValue(false);
+      }
+    } else {
+      log_e("Forbidden or zero GPIO for CAN CS pin: CS=%u", cs);
+      Lcd.Data.CANInit.setValue(false);
+    }
+  }
+#endif
+  // Continue setup based on CAN init status
+  bool canInitOK = Lcd.Data.CANInit.getValue();
+  if (canInitOK)
+  {
     Inverter.SetChargeVoltage((u_int16_t) pref.getUInt32(ccChargeVolt, initBattChargeVoltage));
     Inverter.SetFullVoltage((u_int16_t) pref.getUInt32(ccFullVoltage, initBattFullVoltage));
     Inverter.SetOverVoltage((u_int16_t) pref.getUInt32(ccOverVoltage, initBattOverVoltage));
@@ -205,8 +248,8 @@ void setup()
     Inverter.SetSlowChargeSOCLimit(2, pref.getUInt8(ccSlowSOCCharge2, initSlowSOCCharge2));
     Inverter.AutoCharge(pref.getBool(ccAutoAdjustCharge, true));
     Inverter.SmartInterval(pref.getUInt8(ccSmartInterval,initSmartInterval));
-    if(pref.getBool(ccCANBusEnabled,true))
-      Inverter.StartRunTask();
+    if(pref.getBool(ccCANBusEnabled,true)) {
+      Inverter.StartRunTask();}
   }
   else
   {
@@ -220,8 +263,16 @@ void setup()
 
   xTaskCreate(&taskStartWebServices,"taskStartWebServices",4096, NULL, 6, NULL);
 
-  if(veHandle.OpenSerial((uint8_t) pref.getUInt8(ccVictronRX,VEDIRECT_RX), (uint8_t) pref.getUInt8(ccVictronTX,VEDIRECT_TX)))
-      veHandle.startReadTask();
+  {
+    uint8_t vrx = (uint8_t) pref.getUInt8(ccVictronRX, 0);
+    uint8_t vtx = (uint8_t) pref.getUInt8(ccVictronTX, 0);
+    if (vrx && vtx && !IsForbiddenPin(vrx) && !IsForbiddenPin(vtx)) {
+      if(veHandle.OpenSerial(vrx, vtx))
+        veHandle.startReadTask();
+    } else if (vrx || vtx) {
+      log_e("Forbidden or zero GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
+    }
+  }
 
   xTaskCreate(&TaskSetClock,"taskSetClock", 2048, NULL, 5, NULL); 
   // Set the lcd timer
@@ -242,8 +293,17 @@ void loop()
   
   wifiManager.loop(); 
 
+  // Read serial data with timeout protection to prevent watchdog issues
+  uint32_t serialStartTime = millis();
   while(Serial1.available() > 0)
+  {
       veHandle.rxData(Serial1.read());
+      // Yield after processing multiple bytes or if taking too long (>50ms)
+      if (millis() - serialStartTime > 50) {
+        yield();
+        serialStartTime = millis();
+      }
+  }
 
   if (veHandle.dataavailable())
   {
@@ -276,26 +336,36 @@ void loop()
   {
 
     last_lcd_refresh = t;
-    // Update LCD Screen Values
+    // Update LCD Screen Values - CRITICAL: Protect battery state reads with mutex
+    taskENTER_CRITICAL(&(Inverter.CANMutex));
+    
     Lcd.Data.ChargeVolts.setValue(Inverter.GetChargeVoltage());
     Lcd.Data.ChargeAmps.setValue(Inverter.GetChargeCurrent());
     Lcd.Data.DischargeVolts.setValue(Inverter.GetDischargeVoltage());
     Lcd.Data.DischargeAmps.setValue(Inverter.GetDischargeCurrent());
     Lcd.Data.ChargeEnable.setValue((Inverter.ChargeEnable() && Inverter.ManualAllowCharge()) ? true : false);
     Lcd.Data.DischargeEnable.setValue((Inverter.DischargeEnable() && Inverter.ManualAllowDischarge()) ? true : false);
+    Lcd.Data.CANBusData.setValue(!Inverter.CanBusFailed());
+    Lcd.Data.ForceCharging.setValue(Inverter.ForceCharge());
+    
+    int32_t b = Inverter.BattCurrentmA();
+    if (b < 0)
+      b = -b;
+    
+    taskEXIT_CRITICAL(&(Inverter.CANMutex));
+    
     Lcd.Data.WifiConnected.setValue(WiFi.isConnected());
     Lcd.Data.MQTTConnected.setValue(mqttClient.connected());
     Lcd.Data.IPAddr.setValue(wifiManager.GetIPAddr());
-    Lcd.Data.CANBusData.setValue(!Inverter.CanBusFailed());
-    Lcd.Data.ForceCharging.setValue(Inverter.ForceCharge());
     CheckAndChangeLCD();
     Lcd.UpdateScreenValues();
     if(FAN_INIT){
-      int32_t b = Inverter.BattCurrentmA();
-      if (b < 0)
-        b = -b;
       FanUpdate((b * 0.1));
     }
   }
+
+  // Yield to watchdog and other tasks
+  yield();
+  delay(1);
 
 }
