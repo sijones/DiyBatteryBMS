@@ -27,7 +27,7 @@ String sTopicData;
 String sClientid;
 uint16_t iPort = 1883; // Default MQTT Port
 
-//char buffer[10];
+char buffer[10];
 
 typedef struct 
 {
@@ -78,7 +78,7 @@ bool mqttPublish(const char* topic, const char* payload, bool retain)
   bool addedToQueue = false;
   strcpy(payloadBuffer, payload);
   strcpy(topicBuffer, topic);
-  int msg_id = mqttClient.publish(topicBuffer,1,retain,payloadBuffer,lenPayload+1,true);
+  int msg_id = mqttClient.publish(topicBuffer,1,retain,payloadBuffer,lenPayload,true);
 
   if (msg_id < 0) {
       log_e("Failed to enqueue message");
@@ -149,14 +149,14 @@ bool sendVE2MQTT() {
   // Publish Json with more details in.
   mqttPublish((sTopic + "/Data").c_str(),generateDatatoJSON(false).c_str(),false);
   // Send Voltage
-  //sprintf (buffer, "%u", Inverter.BattVoltage());
-  //mqttPublish((sTopic + "/V").c_str(),buffer,false);
+  sprintf (buffer, "%u", Inverter.BattVoltage());
+  mqttPublish((sTopic + "/V").c_str(),buffer,false);
   // Send Current
-  //sprintf (buffer, "%i", Inverter.BattCurrentmA());
-  //mqttPublish((sTopic + "/I").c_str(),buffer,false);
+  sprintf (buffer, "%i", Inverter.BattCurrentmA());
+  mqttPublish((sTopic + "/I").c_str(),buffer,false);
   // Send SOC
-  //sprintf (buffer, "%i", Inverter.BattSOC());
-  //mqttPublish((sTopic + "/SOC").c_str(),buffer,false);
+  sprintf (buffer, "%i", Inverter.BattSOC());
+  mqttPublish((sTopic + "/SOC").c_str(),buffer,false);
 
   return true;
 }
@@ -169,6 +169,7 @@ void connectToMqtt() {
 
 void onMqttConnect(bool sessionPresent) {
   log_d("Connected to MQTT.");
+  WS_LOG_I("MQTT connected to %s", wifiManager.GetMQTTServerIP().c_str());
   Lcd.Data.MQTTConnected.setValue(true);
   mqttClient.setWill((sTopic + "/status").c_str(), 2, true, "offline");
   yield();
@@ -203,7 +204,9 @@ void onMqttUnsubscribe(uint16_t msg_id) {
 void onMqttError(esp_mqtt_error_codes_t error) {
   log_e("MQTT Error: %s, Type: %d, Connect Return Code: %d, ESP Transport Sock Errno: %d",
         esp_err_to_name(error.esp_tls_last_esp_err), error.error_type, error.connect_return_code, error.esp_transport_sock_errno);
-}
+  WS_LOG_E("MQTT Error: %s, Type: %d, Connect Return Code: %d, ESP Transport Sock Errno: %d",
+        esp_err_to_name(error.esp_tls_last_esp_err), error.error_type, error.connect_return_code, error.esp_transport_sock_errno);  
+      }
 
 void onMqttMessage(char* topic, char* payload, int retain, int qos, bool dup) {
    

@@ -199,6 +199,48 @@
       border-bottom: 2px solid #f0f0f0;
     }
     
+    .log-viewer {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 15px;
+      height: 500px;
+      overflow-y: auto;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 13px;
+      color: #d4d4d4;
+      line-height: 1.5;
+    }
+    
+    .log-entry {
+      margin-bottom: 4px;
+      word-wrap: break-word;
+    }
+    
+    .log-entry.error { color: #f48771; }
+    .log-entry.warning { color: #dcdcaa; }
+    .log-entry.info { color: #4ec9b0; }
+    .log-entry.debug { color: #9cdcfe; }
+    
+    .log-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      align-items: center;
+    }
+    
+    .log-controls button {
+      padding: 8px 16px;
+      font-size: 13px;
+    }
+    
+    .log-controls label {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+    
     .section-title:first-child {
       margin-top: 0;
     }
@@ -260,6 +302,7 @@
       <button class="tab-button" onclick="switchTab(event, 'bms')">BMS</button>
       <button class="tab-button" onclick="switchTab(event, 'settings')">Settings</button>
       <button class="tab-button" onclick="switchTab(event, 'wifimqtt')">WiFi/MQTT</button>
+      <button class="tab-button" onclick="switchTab(event, 'logs')">Logs</button>
       <button class="tab-button" onclick="switchTab(event, 'firmware')">Firmware</button>
     </div>
     
@@ -529,6 +572,23 @@
         </div>
       </div>
       
+      <!-- Logs Tab -->
+      <div id="logs" class="tab-pane">
+        <h2 style="margin-bottom: 20px; color: #667eea;">System Logs</h2>
+        <div class="log-controls">
+          <button onclick="clearLogs()">Clear Logs</button>
+          <label>
+            <input type="checkbox" id="autoscroll" checked>
+            Auto-scroll
+          </label>
+          <label>
+            <input type="checkbox" id="logpause">
+            Pause
+          </label>
+        </div>
+        <div class="log-viewer" id="logviewer"></div>
+      </div>
+      
       <!-- Firmware Tab -->
       <div id="firmware" class="tab-pane">
         <div class="section-title">Firmware Updates</div>
@@ -567,6 +627,17 @@
       
       document.getElementById(tabName).classList.add('active');
       event.target.classList.add('active');
+      
+      // Load buffered logs when Logs tab is opened
+      if(tabName === 'logs' && websocket) {
+        console.log('Logs tab opened. WebSocket state:', websocket.readyState);
+        if(websocket.readyState === WebSocket.OPEN) {
+          console.log('Requesting buffered logs...');
+          websocket.send('GetLogs()');
+        } else {
+          console.warn('WebSocket not open, cannot request logs');
+        }
+      }
     }
 
     function initWebSocket() {
@@ -575,20 +646,33 @@
       websocket.onopen = onOpen;
       websocket.onclose = onClose;
       websocket.onmessage = onMessage;
+      websocket.onerror = onError;
     }
 
     function onOpen(event) {
-      console.log('Connection opened');
+      console.log('WebSocket connection opened');
+    }
+
+    function onError(event) {
+      console.error('WebSocket error:', event);
     }
 
     function onClose(event) {
-      console.log('Connection closed');
+      console.log('WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
       setTimeout(initWebSocket, 2000);
     }
 
     function onMessage(event) {
-      console.log(event.data);
       const obj = JSON.parse(event.data);
+      
+      // Handle log messages
+      if(obj.hasOwnProperty('log')) {
+        addLogEntry(obj.log, obj.level || 'info');
+        return;
+      }
+      
+      // Log non-log messages only if verbose debugging needed
+      // console.log(event.data);
 
       if(obj.hasOwnProperty('BMS') && obj.BMS) {
         if(obj.hasOwnProperty('chargevoltage')) document.getElementById('chargevoltage').value=obj.chargevoltage;
@@ -718,6 +802,33 @@
       websocket.send(jsonString);
     }
 
+    function addLogEntry(message, level) {
+      if(document.getElementById('logpause').checked) return;
+      
+      const logViewer = document.getElementById('logviewer');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry ' + level;
+      
+      const timestamp = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      entry.textContent = `[${timestamp}] ${message}`;
+      
+      logViewer.appendChild(entry);
+      
+      // Keep only last 500 entries
+      while(logViewer.children.length > 500) {
+        logViewer.removeChild(logViewer.firstChild);
+      }
+      
+      // Auto-scroll to bottom if enabled
+      if(document.getElementById('autoscroll').checked) {
+        logViewer.scrollTop = logViewer.scrollHeight;
+      }
+    }
+    
+    function clearLogs() {
+      document.getElementById('logviewer').innerHTML = '';
+    }
+    
     function GetWifiList() {
       console.log("Getting Wifi List");
       var serverurl = `http://${window.location.hostname}/scan`; 

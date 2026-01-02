@@ -6,6 +6,70 @@
 #include <LittleFS.h>
 #include "GPIOForbidden.h"
 
+// Log buffer for web UI
+#define LOG_BUFFER_SIZE 100
+struct LogEntry {
+  String message;
+  String level;
+  unsigned long timestamp;
+};
+LogEntry logBuffer[LOG_BUFFER_SIZE];
+int logBufferIndex = 0;
+portMUX_TYPE logMutex = portMUX_INITIALIZER_UNLOCKED;
+
+// Function to send log to WebSocket clients
+void sendLogToWS(const char* message, const char* level) {
+  // Only send if WebSocket is initialized and has connected clients
+  if(ws.count() > 0 && ws.availableForWriteAll()) {
+    String json = "{\"log\":\"";
+    String msg = String(message).substring(0, 200);  // Limit message length
+    // Escape any quotes in the message to prevent JSON breaking
+    msg.replace("\"", "'");
+    json += msg;
+    json += "\",\"level\":\"";
+    json += level;
+    json += "\"}";
+    ws.textAll(json);
+  }
+  
+  // Also store in circular buffer
+  taskENTER_CRITICAL(&logMutex);
+  logBuffer[logBufferIndex].message = String(message).substring(0, 200);
+  logBuffer[logBufferIndex].level = level;
+  logBuffer[logBufferIndex].timestamp = millis();
+  logBufferIndex = (logBufferIndex + 1) % LOG_BUFFER_SIZE;
+  taskEXIT_CRITICAL(&logMutex);
+}
+
+// Custom log function that forwards to WebSocket
+#define WS_LOG_D(format, ...) do { \
+  char buf[256]; \
+  snprintf(buf, sizeof(buf), format, ##__VA_ARGS__); \
+  log_d("%s", buf); \
+  sendLogToWS(buf, "debug"); \
+} while(0)
+
+#define WS_LOG_I(format, ...) do { \
+  char buf[256]; \
+  snprintf(buf, sizeof(buf), format, ##__VA_ARGS__); \
+  log_i("%s", buf); \
+  sendLogToWS(buf, "info"); \
+} while(0)
+
+#define WS_LOG_W(format, ...) do { \
+  char buf[256]; \
+  snprintf(buf, sizeof(buf), format, ##__VA_ARGS__); \
+  log_w("%s", buf); \
+  sendLogToWS(buf, "warning"); \
+} while(0)
+
+#define WS_LOG_E(format, ...) do { \
+  char buf[256]; \
+  snprintf(buf, sizeof(buf), format, ##__VA_ARGS__); \
+  log_e("%s", buf); \
+  sendLogToWS(buf, "error"); \
+} while(0)
+
 
 void TaskSetClock(void * pointer) {
   
@@ -146,6 +210,7 @@ String generateDatatoJSON(bool All)
   
   String outputJson;
   int b = serializeJson(doc, outputJson);
+  outputJson.trim();  // Remove trailing newline and whitespace from serializeJson
   return outputJson;
 }
 
@@ -172,6 +237,41 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
   if (strncmp(data,"Get",(int)3)==0) {
     if (strncmp(data,"GetAll()",len)==0)
       notifyWSClients();
+    else if (strncmp(data,"GetLogs()",len)==0) {
+      // Send buffered logs to requesting client (last 50 entries)
+      // Copy logs out of critical section first to avoid blocking
+      LogEntry tempLogs[50];
+      int count = 0;
+      
+      taskENTER_CRITICAL(&logMutex);
+      for(int i = 0; i < LOG_BUFFER_SIZE && count < 50; i++) {
+        int idx = (logBufferIndex + i) % LOG_BUFFER_SIZE;
+        if(logBuffer[idx].message.length() > 0) {
+          tempLogs[count] = logBuffer[idx];
+          count++;
+        }
+      }
+      taskEXIT_CRITICAL(&logMutex);
+      
+      // Send logs outside critical section
+      for(int i = 0; i < count; i++) {
+        if(wsclient->status() == WS_CONNECTED) {
+          String json = "{\"log\":\"";
+          json += tempLogs[i].message;
+          json += "\",\"level\":\"";
+          json += tempLogs[i].level;
+          json += "\"}";
+          wsclient->text(json);
+          
+          // Yield every 10 messages to prevent WDT
+          if(i % 10 == 0) {
+            yield();
+          }
+        } else {
+          break;  // Client disconnected, stop sending
+        }
+      }
+    }
     else if (strncmp(data,"GetChargeVoltage",len)==0)
       wsclient->printf(GetWSDataJson((String) "chargevoltage",(String) Inverter.GetChargeVoltage()));
     else if (strncmp(data,"GetDischargeVoltage",len)==0)

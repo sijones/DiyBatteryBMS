@@ -85,6 +85,9 @@ void setup()
 {
   pref.begin();
   Serial.begin(115200);
+  delay(100);
+  
+  WS_LOG_I("=== DIY Battery BMS Starting ===");
 
   if (!pref.isKey("EEPROMSetup"))
   {
@@ -199,9 +202,11 @@ void setup()
       if(Inverter.Begin(tx, rx, en))
       {
         Lcd.Data.CANInit.setValue(true);
+        WS_LOG_I("CAN Bus (TWAI) initialized on TX:%d RX:%d EN:%d", tx, rx, en);
       }
       else {
         Lcd.Data.CANInit.setValue(false);
+        WS_LOG_E("CAN Bus (TWAI) failed to initialize");
       }
     } else {
       log_e("Forbidden or zero GPIO for CAN pins: TX=%u RX=%u EN=%u", tx, rx, en);
@@ -216,9 +221,11 @@ void setup()
       if (Inverter.Begin(cs, mhz16))
       {
         Lcd.Data.CANInit.setValue(true);
+        WS_LOG_I("CAN Bus (MCP2515) initialized on CS:%d", cs);
       }
       else {
         Lcd.Data.CANInit.setValue(false);
+        WS_LOG_E("CAN Bus (MCP2515) failed to initialize");
       }
     } else {
       log_e("Forbidden or zero GPIO for CAN CS pin: CS=%u", cs);
@@ -249,7 +256,9 @@ void setup()
     Inverter.AutoCharge(pref.getBool(ccAutoAdjustCharge, true));
     Inverter.SmartInterval(pref.getUInt8(ccSmartInterval,initSmartInterval));
     if(pref.getBool(ccCANBusEnabled,true)) {
-      Inverter.StartRunTask();}
+      Inverter.StartRunTask();
+      WS_LOG_I("CAN Bus task started");
+    }
   }
   else
   {
@@ -279,6 +288,7 @@ void setup()
   time_t t = time(nullptr);
   last_lcd_refresh = t;
   log_d("Setup complete, starting loop.");
+  WS_LOG_I("System initialization complete, entering main loop");
   return;
 }
 
@@ -289,6 +299,7 @@ void loop()
  
   if(WiFi.isConnected() && FirstRun && mqttEnabled) {
     connectToMqtt();
+    WS_LOG_I("WiFi connected, IP: %s", WiFi.localIP().toString().c_str());
     FirstRun = false; }
   
   wifiManager.loop(); 
