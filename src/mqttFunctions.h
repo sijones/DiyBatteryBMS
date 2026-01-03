@@ -18,6 +18,7 @@ PsychicMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
 //mEEPROM pref;
 bool mqttEnabled = false;
+bool haDiscoveryEnabled = true;  // Enable Home Assistant MQTT Discovery
 String sUser;
 String sPass;
 String sServer;
@@ -161,6 +162,153 @@ bool sendVE2MQTT() {
   return true;
 }
 
+// Publish Home Assistant MQTT Discovery messages
+void publishHADiscovery() {
+  if (!haDiscoveryEnabled || !mqttClient.connected()) return;
+  
+  String deviceId = WiFi.macAddress();
+  deviceId.replace(":", "");
+  String baseTopic = "homeassistant";
+  String nodeId = "diybatterybms_" + deviceId;
+  
+  // Device info (shared across all entities)
+  String deviceJson = String(",\"device\":{\"identifiers\":[\"diybatterybms_") + deviceId + 
+                      String("\"],\"name\":\"DIY Battery BMS\",\"model\":\"ESP32 BMS\",\"manufacturer\":\"https://github.com/sijones/DiyBatteryBMS\"}");
+  
+  log_i("Publishing Home Assistant Discovery configs...");
+  WS_LOG_I("Publishing Home Assistant Discovery configs...");
+  
+  // Battery SOC Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_soc/config").c_str(),
+    (String("{\"name\":\"Battery SOC\",\"unique_id\":\"") + nodeId + "_soc\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.battsoc }}\"," +
+     "\"unit_of_measurement\":\"%\",\"device_class\":\"battery\",\"state_class\":\"measurement\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Battery Voltage Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_voltage/config").c_str(),
+    (String("{\"name\":\"Battery Voltage\",\"unique_id\":\"") + nodeId + "_voltage\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+    "\"value_template\":\"{{ value_json.battvoltage | multiply(0.01) | round(1) }}\"," +
+     "\"unit_of_measurement\":\"V\",\"device_class\":\"voltage\",\"state_class\":\"measurement\"," +
+     "\"suggested_display_precision\":1" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Battery Current Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_current/config").c_str(),
+    (String("{\"name\":\"Battery Current\",\"unique_id\":\"") + nodeId + "_current\"," +
+    "\"state_topic\":\"" + sTopic + "/Data\"," +
+    "\"value_template\":\"{{ value_json.battcurrent | multiply(0.1) | round(1) }}\"," +
+    "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"" +
+    "\"suggested_display_precision\":1" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Charge Current Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_chargecurrent/config").c_str(),
+    (String("{\"name\":\"Charge Current Limit\",\"unique_id\":\"") + nodeId + "_chargecurrent\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.chargecurrent | multiply(0.001) | round(1) }}\"," +
+     "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Discharge Current Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_dischargecurrent/config").c_str(),
+    (String("{\"name\":\"Discharge Current Limit\",\"unique_id\":\"") + nodeId + "_dischargecurrent\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.dischargecurrent | multiply(0.001) | round(1) }}\"," +
+     "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Charge Adjust Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_chargeadjust/config").c_str(),
+    (String("{\"name\":\"Charge Adjust\",\"unique_id\":\"") + nodeId + "_chargeadjust\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.chargeadjust | multiply(0.001) | round(2) }}\"," +
+     "\"state_class\":\"measurement\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Free Heap Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_freeheap/config").c_str(),
+    (String("{\"name\":\"Free Heap\",\"unique_id\":\"") + nodeId + "_freeheap\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.freeheap }}\"," +
+     "\"unit_of_measurement\":\"B\",\"entity_category\":\"diagnostic\",\"state_class\":\"measurement\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Charge Enable Binary Sensor
+  mqttPublish((baseTopic + "/binary_sensor/" + nodeId + "_chargeenabled/config").c_str(),
+    (String("{\"name\":\"Charge Enabled Status\",\"unique_id\":\"") + nodeId + "_chargeenabled\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{% if value_json.chargeenabled %}ON{% else %}OFF{% endif %}\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Discharge Enable Binary Sensor
+  mqttPublish((baseTopic + "/binary_sensor/" + nodeId + "_dischargeenabled/config").c_str(),
+    (String("{\"name\":\"Discharge Enabled Status\",\"unique_id\":\"") + nodeId + "_dischargeenabled\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{% if value_json.dischargeenabled %}ON{% else %}OFF{% endif %}\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Force Charge Binary Sensor
+  mqttPublish((baseTopic + "/binary_sensor/" + nodeId + "_forcecharge/config").c_str(),
+    (String("{\"name\":\"Force Charge Status\",\"unique_id\":\"") + nodeId + "_forcecharge\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{% if value_json.forcecharge %}ON{% else %}OFF{% endif %}\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Charge Enable Switch
+  mqttPublish((baseTopic + "/switch/" + nodeId + "_charge/config").c_str(),
+    (String("{\"name\":\"Charge Enable\",\"unique_id\":\"") + nodeId + "_charge\"," +
+     "\"state_topic\":\"" + sTopic + "/Param/ChargeEnable\"," +
+     "\"command_topic\":\"" + sTopic + "/set/ChargeEnable\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Discharge Enable Switch
+  mqttPublish((baseTopic + "/switch/" + nodeId + "_discharge/config").c_str(),
+    (String("{\"name\":\"Discharge Enable\",\"unique_id\":\"") + nodeId + "_discharge\"," +
+     "\"state_topic\":\"" + sTopic + "/Param/DischargeEnable\"," +
+     "\"command_topic\":\"" + sTopic + "/set/DischargeEnable\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Force Charge Switch
+  mqttPublish((baseTopic + "/switch/" + nodeId + "_forcecharge/config").c_str(),
+    (String("{\"name\":\"Force Charge\",\"unique_id\":\"") + nodeId + "_forcecharge\"," +
+     "\"state_topic\":\"" + sTopic + "/Param/ForceCharge\"," +
+     "\"command_topic\":\"" + sTopic + "/set/ForceCharge\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // PylonTech Protocol Switch
+  mqttPublish((baseTopic + "/switch/" + nodeId + "_pylontech/config").c_str(),
+    (String("{\"name\":\"PylonTech Protocol\",\"unique_id\":\"") + nodeId + "_pylontech\"," +
+     "\"state_topic\":\"" + sTopic + "/Param/EnablePYLONTECH\"," +
+     "\"command_topic\":\"" + sTopic + "/set/EnablePYLONTECH\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  log_i("Home Assistant Discovery published successfully.");
+}
+
 void connectToMqtt() {
     if (!mqttEnabled) return;
     log_i("Connecting to MQTT...");
@@ -176,6 +324,14 @@ void onMqttConnect(bool sessionPresent) {
   mqttClient.subscribe((sTopic + "/set/#").c_str(), 2);
   yield();
   mqttPublish((sTopic + "/status").c_str(), "online", true);
+  yield();
+  
+  // Publish Home Assistant Discovery
+  publishHADiscovery();
+  yield();
+  
+  // Send initial state updates
+  sendUpdateMQTTData();
 }
 
 void onMqttDisconnect(bool sessionPresent) {

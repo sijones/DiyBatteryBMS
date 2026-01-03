@@ -1,5 +1,18 @@
-# Home Assistant MQTT config for VE.DirectMQTTCANBUS, allows switch control of charge discharge
-# and force charging of the batteries - useful for off peak charging
+# Home Assistant MQTT config for VE.DirectMQTTCANBUS
+# 
+# NOTE: This file is now OPTIONAL and provided for REFERENCE ONLY.
+# 
+# As of January 2026, DiyBatteryBMS supports MQTT Discovery which automatically creates
+# all sensors and switches in Home Assistant. No manual YAML configuration is required.
+# 
+# The device will publish discovery messages on connect to:
+#   homeassistant/sensor/diybatterybms_*/config
+#   homeassistant/switch/diybatterybms_*/config
+#   homeassistant/binary_sensor/diybatterybms_*/config
+#
+# All entities will appear under a single "DIY Battery BMS" device in Home Assistant.
+#
+# If you prefer manual configuration or need to customize, you can use the examples below:
 
 switch:
   - platform: mqtt # Again, it's an MQTT device

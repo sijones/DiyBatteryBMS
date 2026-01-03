@@ -32,11 +32,21 @@ The device itself no longer requires internet as the NTP Servers are now configu
 ## Features
 - Setup from a browser, flash to your ESP32 device then go to http://192.168.4.1 and connect it to your wifi, once connected go to http://diy-batterybms.local or it's IP address to configure all settings.
 - Listen to VE.Direct messages and publish some of the information to a MQTT broker<br> The MQTT Topic is fully configurable.
-- Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates. See the home assistant file for the commands and config.
+- **NEW**: Home Assistant MQTT Discovery - Automatically creates all sensors and switches in Home Assistant with no manual configuration required
+- Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates. See the home assistant file for the commands and config (optional - discovery creates these automatically).
 - Supports single MQTT server
 - OTA (Over The Air Update)<br> use your browser and go to http://IPADDRESS/update and upload the lastest binary - please note the donation button does not donate to me.
 - LCD Screen Support (LCD 20x4 via I2C)
 - Configurable NTP Server - This is for a future feature.
+
+### Home Assistant Integration
+The device now supports **MQTT Discovery** which automatically creates all entities when connected:
+- **Sensors**: Battery SOC (%), Voltage (mV), Current (mA), Charge/Discharge Current Limits, Free Heap
+- **Binary Sensors**: Charge/Discharge/Force Charge status indicators  
+- **Switches**: Charge Enable, Discharge Enable, Force Charge, PylonTech Protocol Enable
+- All entities are grouped under one "DIY Battery BMS" device
+- No manual YAML configuration required (HomeAssistant.yaml is now optional for reference only)
+- Discovery messages published automatically on MQTT connect
 
 ## Features to come:
 - Voltage Limited Charging, automatically reducing charge current to keep the voltage stable
