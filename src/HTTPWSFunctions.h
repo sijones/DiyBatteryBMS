@@ -648,7 +648,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         bool value = doc["autocharge"];
         handled = true;
         Inverter.AutoCharge(value);
-        pref.putBool(ccAutoAdjustCharge,value);
+        pref.putBool(ccAutoAdjustCharge,value);  // Save to NVS when changed via Web UI
         notifyWSClients();}
 
       if (!doc["can16mhz"].isNull()) {

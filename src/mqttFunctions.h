@@ -116,7 +116,8 @@ bool sendUpdateMQTTData()
     mqttPublish((wifiManager.GetMQTTTopic() + "/Param/EnablePYLONTECH").c_str(), (Inverter.EnablePylonTech() == true) ? "ON" : "OFF",true);
     mqttPublish((wifiManager.GetMQTTTopic() + "/Param/ForceCharge").c_str(), (Inverter.ForceCharge() == true) ? "ON" : "OFF" , true);  
     mqttPublish((wifiManager.GetMQTTTopic() + "/Param/DischargeEnable").c_str(), (Inverter.DischargeEnable() == true && Inverter.ManualAllowDischarge()) ? "ON" : "OFF" , true); 
-    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/ChargeEnable").c_str(), (Inverter.ChargeEnable() == true && Inverter.ManualAllowCharge()) ? "ON" : "OFF" , true); 
+    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/ChargeEnable").c_str(), (Inverter.ChargeEnable() == true && Inverter.ManualAllowCharge()) ? "ON" : "OFF" , true);
+    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/SmartCharge").c_str(), (Inverter.AutoCharge() == true) ? "ON" : "OFF" , true); 
     return true;
   } 
   else  
@@ -270,6 +271,15 @@ void publishHADiscovery() {
      deviceJson + "}").c_str(), true);
   yield();
   
+  // Smart Charge Binary Sensor
+  mqttPublish((baseTopic + "/binary_sensor/" + nodeId + "_smartcharge/config").c_str(),
+    (String("{\"name\":\"Smart Charge Status\",\"unique_id\":\"") + nodeId + "_smartcharge\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{% if value_json.autocharge %}ON{% else %}OFF{% endif %}\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
   // Charge Enable Switch
   mqttPublish((baseTopic + "/switch/" + nodeId + "_charge/config").c_str(),
     (String("{\"name\":\"Charge Enable\",\"unique_id\":\"") + nodeId + "_charge\"," +
@@ -306,7 +316,17 @@ void publishHADiscovery() {
      deviceJson + "}").c_str(), true);
   yield();
   
+  // Smart Charge Switch
+  mqttPublish((baseTopic + "/switch/" + nodeId + "_smartcharge/config").c_str(),
+    (String("{\"name\":\"Smart Charge\",\"unique_id\":\"") + nodeId + "_smartcharge\"," +
+     "\"state_topic\":\"" + sTopic + "/Param/SmartCharge\"," +
+     "\"command_topic\":\"" + sTopic + "/set/SmartCharge\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
   log_i("Home Assistant Discovery published successfully.");
+  WS_LOG_I("Home Assistant Discovery published successfully.");
 }
 
 void connectToMqtt() {
@@ -401,6 +421,12 @@ if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/EnablePYLONTECH") {
     Inverter.EnablePylonTech((message == "ON") ? true : false);
     log_d("Enable PylonTech set to: %s", (message == "ON") ? "ON" : "OFF");
+  }
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/SmartCharge") {
+    Inverter.AutoCharge((message == "ON") ? true : false);
+    log_d("Smart Charge set to: %s", (message == "ON") ? "ON" : "OFF");
+    // Publish updated state immediately
+    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/SmartCharge").c_str(), (Inverter.AutoCharge() == true) ? "ON" : "OFF" , true);
   }
   
 }
