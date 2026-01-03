@@ -41,7 +41,7 @@ The device itself no longer requires internet as the NTP Servers are now configu
 
 ### Home Assistant Integration
 The device now supports **MQTT Discovery** which automatically creates all entities when connected:
-- **Sensors**: Battery SOC (%), Voltage (mV), Current (mA), Charge/Discharge Current Limits, Free Heap
+- **Sensors**: Battery SOC (%), Voltage (V), Current (A), Charge/Discharge Current Limits, Free Heap
 - **Binary Sensors**: Charge/Discharge/Force Charge status indicators  
 - **Switches**: Charge Enable, Discharge Enable, Force Charge, PylonTech Protocol Enable
 - All entities are grouped under one "DIY Battery BMS" device
