@@ -16,9 +16,9 @@ void Display::Begin(DisplayType _DisplayType){
     _lcd->display();
     _lcd->createChar(icon_heart, _heart);
     delay(5);
-    _lcd->createChar(icon_happy, _happy);
+    _lcd->createChar(icon_chg_en,_chg_en);
     delay(5);
-    _lcd->createChar(icon_sad, _sad);
+    _lcd->createChar(icon_dischg_en,_dischg_en);
     delay(5);
     _lcd->createChar(icon_fc, _fc);
     delay(5);
@@ -80,7 +80,7 @@ void Display::WriteSpecialXY(uint8_t CustomChar, uint8_t X, uint8_t Y)
 {
     if(!enabled) return;
     SetPosition(X,Y);
-    _lcd->write(0);
+    _lcd->write(CustomChar);
 }
 
 void Display::SetScreen(Screen Number){
@@ -114,12 +114,16 @@ void Display::SetScreen(Screen Number){
         WriteStringXY(Data.GetBattVolts(),9-Data.GetBattVolts().length(),1);
         WriteStringXY("BC:   ", 11, 1);
         WriteStringXY(Data.GetBattAmps(),20-Data.GetBattAmps().length(),1);
-/*
-        WriteStringXY("Discharge Amps:", 0, Line4);
-        WriteStringXY("Charge Enabled:", 0, Line5);
-        WriteStringXY("Discharge Enabled:", 0, Line6);
-        WriteStringXY("Force Charging:", 0,Line7);
-   */
+        
+        // Line 3: WiFi and MQTT status
+        WriteStringXY("WiFi:", 0, 2);
+        WriteStringXY(Data.WifiConnected.getValue() ? "OK" : "--", 5, 2);
+        WriteStringXY("MQTT:", 10, 2);
+        WriteStringXY(Data.MQTTConnected.getValue() ? "OK" : "--", 15, 2);
+        
+        // Line 4: IP Address
+        WriteStringXY("IP:", 0, 3);
+        WriteStringXY(Data.IPAddr._currentValue, 20-Data.IPAddr._currentValue.length(), 3);
         break;
 
     case Normal :
@@ -191,7 +195,7 @@ void Display::UpdateScreenValues(){
     case Values: // Normal
         // Top Right Line Status Icons
         // Wipe the status bar to put new up.
-        WriteStringXY("    ",15,Line1);
+        WriteStringXY("     ",15,Line1);
         switch (_runHeatbeat)
         {
         case 0:
@@ -207,27 +211,38 @@ void Display::UpdateScreenValues(){
             break;
         }
 
-        // Display icon for Forced Charging if Active
-/*        
-        if(Data.ForceCharging.hasChanged()){
-            if(Data.ForceCharging.getValue()==true){
-                WriteSpecialXY(icon_fc,19-numIcons,Line1);
-                numIcons++;
-                }
-        }
-        */
-
-        // Display icon for battery state (charging/floating/discharging)
+        // Display status icons to the left of heartbeat
+        numIcons = 1; // Reserve position 19 for heartbeat
         
-        if(Data.ChargeEnable.getValue())
-            {WriteStringXY("",19-numIcons,Line1);
-            numIcons++;}
-        else if(battAmps<1000)
-            {WriteSpecialXY(icon_dischg,19-numIcons,Line1);
-            numIcons++;}
-        else
-            {WriteSpecialXY(icon_float,19-numIcons,Line1);
-            numIcons++;}
+        // Force Charge icon
+        if(Data.ForceCharging.getValue()){
+            WriteSpecialXY(icon_fc,19-numIcons,Line1);
+            numIcons++;
+        }
+        
+        // Charge/Discharge/Float icon (actual state)
+        if(battAmps > 1) {  // Charging
+            WriteSpecialXY(icon_chg,19-numIcons,Line1);
+            numIcons++;
+        } else if(battAmps < 0) {  // Discharging
+            WriteSpecialXY(icon_dischg,19-numIcons,Line1);
+            numIcons++;
+        } else {  // Floating
+            WriteSpecialXY(icon_float,19-numIcons,Line1);
+            numIcons++;
+        }
+        
+        // Charge Enabled icon
+        if(Data.ChargeEnable.getValue()){
+            WriteSpecialXY(icon_chg_en,19-numIcons,Line1);
+            numIcons++;
+        }
+        
+        // Discharge Enabled icon
+        if(Data.DischargeEnable.getValue()){
+            WriteSpecialXY(icon_dischg_en,19-numIcons,Line1);
+            numIcons++;
+        }
 
         // End of Status Icon
 
@@ -245,15 +260,19 @@ void Display::UpdateScreenValues(){
             WriteStringXY("BC:   ", 10, Line2);
             WriteStringXY(Data.GetBattAmps(),20-Data.GetBattAmps().length(),Line2);
         }
-        if(Data.ChargeEnable.hasChanged()){
-            WriteStringXY("CE: ",0,Line3);
-
+        
+        // Update Line 3: WiFi and MQTT status
+        if(Data.WifiConnected.hasChanged()){
+            WriteStringXY(Data.WifiConnected.getValue() ? "OK" : "--", 5, Line3);
         }
-        if(Data.DischargeEnable.hasChanged()) {
-
+        if(Data.MQTTConnected.hasChanged()){
+            WriteStringXY(Data.MQTTConnected.getValue() ? "OK" : "--", 15, Line3);
         }
-        if(Data.ForceCharging.hasChanged()) {
-
+        
+        // Update Line 4: IP Address
+        if(Data.IPAddr.hasChanged()){
+            WriteStringXY("IP:", 0, Line4);
+            WriteStringXY(Data.IPAddr._currentValue, 20-Data.IPAddr._currentValue.length(), Line4);
         }
         break;
     case Normal: // Config
