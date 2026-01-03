@@ -604,18 +604,18 @@
       <div id="firmware" class="tab-pane">
         <div class="section-title">Firmware Updates</div>
         <div class="form-group">
-          <form action="update?name=firmware" enctype="multipart/form-data" method="POST">
+          <form id="firmwareForm" action="update?name=firmware" enctype="multipart/form-data" method="POST" onsubmit="return handleFirmwareUpdate(event)">
             <label>Firmware:</label>
-            <input type="file" accept=".bin,.bin.gz" name="firmware" style="margin-bottom: 10px;">
-            <button type="submit">Update Firmware</button>
+            <input type="file" accept=".bin,.bin.gz" name="firmware" id="firmwareFile" style="margin-bottom: 10px;" required>
+            <button type="submit" id="firmwareBtn">Update Firmware</button>
           </form>
         </div>
         
         <div class="form-group" style="margin-top: 20px;">
-          <form action="update?name=filesystem" enctype="multipart/form-data" method="POST">
+          <form id="filesystemForm" action="update?name=filesystem" enctype="multipart/form-data" method="POST" onsubmit="return handleFilesystemUpdate(event)">
             <label>FileSystem:</label>
-            <input type="file" accept=".bin,.bin.gz" name="filesystem" style="margin-bottom: 10px;">
-            <button type="submit">Update FileSystem</button>
+            <input type="file" accept=".bin,.bin.gz" name="filesystem" id="filesystemFile" style="margin-bottom: 10px;" required>
+            <button type="submit" id="filesystemBtn">Update FileSystem</button>
           </form>
         </div>
       </div>
@@ -754,28 +754,130 @@
     }
 
 
+    function setUpdateButtonsDisabled(disabled) {
+      const buttons = document.querySelectorAll('.button-group button, .wifi-controls button');
+      buttons.forEach(button => {
+        button.disabled = disabled;
+        if (disabled) {
+          button.style.opacity = '0.5';
+          button.style.cursor = 'not-allowed';
+        } else {
+          button.style.opacity = '1';
+          button.style.cursor = 'pointer';
+        }
+      });
+    }
+
     function saveAll() {
       console.log('Sending Save All command');
+      setUpdateButtonsDisabled(true);
+      showFeedback('Saving configuration...');
       var jsonobj = '{"saveall" : true}';
       websocket.send(jsonobj);
+      setTimeout(() => setUpdateButtonsDisabled(false), 2000);
     }
 
     function eraseAll() {
+      if (!confirm('Are you sure? This will erase all settings.')) return;
       console.log('Sending Erase All (EEPROM) command');
+      setUpdateButtonsDisabled(true);
+      showFeedback('Erasing configuration...');
       var jsonobj = '{"eraseall" : true}';
       websocket.send(jsonobj);
+      setTimeout(() => setUpdateButtonsDisabled(false), 2000);
     }
 
     function erasekeepwifi() {
+      if (!confirm('Are you sure? This will erase settings but keep WiFi.')) return;
       console.log('Sending Erase All Keep Wifi (EEPROM) command');
+      setUpdateButtonsDisabled(true);
+      showFeedback('Erasing configuration (keeping WiFi)...');
       var jsonobj = '{"erasekeepwifi" : true}';
       websocket.send(jsonobj);
+      setTimeout(() => setUpdateButtonsDisabled(false), 2000);
     }
 
     function rebootBMS() {
+      if (!confirm('Reboot device?')) return;
       console.log('Sending Reboot command');
+      setUpdateButtonsDisabled(true);
+      showFeedback('Rebooting device...');
       var jsonobj = '{"reboot" : true}';
       websocket.send(jsonobj);
+      setTimeout(() => setUpdateButtonsDisabled(false), 3000);
+    }
+
+    function showFeedback(message) {
+      let feedback = document.getElementById('updateFeedback');
+      if (!feedback) {
+        feedback = document.createElement('div');
+        feedback.id = 'updateFeedback';
+        feedback.style.cssText = 'position: fixed; top: 20px; right: 20px; padding: 15px 20px; background: #2196F3; color: white; border-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10000;';
+        document.body.appendChild(feedback);
+      }
+      feedback.innerHTML = message;
+      feedback.style.display = 'block';
+      setTimeout(() => feedback.style.display = 'none', 2500);
+    }
+
+    function handleFirmwareUpdate(event) {
+      const fileInput = document.getElementById('firmwareFile');
+      const file = fileInput.files[0];
+      
+      if (!file) {
+        showFeedback('Please select a firmware file');
+        return false;
+      }
+      
+      if (!file.name.endsWith('.bin') && !file.name.endsWith('.bin.gz')) {
+        showFeedback('Invalid file type. Please use .bin or .bin.gz');
+        return false;
+      }
+      
+      if (file.size > 4194304) { // 4MB limit
+        showFeedback('Firmware file too large (max 4MB)');
+        return false;
+      }
+      
+      const btn = document.getElementById('firmwareBtn');
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      btn.style.cursor = 'not-allowed';
+      
+      showFeedback('⏳ Uploading firmware... This may take 1-2 minutes. Do not close browser.');
+      console.log('Firmware update started - ' + file.name);
+      
+      return true; // Allow form submission
+    }
+
+    function handleFilesystemUpdate(event) {
+      const fileInput = document.getElementById('filesystemFile');
+      const file = fileInput.files[0];
+      
+      if (!file) {
+        showFeedback('Please select a filesystem file');
+        return false;
+      }
+      
+      if (!file.name.endsWith('.bin') && !file.name.endsWith('.bin.gz')) {
+        showFeedback('Invalid file type. Please use .bin or .bin.gz');
+        return false;
+      }
+      
+      if (file.size > 4194304) { // 4MB limit for filesystem
+        showFeedback('Filesystem file too large (max 4MB)');
+        return false;
+      }
+      
+      const btn = document.getElementById('filesystemBtn');
+      btn.disabled = true;
+      btn.style.opacity = '0.5';
+      btn.style.cursor = 'not-allowed';
+      
+      showFeedback('⏳ Uploading filesystem... Please wait. Do not close browser.');
+      console.log('Filesystem update started - ' + file.name);
+      
+      return true; // Allow form submission
     }
 
     function SendJSONUpdate(textboxid) {
