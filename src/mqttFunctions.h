@@ -325,6 +325,28 @@ void publishHADiscovery() {
      deviceJson + "}").c_str(), true);
   yield();
   
+  // Charge Voltage Number Control
+  mqttPublish((baseTopic + "/number/" + nodeId + "_chargevoltage/config").c_str(),
+    (String("{\"name\":\"Charge Voltage\",\"unique_id\":\"") + nodeId + "_chargevoltage\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ (value_json.chargevoltage * 0.001) | round(1) }}\"," +
+     "\"command_topic\":\"" + sTopic + "/set/ChargeVoltage\"," +
+     "\"unit_of_measurement\":\"V\",\"device_class\":\"voltage\"," +
+     "\"min\":4.0,\"max\":58.0,\"step\":0.1" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Charge Current Number Control
+  mqttPublish((baseTopic + "/number/" + nodeId + "_chargecurrent/config").c_str(),
+    (String("{\"name\":\"Charge Current\",\"unique_id\":\"") + nodeId + "_chargecurrent\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ (value_json.chargecurrent * 0.001) | round(1) }}\"," +
+     "\"command_topic\":\"" + sTopic + "/set/ChargeCurrent\"," +
+     "\"unit_of_measurement\":\"A\",\"device_class\":\"current\"," +
+     "\"min\":0.0,\"max\":100.0,\"step\":0.1" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
   log_i("Home Assistant Discovery published successfully.");
   WS_LOG_I("Home Assistant Discovery published successfully.");
 }
@@ -397,16 +419,20 @@ if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
     WS_LOG_I("Discharge current set to: %d", message.toInt());
   }
   else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/ChargeVoltage")) {
-    if (message.toInt() > 0) {
-      Inverter.SetChargeVoltage(message.toInt());
-      log_d("Charge voltage set to: %d", message.toInt());
-      WS_LOG_I("Charge voltage set to: %d", message.toInt());
+    float voltageV = message.toFloat();
+    int voltagemV = (int)round(voltageV * 1000.0);  // Convert V to mV with proper rounding
+    if (voltagemV > 0) {
+      Inverter.SetChargeVoltage(voltagemV);
+      log_d("Charge voltage set to: %.1f V (%d mV)", voltageV, voltagemV);
+      WS_LOG_I("Charge voltage set to: %.1f V (%d mV)", voltageV, voltagemV);
     }
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ChargeCurrent") {
-   Inverter.SetChargeCurrent(message.toInt());
-   log_d("Charge current set to: %d", message.toInt());
-    WS_LOG_I("Charge current set to: %d", message.toInt());
+   float currentA = message.toFloat();
+   int currentmA = (int)round(currentA * 1000.0);  // Convert A to mA with proper rounding
+   Inverter.SetChargeCurrent(currentmA);
+   log_d("Charge current set to: %.1f A (%d mA)", currentA, currentmA);
+    WS_LOG_I("Charge current set to: %.1f A (%d mA)", currentA, currentmA);
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ForceCharge") {
     bool forcecharge = (message == "ON") ? true : false;

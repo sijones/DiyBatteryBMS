@@ -844,7 +844,7 @@
       btn.style.opacity = '0.5';
       btn.style.cursor = 'not-allowed';
       
-      showFeedback('⏳ Uploading firmware... This may take 1-2 minutes. Do not close browser.');
+      showFeedback('Uploading firmware... This may take 1-2 minutes. Do not close browser.');
       console.log('Firmware update started - ' + file.name);
       
       return true; // Allow form submission
@@ -874,7 +874,7 @@
       btn.style.opacity = '0.5';
       btn.style.cursor = 'not-allowed';
       
-      showFeedback('⏳ Uploading filesystem... Please wait. Do not close browser.');
+      showFeedback('Uploading filesystem... Please wait. Do not close browser.');
       console.log('Filesystem update started - ' + file.name);
       
       return true; // Allow form submission

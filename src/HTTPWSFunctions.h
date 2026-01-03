@@ -136,7 +136,6 @@ String generateDatatoJSON(bool All)
   // If ALL is true generate a json with all data
   if (All){
     doc["BMS"] = All;
-    doc["chargevoltage"] = Inverter.GetChargeVoltage();
     doc["dischargevoltage"] = Inverter.GetDischargeVoltage();
     doc["maxchargecurrent"] = Inverter.GetMaxChargeCurrent();
     doc["maxdischargecurrent"] = Inverter.GetMaxDischargeCurrent();
@@ -197,6 +196,7 @@ String generateDatatoJSON(bool All)
   doc["battsoc"] = Inverter.BattSOC();
   doc["battvoltage"] = Inverter.BattVoltage();
   doc["battcurrent"] = Inverter.BattCurrentmA();
+  doc["chargevoltage"] = Inverter.GetChargeVoltage();
   taskEXIT_CRITICAL(&(Inverter.CANMutex));
   
   doc["chargeadjust"] = Inverter.GetChargeAdjust();
