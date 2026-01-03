@@ -577,25 +577,19 @@ bool CANBUS::SendCANData(){
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
 
   //log_d("Statistics: SOC: %i, BV: %i, BC: %i, Full Voltage: %i, Discharge Voltage: %i",_battSOC,_battVoltage,_battCurrentmA,_tempFullVoltage,_dischargeVoltage);
-  if(_enableRequestFlags) {
-    if(_fullVoltage > _dischargeVoltage && _battVoltage < _tempFullVoltage && _battSOC >= 99) {
-      CAN_MSG[0] = lowByte(99);
-      CAN_MSG[1] = highByte(99);      
-    } 
-    else {
-      CAN_MSG[0] = lowByte(_battSOC);
-      CAN_MSG[1] = highByte(_battSOC);
-    }
-  } 
-  else if (_enableSOCTrick && _forceCharge) {
+  
+  if (_enableSOCTrick && _forceCharge) {
     CAN_MSG[0] = lowByte(u_int8_t(_battSOC * 0.1));
     CAN_MSG[1] = highByte(u_int8_t(_battSOC * 0.1));
   }
-    else {
-      CAN_MSG[0] = lowByte(_battSOC);
-      CAN_MSG[1] = highByte(_battSOC);
-    }
-  
+  else if(_battVoltage < _tempChargeVolt && _battSOC >= 99) {
+    CAN_MSG[0] = lowByte(99);
+    CAN_MSG[1] = highByte(99);      
+  } 
+  else {
+    CAN_MSG[0] = lowByte(_battSOC);
+    CAN_MSG[1] = highByte(_battSOC);
+  }
 
   CAN_MSG[2] = lowByte(_battSOH);
   CAN_MSG[3] = highByte(_battSOH);
@@ -612,20 +606,20 @@ bool CANBUS::SendCANData(){
 
   // Battery charge and discharge parameters
 
-  CAN_MSG[0] = lowByte(_tempChargeVolt);             // Maximum battery voltage
+  CAN_MSG[0] = lowByte(_tempChargeVolt);           // Maximum battery voltage
   CAN_MSG[1] = highByte(_tempChargeVolt);
   if((_chargeEnabled && _ManualAllowCharge)){
     CAN_MSG[2] = lowByte(_tempChargeCurr);         // Maximum charging current 
     CAN_MSG[3] = highByte(_tempChargeCurr);
   } else {
-    CAN_MSG[2] = 0;                                                 // Maximum charging current 
+    CAN_MSG[2] = 0;                                // Set 0 charging current to stop charge
     CAN_MSG[3] = 0;
   }
   if((_dischargeEnabled && _ManualAllowDischarge)){
     CAN_MSG[4] = lowByte(_tempDisChargeCurr);      // Maximum discharge current 
     CAN_MSG[5] = highByte(_tempDisChargeCurr);
   } else {
-    CAN_MSG[4] = 0;                                       // Maximum discharge current 
+    CAN_MSG[4] = 0;                                // Set 0 discharge current to stop discharge
     CAN_MSG[5] = 0;
   }
   CAN_MSG[6] = lowByte(_tempDisCharVolt);          // Currently not used by SOLIS
