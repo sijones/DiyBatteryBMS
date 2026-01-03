@@ -336,6 +336,17 @@
             <div class="stat-value"><label id="dischargecurrent">0</label>A</div>
           </div>
         </div>
+        
+        <div class="form-row">
+          <div class="stat-box">
+            <div class="stat-label">Charge Enabled</div>
+            <div class="stat-value" id="chargeenabledStatus" style="font-size: 16px; color: #f44336;">OFF</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Discharge Enabled</div>
+            <div class="stat-value" id="dischargeenabledStatus" style="font-size: 16px; color: #f44336;">OFF</div>
+          </div>
+        </div>
       </div>
       
       <!-- BMS Tab -->
@@ -697,6 +708,18 @@
         if(obj.hasOwnProperty('battcurrent')) document.getElementById('battcurrent').innerHTML=(obj.battcurrent*0.1).toFixed(1);
         if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').innerHTML=(obj.chargecurrent*0.001).toFixed(0);
         if(obj.hasOwnProperty('dischargecurrent')) document.getElementById('dischargecurrent').innerHTML=(obj.dischargecurrent*0.001).toFixed(0);
+        
+        // Update Charge/Discharge enabled status with color coding
+        if(obj.hasOwnProperty('chargeenabled')) {
+          let chargeStatus = document.getElementById('chargeenabledStatus');
+          chargeStatus.innerHTML = obj.chargeenabled ? 'ON' : 'OFF';
+          chargeStatus.style.color = obj.chargeenabled ? '#4caf50' : '#f44336';
+        }
+        if(obj.hasOwnProperty('dischargeenabled')) {
+          let dischargeStatus = document.getElementById('dischargeenabledStatus');
+          dischargeStatus.innerHTML = obj.dischargeenabled ? 'ON' : 'OFF';
+          dischargeStatus.style.color = obj.dischargeenabled ? '#4caf50' : '#f44336';
+        }
       }
 
       if(obj.hasOwnProperty('pylontechenabled')) document.getElementById('pylontechenabled').checked=obj.pylontechenabled;

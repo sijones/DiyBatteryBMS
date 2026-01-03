@@ -104,7 +104,7 @@ void TaskSetClock(void * pointer) {
     }
   }
   log_d("Setting Clock");
-
+  WS_LOG_I("Setting NTP Clock from server(s): %s", Servers.c_str());
   if (secondserver)
     configTime(0, 0, ServerArray[0].c_str(), ServerArray[1].c_str());  // UTC
   else
@@ -122,6 +122,7 @@ void TaskSetClock(void * pointer) {
     gmtime_r(&now, &timeinfo);
     time(&now);
     log_d("NTP time %s", asctime(&timeinfo));
+    WS_LOG_I("NTP time updated: %s", asctime(&timeinfo));
     vTaskDelay(3600000 / portTICK_PERIOD_MS);
   }
 
@@ -327,64 +328,77 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       if (!doc["chargevoltage"].isNull()) {
         pref.putUInt32(ccChargeVolt,(uint32_t) doc["chargevoltage"]);
         Inverter.SetChargeVoltage((uint32_t) doc["chargevoltage"]); 
+        WS_LOG_I("Set Charge Voltage to %u", (uint32_t) doc["chargevoltage"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["fullvoltage"].isNull()) {
         pref.putUInt32(ccFullVoltage,(uint32_t) doc["fullvoltage"]);
         Inverter.SetFullVoltage((uint32_t) doc["fullvoltage"]); 
+        WS_LOG_I("Set Full Voltage to %u", (uint32_t) doc["fullvoltage"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["overvoltage"].isNull()) {
         pref.putUInt32(ccOverVoltage,(uint32_t) doc["overvoltage"]);
         Inverter.SetOverVoltage((uint32_t) doc["overvoltage"]); 
+        WS_LOG_I("Set Over Voltage to %u", (uint32_t) doc["overvoltage"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["dischargevoltage"].isNull()) {
         pref.putUInt32(ccDischargeVolt,(uint32_t) doc["dischargevoltage"]);
         Inverter.SetDischargeVoltage((uint32_t) doc["dischargevoltage"]); 
+        WS_LOG_I("Set Discharge Voltage to %u", (uint32_t) doc["dischargevoltage"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["maxchargecurrent"].isNull()) {
         pref.putUInt32(ccChargeCurrent,(uint32_t) doc["maxchargecurrent"]);
         Inverter.SetMaxChargeCurrent((uint32_t) doc["maxchargecurrent"]); 
+        WS_LOG_I("Set Max Charge Current to %u", (uint32_t) doc["maxchargecurrent"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["maxdischargecurrent"].isNull()) {
         pref.putUInt32(ccDischargeCurrent,(uint32_t) doc["maxdischargecurrent"]);
         Inverter.SetMaxDischargeCurrent((uint32_t) doc["maxdischargecurrent"]); 
+        WS_LOG_I("Set Max Discharge Current to %u", (uint32_t) doc["maxdischargecurrent"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["chargecurrent"].isNull()) {
         Inverter.SetChargeCurrent((uint32_t) doc["chargecurrent"]); 
+        WS_LOG_I("Set Charge Current to %u", (uint32_t) doc["chargecurrent"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["dischargecurrent"].isNull()) {
         Inverter.SetDischargeCurrent((uint32_t) doc["dischargecurrent"]); 
+        WS_LOG_I("Set Discharge Current to %u", (uint32_t) doc["dischargecurrent"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["batterycapacity"].isNull()) {
         pref.putUInt32(ccBattCapacity,(uint32_t) doc["batterycapacity"]);
         Inverter.SetBattCapacity((uint32_t) doc["batterycapacity"]);
+        WS_LOG_I("Set Battery Capacity to %u", (uint32_t) doc["batterycapacity"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["chargeenabled"].isNull()) {
         Inverter.ChargeEnable((bool) doc["chargeenabled"]); 
+        WS_LOG_I("Set Charge Enabled to %s", (bool) doc["chargeenabled"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
       if (!doc["dischargeenabled"].isNull()) {
         Inverter.DischargeEnable((bool) doc["dischargeenabled"]);
+        WS_LOG_I("Set Discharge Enabled to %s", (bool) doc["dischargeenabled"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
       // Low SOC OFF
       if (!doc["lowsoclimit"].isNull()) {
         pref.putUInt8(ccLowSOCLimit,(uint8_t) doc["lowsoclimit"]);
         Inverter.SetLowSOCLimit((uint8_t) doc["lowsoclimit"]);
+        WS_LOG_I("Set Low SOC Limit to %u", (uint8_t) doc["lowsoclimit"]);
         handled = true;
         notifyWSClients(); }
       // High SOC Limit
       if (!doc["highsoclimit"].isNull()) {
         pref.putUInt8(ccHighSOCLimit,(uint8_t) doc["highsoclimit"]);
         Inverter.SetHighSOCLimit((uint8_t) doc["highsoclimit"]);
+        WS_LOG_I("Set High SOC Limit to %u", (uint8_t) doc["highsoclimit"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["canbusenabled"].isNull()) {
@@ -398,12 +412,14 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       if (!doc["adjuststep"].isNull()) {
         pref.putUInt16(ccAdjustStep, doc["adjuststep"]);
         Inverter.SetChargeStepAdjust(doc["adjuststep"]);
+        WS_LOG_I("Set Adjust Step to %u", (uint16_t) doc["adjuststep"]);
         handled = true;
         notifyWSClients(); }
 
       if (!doc["minchargecurr"].isNull()) {
         pref.putUInt32(ccMinCharge, doc["minchargecurr"]);
         Inverter.MinChargeCurrent(doc["minchargecurr"]);
+        WS_LOG_I("Set Min Charge Current to %u", (uint32_t) doc["minchargecurr"]);
         handled = true;
         notifyWSClients(); }
 
@@ -438,6 +454,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           handled = true;
         } else if (IsForbiddenPin(value)) {
           wsclient->printf("{\"ERROR\" : \"victronrxpin %u is forbidden\"}", value);
+          WS_LOG_W("victronrxpin %u is forbidden", value);
           handled = true;
         } else {
           pref.putUInt8(ccVictronRX, value);
@@ -453,6 +470,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           handled = true;
         } else if (IsForbiddenPin(value)) {
           wsclient->printf("{\"ERROR\" : \"victrontxpin %u is forbidden\"}", value);
+          WS_LOG_W("victrontxpin %u is forbidden", value);
           handled = true;
         } else {
           pref.putUInt8(ccVictronTX, value);
@@ -468,6 +486,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           handled = true;
         } else if (IsForbiddenPin(value)) {
           wsclient->printf("{\"ERROR\" : \"can_rx_pin %u is forbidden\"}", value);
+          WS_LOG_W("can_rx_pin %u is forbidden", value);
           handled = true;
         } else {
           pref.putUInt8(ccCAN_RX_PIN, value);
@@ -483,6 +502,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           handled = true;
         } else if (IsForbiddenPin(value)) {
           wsclient->printf("{\"ERROR\" : \"can_tx_pin %u is forbidden\"}", value);
+          WS_LOG_W("can_tx_pin %u is forbidden", value);
           handled = true;
         } else {
           pref.putUInt8(ccCAN_TX_PIN, value);
@@ -498,6 +518,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           handled = true;
         } else if (IsForbiddenPin(value)) {
           wsclient->printf("{\"ERROR\" : \"can_en_pin %u is forbidden\"}", value);
+          WS_LOG_W("can_en_pin %u is forbidden", value);
           handled = true;
         } else {
           pref.putUInt8(ccCAN_EN_PIN, value);

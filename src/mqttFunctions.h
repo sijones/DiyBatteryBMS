@@ -394,29 +394,35 @@ if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
 
     Inverter.SetDischargeCurrent(message.toInt());
     log_d("Discharge current set to: %d", message.toInt());
+    WS_LOG_I("Discharge current set to: %d", message.toInt());
   }
   else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/ChargeVoltage")) {
     if (message.toInt() > 0) {
       Inverter.SetChargeVoltage(message.toInt());
       log_d("Charge voltage set to: %d", message.toInt());
+      WS_LOG_I("Charge voltage set to: %d", message.toInt());
     }
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ChargeCurrent") {
    Inverter.SetChargeCurrent(message.toInt());
    log_d("Charge current set to: %d", message.toInt());
+    WS_LOG_I("Charge current set to: %d", message.toInt());
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ForceCharge") {
     bool forcecharge = (message == "ON") ? true : false;
     Inverter.ForceCharge((message == "ON") ? true : false);
     log_d("Force charge set to: %d", forcecharge);
+    WS_LOG_I("Force charge set to: %s", (message == "ON") ? "ON" : "OFF");
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/DischargeEnable") {
     Inverter.ManualAllowDischarge((message == "ON") ? true : false);
     log_d("Discharge enable set to: %s", (message == "ON") ? "ON" : "OFF");
+    WS_LOG_I("Discharge enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ChargeEnable") {
     Inverter.ManualAllowCharge((message == "ON") ? true : false);
     log_d("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
+    WS_LOG_I("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/EnablePYLONTECH") {
     Inverter.EnablePylonTech((message == "ON") ? true : false);
@@ -425,6 +431,7 @@ if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/SmartCharge") {
     Inverter.AutoCharge((message == "ON") ? true : false);
     log_d("Smart Charge set to: %s", (message == "ON") ? "ON" : "OFF");
+    WS_LOG_I("Smart Charge set to: %s", (message == "ON") ? "ON" : "OFF");
     // Publish updated state immediately
     mqttPublish((wifiManager.GetMQTTTopic() + "/Param/SmartCharge").c_str(), (Inverter.AutoCharge() == true) ? "ON" : "OFF" , true);
   }
