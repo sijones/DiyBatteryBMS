@@ -26,6 +26,8 @@ const char* const ccSlowSOCDivider2 = "SlowSOCD2";
 
 const char* const ccBattCapacity = "BattCapacity";
 const char* const ccPylonTech = "PylonTech";
+const char* const ccSOCTrick = "SOCTrick";
+const char* const ccRequestFlags = "ReqFlags";
 
 const char* const ccWifiSSID = "WifiSSID";
 const char* const ccWifiPass = "WifiPass";

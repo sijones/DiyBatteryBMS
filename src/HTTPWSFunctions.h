@@ -159,7 +159,9 @@ String generateDatatoJSON(bool All)
     doc["canbuscspin"] = pref.getUInt8(ccCanCSPin, 0);
     doc["can16mhz"] = pref.getBool(ccCAN16Mhz,initCAN16Mhz);
     #endif
-    doc["pylontechenabled"] = Inverter.EnablePylonTech();
+    doc["pylontechenabled"] = Inverter.EnableRequestFlags(); // Legacy compatibility
+    doc["soctrickenabled"] = Inverter.EnableSOCTrick();
+    doc["requestflagsenabled"] = Inverter.EnableRequestFlags();
     doc["wifissid"] = wifiManager.GetWifiSSID();
     doc["wifipass"] = wifiManager.GetWifiPass();
     doc["wifihostname"] = wifiManager.GetWifiHostName();
@@ -314,7 +316,11 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
     else if (strncmp(data,"GetVictronTXPin()",len)==0)
       wsclient->printf(GetWSDataJson((String) "victrontxpin",(String) pref.getUInt8(ccVictronTX,0)));
     else if (strncmp(data,"GetPylontechEnabled()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "pylontechenabled",(String) pref.getBool(ccPylonTech,false)));
+      wsclient->printf(GetWSDataJson((String) "pylontechenabled",(String) pref.getBool(ccRequestFlags,false)));
+    else if (strncmp(data,"GetSOCTrickEnabled()",len)==0)
+      wsclient->printf(GetWSDataJson((String) "soctrickenabled",(String) pref.getBool(ccSOCTrick,false)));
+    else if (strncmp(data,"GetRequestFlagsEnabled()",len)==0)
+      wsclient->printf(GetWSDataJson((String) "requestflagsenabled",(String) pref.getBool(ccRequestFlags,false)));
     else 
       wsclient->printf("{\"ERROR\" : \"Unknown Get Request\"}");
     }
@@ -616,8 +622,22 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       if (!doc["pylontechenabled"].isNull()) {
         boolean value = doc["pylontechenabled"];
         handled = true;
-        pref.putBool(ccPylonTech, value);
-        Inverter.EnablePylonTech(value);
+        pref.putBool(ccRequestFlags, value);
+        Inverter.EnableRequestFlags(value);
+        notifyWSClients();}
+
+      if (!doc["soctrickenabled"].isNull()) {
+        boolean value = doc["soctrickenabled"];
+        handled = true;
+        pref.putBool(ccSOCTrick, value);
+        Inverter.EnableSOCTrick(value);
+        notifyWSClients();}
+
+      if (!doc["requestflagsenabled"].isNull()) {
+        boolean value = doc["requestflagsenabled"];
+        handled = true;
+        pref.putBool(ccRequestFlags, value);
+        Inverter.EnableRequestFlags(value);
         notifyWSClients();}
 
       if (!doc["velooptime"].isNull()) {

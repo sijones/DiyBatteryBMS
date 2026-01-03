@@ -538,11 +538,11 @@ bool CANBUS::SendCANData(){
   // 0x35C – C0 00 – Battery charge request flags - means allow charge and discharge
   CAN_MSG[0] = 0xC0;
   CAN_MSG[1] = 0x00;
-  if(_enablePYLONTECH) {
+  if(_enableRequestFlags) {
     //CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagForceCharge,_forceCharge);
     CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagRequestFullCharge,_forceCharge);
-    //CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
-    //CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
+    CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
+    CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
   } 
 
   //if (_forceCharge) CAN_MSG[0] |= bmsForceCharge;
@@ -577,7 +577,7 @@ bool CANBUS::SendCANData(){
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
 
   //log_d("Statistics: SOC: %i, BV: %i, BC: %i, Full Voltage: %i, Discharge Voltage: %i",_battSOC,_battVoltage,_battCurrentmA,_tempFullVoltage,_dischargeVoltage);
-  if(_enablePYLONTECH) {
+  if(_enableRequestFlags) {
     if(_fullVoltage > _dischargeVoltage && _battVoltage < _tempFullVoltage && _battSOC >= 99) {
       CAN_MSG[0] = lowByte(99);
       CAN_MSG[1] = highByte(99);      
@@ -587,7 +587,7 @@ bool CANBUS::SendCANData(){
       CAN_MSG[1] = highByte(_battSOC);
     }
   } 
-  else if (_forceCharge) {
+  else if (_enableSOCTrick && _forceCharge) {
     CAN_MSG[0] = lowByte(u_int8_t(_battSOC * 0.1));
     CAN_MSG[1] = highByte(u_int8_t(_battSOC * 0.1));
   }

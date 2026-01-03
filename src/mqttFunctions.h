@@ -113,11 +113,12 @@ bool sendUpdateMQTTData()
 {
    if (mqttClient.connected())
    {
-    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/EnablePYLONTECH").c_str(), (Inverter.EnablePylonTech() == true) ? "ON" : "OFF",true);
+    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/SOCTrickEnable").c_str(), (Inverter.EnableSOCTrick() == true) ? "ON" : "OFF",true);
+    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/RequestFlagsEnable").c_str(), (Inverter.EnableRequestFlags() == true) ? "ON" : "OFF",true);
     mqttPublish((wifiManager.GetMQTTTopic() + "/Param/ForceCharge").c_str(), (Inverter.ForceCharge() == true) ? "ON" : "OFF" , true);  
     mqttPublish((wifiManager.GetMQTTTopic() + "/Param/DischargeEnable").c_str(), (Inverter.DischargeEnable() == true && Inverter.ManualAllowDischarge()) ? "ON" : "OFF" , true); 
     mqttPublish((wifiManager.GetMQTTTopic() + "/Param/ChargeEnable").c_str(), (Inverter.ChargeEnable() == true && Inverter.ManualAllowCharge()) ? "ON" : "OFF" , true);
-    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/SmartCharge").c_str(), (Inverter.AutoCharge() == true) ? "ON" : "OFF" , true); 
+    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/SmartCharge").c_str(), (Inverter.AutoCharge() == true) ? "ON" : "OFF" , true);
     return true;
   } 
   else  
@@ -307,11 +308,20 @@ void publishHADiscovery() {
      deviceJson + "}").c_str(), true);
   yield();
   
-  // PylonTech Protocol Switch
-  mqttPublish((baseTopic + "/switch/" + nodeId + "_pylontech/config").c_str(),
-    (String("{\"name\":\"PylonTech Protocol\",\"unique_id\":\"") + nodeId + "_pylontech\"," +
-     "\"state_topic\":\"" + sTopic + "/Param/EnablePYLONTECH\"," +
-     "\"command_topic\":\"" + sTopic + "/set/EnablePYLONTECH\"," +
+  // SOC Trick Enable Switch
+  mqttPublish((baseTopic + "/switch/" + nodeId + "_soctrick/config").c_str(),
+    (String("{\"name\":\"SOC Trick Enable\",\"unique_id\":\"") + nodeId + "_soctrick\"," +
+     "\"state_topic\":\"" + sTopic + "/Param/SOCTrickEnable\"," +
+     "\"command_topic\":\"" + sTopic + "/set/SOCTrickEnable\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+  
+  // Request Flags Enable Switch
+  mqttPublish((baseTopic + "/switch/" + nodeId + "_requestflags/config").c_str(),
+    (String("{\"name\":\"Request Flags Enable\",\"unique_id\":\"") + nodeId + "_requestflags\"," +
+     "\"state_topic\":\"" + sTopic + "/Param/RequestFlagsEnable\"," +
+     "\"command_topic\":\"" + sTopic + "/set/RequestFlagsEnable\"," +
      "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
      deviceJson + "}").c_str(), true);
   yield();
@@ -450,9 +460,15 @@ if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
     log_d("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/EnablePYLONTECH") {
-    Inverter.EnablePylonTech((message == "ON") ? true : false);
-    log_d("Enable PylonTech set to: %s", (message == "ON") ? "ON" : "OFF");
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/SOCTrickEnable") {
+    Inverter.EnableSOCTrick((message == "ON") ? true : false);
+    log_d("SOC Trick Enable set to: %s", (message == "ON") ? "ON" : "OFF");
+    WS_LOG_I("SOC Trick Enable set to: %s", (message == "ON") ? "ON" : "OFF");
+  }
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/RequestFlagsEnable") {
+    Inverter.EnableRequestFlags((message == "ON") ? true : false);
+    log_d("Request Flags Enable set to: %s", (message == "ON") ? "ON" : "OFF");
+    WS_LOG_I("Request Flags Enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/SmartCharge") {
     Inverter.AutoCharge((message == "ON") ? true : false);

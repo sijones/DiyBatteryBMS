@@ -41,7 +41,8 @@ uint8_t MSG_PYLON[8] = {0x50,0x59,0x4C,0x4F,0x4E,0x20,0x20,0x20};
 
 bool _canbusEnabled = true;
 bool _initialised = false;
-bool _enablePYLONTECH = false;
+bool _enableSOCTrick = false;
+bool _enableRequestFlags = false;
 bool _forceCharge = false;
 bool _chargeEnabled = true;
 bool _dischargeEnabled = true;
@@ -242,7 +243,8 @@ public:
   void BattSOH(uint8_t soh){_battSOH = soh;}
   void BattCurrentmA(int32_t currentmA){_initialBattCurrent = true; _battCurrentmA = currentmA;}
   void BattTemp(int16_t batttemp){_battTemp = batttemp;}
-  void EnablePylonTech(bool State) {_enablePYLONTECH = State;} 
+  void EnableSOCTrick(bool State) {_enableSOCTrick = State;} 
+  void EnableRequestFlags(bool State) {_enableRequestFlags = State;}
 
   uint8_t BattSOC(){return _battSOC;}
   uint16_t BattVoltage(){return _battVoltage;}
@@ -252,7 +254,8 @@ public:
   bool ForceCharge(){return _forceCharge;}
   bool ChargeEnable(){return _chargeEnabled;}
   bool DischargeEnable(){return _dischargeEnabled;}
-  bool EnablePylonTech(){return _enablePYLONTECH;}
+  bool EnableSOCTrick(){return _enableSOCTrick;}
+  bool EnableRequestFlags(){return _enableRequestFlags;}
   bool CanBusFailed(){return (_failedCanSendCount > _maxFailedCanSendCount || !_initialised); }
 
 }; // End of Class

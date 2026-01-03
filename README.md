@@ -43,10 +43,15 @@ The device itself no longer requires internet as the NTP Servers are now configu
 The device now supports **MQTT Discovery** which automatically creates all entities when connected:
 - **Sensors**: Battery SOC (%), Voltage (V), Current (A), Charge/Discharge Current Limits, Free Heap
 - **Binary Sensors**: Charge/Discharge/Force Charge status indicators  
-- **Switches**: Charge Enable, Discharge Enable, Force Charge, PylonTech Protocol Enable
+- **Switches**: Charge Enable, Discharge Enable, Force Charge, SOC Trick Enable, Request Flags Enable
+- **Number Controls**: Charge Voltage, Charge Current (with 0.1 precision)
 - All entities are grouped under one "DIY Battery BMS" device
 - No manual YAML configuration required (HomeAssistant.yaml is now optional for reference only)
 - Discovery messages published automatically on MQTT connect
+
+**Protocol Control Features:**
+- **SOC Trick Enable**: Sends 1/10 of the actual SOC to trick the inverter into force charging
+- **Request Flags Enable**: Controls charge/discharge request flags sent to inverter (allows different ways to control inverter response)
 
 ## Features to come:
 - Voltage Limited Charging, automatically reducing charge current to keep the voltage stable

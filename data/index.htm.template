@@ -488,8 +488,13 @@
         
         <div class="section-title">Protocol Settings</div>
         <div class="checkbox-row">
-          <input type="checkbox" id="pylontechenabled" onchange="SendJSONUpdate('pylontechenabled')">
-          <label for="pylontechenabled">PylonTech Protocol Enabled</label>
+          <input type="checkbox" id="soctrickenabled" onchange="SendJSONUpdate('soctrickenabled')">
+          <label for="soctrickenabled">SOC Trick Enable (1/10 SOC for Force Charge)</label>
+        </div>
+        
+        <div class="checkbox-row">
+          <input type="checkbox" id="requestflagsenabled" onchange="SendJSONUpdate('requestflagsenabled')">
+          <label for="requestflagsenabled">Request Flags Enable (0x308 Status)</label>
         </div>
         
         <div class="checkbox-row">
@@ -722,7 +727,8 @@
         }
       }
 
-      if(obj.hasOwnProperty('pylontechenabled')) document.getElementById('pylontechenabled').checked=obj.pylontechenabled;
+      if(obj.hasOwnProperty('soctrickenabled')) document.getElementById('soctrickenabled').checked=obj.soctrickenabled;
+      if(obj.hasOwnProperty('requestflagsenabled')) document.getElementById('requestflagsenabled').checked=obj.requestflagsenabled;
       if(obj.hasOwnProperty('autocharge')) document.getElementById('autocharge').checked=obj.autocharge;
       if(obj.hasOwnProperty('wifissid')) document.getElementById('wifissid').value=obj.wifissid;
       if(obj.hasOwnProperty('wifipass')) document.getElementById('wifipass').value=obj.wifipass;

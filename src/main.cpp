@@ -127,6 +127,8 @@ void setup()
     pref.putUInt8(ccSlowSOCDivider2,0);
     pref.putUInt8(ccBattCapacity, initBattCapacity);
     pref.putBool(ccPylonTech, false);
+    pref.putBool(ccSOCTrick, false);
+    pref.putBool(ccRequestFlags, false);
     pref.putBool(ccAutoAdjustCharge, true);
     pref.putUInt8(ccSmartInterval,initSmartInterval);
     pref.putUInt8("VE_WAIT_TIME", VE_WAIT_TIME);
@@ -248,7 +250,8 @@ void setup()
     Inverter.SetLowSOCLimit((uint8_t) pref.getUInt8(ccLowSOCLimit, initLowSOCLimit));
     Inverter.SetHighSOCLimit((uint8_t) pref.getUInt8(ccHighSOCLimit, initHighSOCLimit));
     Inverter.SetBattCapacity(pref.getUInt32(ccBattCapacity, initBattCapacity));
-    Inverter.EnablePylonTech(pref.getBool(ccPylonTech, false));
+    Inverter.EnableSOCTrick(pref.getBool(ccSOCTrick, false));
+    Inverter.EnableRequestFlags(pref.getBool(ccRequestFlags, false));
     Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));
     Inverter.SetSlowChargeDivider(2,pref.getUInt8(ccSlowSOCDivider2,initSlowSOCDivider2));
     Inverter.SetSlowChargeSOCLimit(1, pref.getUInt8(ccSlowSOCCharge1, initSlowSOCCharge1));
