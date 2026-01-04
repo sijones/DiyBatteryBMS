@@ -10,6 +10,7 @@
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
 #include <ESPmDNS.h>
+#include <esp_wifi.h>
 
 class WifiMQTTManagerClass {
     private:

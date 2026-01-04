@@ -725,7 +725,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       }    
       if (!doc["saveall"].isNull()){
         if(doc["saveall"]){
-          pref.putUInt32(ccChargeCurrent,Inverter.GetMaxChargeCurrent());
+
           pref.putUInt32(ccDischargeCurrent,Inverter.GetMaxDischargeCurrent());
           pref.putUInt32(ccBattCapacity,Inverter.GetBatteryCapacity());
           pref.putUInt8(ccLowSOCLimit,Inverter.GetLowSOCLimit());
@@ -925,6 +925,7 @@ void StartWebServices()
     int n = WiFi.scanComplete();
     if(n == -2)
     {
+      // Start scan if no scan in progress
       log_d("Starting Network Scan");
       WiFi.scanNetworks(true);
     } 
@@ -944,10 +945,13 @@ void StartWebServices()
       }
       log_d("Network scan returning %d results",i);
       WiFi.scanDelete();
-      if(WiFi.scanComplete() == -2)
-      {
-        WiFi.scanNetworks(true);
-      }
+//      if(WiFi.scanComplete() == -2)
+//      {
+//        // Only re-trigger scan if still in AP mode
+//        if(WiFi.getMode() == WIFI_MODE_AP) {
+//          WiFi.scanNetworks(true);
+//        }
+//      }
     }
     json += "]";
     request->send(200, "application/json", json);

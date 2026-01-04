@@ -2,7 +2,7 @@
 /*
 
    VE.Direct to CAN BUS & MQTT Gateway using a ESP32 Board
-   Copyright (c) 2022 Simon Jones
+   Copyright (c) 2025 Simon Jones
 
    Free to use in personal projects and modify for your own use, no permission for 
    selling or commericalising this code in this project.
@@ -178,6 +178,9 @@ void setup()
   {
     Lcd.Data.LittleFSMounted.setValue(true);
     log_d("LittleFS storage mounted successfully.");
+    LittleFS.exists("/index.htm") ? log_d("index.htm file found.") : log_d("index.htm file NOT found.");
+    log_d("Testing for index-ap.htm file...");
+    LittleFS.exists("/index-ap.htm") ? log_d("index-ap.htm file found.") : log_d("index-ap.htm file NOT found.");
   }
   else
   {
@@ -201,6 +204,7 @@ void setup()
     uint8_t rx = pref.getUInt8(ccCAN_RX_PIN, 0);
     uint8_t en = pref.getUInt8(ccCAN_EN_PIN, 0);
     if (tx && rx && en && !IsForbiddenPin(tx) && !IsForbiddenPin(rx) && !IsForbiddenPin(en)) {
+      WS_LOG_I("Initializing CAN Bus (TWAI) on TX:%d RX:%d EN:%d", tx, rx, en);
       if(Inverter.Begin(tx, rx, en))
       {
         Lcd.Data.CANInit.setValue(true);
@@ -237,55 +241,46 @@ void setup()
 #endif
   // Continue setup based on CAN init status
   bool canInitOK = Lcd.Data.CANInit.getValue();
-  if (canInitOK)
-  {
-    Inverter.SetChargeVoltage((u_int16_t) pref.getUInt32(ccChargeVolt, initBattChargeVoltage));
-    Inverter.SetFullVoltage((u_int16_t) pref.getUInt32(ccFullVoltage, initBattFullVoltage));
-    Inverter.SetOverVoltage((u_int16_t) pref.getUInt32(ccOverVoltage, initBattOverVoltage));
-    Inverter.SetChargeStepAdjust(pref.getUInt16(ccAdjustStep,initAdjustStep));
-    Inverter.MinChargeCurrent(pref.getUInt32(ccMinCharge,initMinChargeCurrent));
-    Inverter.SetMaxChargeCurrent(pref.getUInt32(ccChargeCurrent, initBattChargeCurrent));
-    Inverter.SetDischargeVoltage(pref.getUInt32(ccDischargeVolt, initBattDischargeVoltage));
-    Inverter.SetMaxDischargeCurrent(pref.getUInt32(ccDischargeCurrent, initBattDischargeCurrent));
-    Inverter.SetLowSOCLimit((uint8_t) pref.getUInt8(ccLowSOCLimit, initLowSOCLimit));
-    Inverter.SetHighSOCLimit((uint8_t) pref.getUInt8(ccHighSOCLimit, initHighSOCLimit));
-    Inverter.SetBattCapacity(pref.getUInt32(ccBattCapacity, initBattCapacity));
-    Inverter.EnableSOCTrick(pref.getBool(ccSOCTrick, false));
-    Inverter.EnableRequestFlags(pref.getBool(ccRequestFlags, false));
-    Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));
-    Inverter.SetSlowChargeDivider(2,pref.getUInt8(ccSlowSOCDivider2,initSlowSOCDivider2));
-    Inverter.SetSlowChargeSOCLimit(1, pref.getUInt8(ccSlowSOCCharge1, initSlowSOCCharge1));
-    Inverter.SetSlowChargeSOCLimit(2, pref.getUInt8(ccSlowSOCCharge2, initSlowSOCCharge2));
-    Inverter.AutoCharge(pref.getBool(ccAutoAdjustCharge, true));
-    Inverter.SmartInterval(pref.getUInt8(ccSmartInterval,initSmartInterval));
-    if(pref.getBool(ccCANBusEnabled,true)) {
-      Inverter.StartRunTask();
-      WS_LOG_I("CAN Bus task started");
-    }
-  }
-  else
-  {
-    Lcd.Data.CANInit.setValue(false);
-    Lcd.Data.CANBusData.setValue(false);
+  
+  Inverter.SetChargeVoltage((u_int16_t) pref.getUInt32(ccChargeVolt, initBattChargeVoltage));
+  Inverter.SetFullVoltage((u_int16_t) pref.getUInt32(ccFullVoltage, initBattFullVoltage));
+  Inverter.SetOverVoltage((u_int16_t) pref.getUInt32(ccOverVoltage, initBattOverVoltage));
+  Inverter.SetChargeStepAdjust(pref.getUInt16(ccAdjustStep,initAdjustStep));
+  Inverter.MinChargeCurrent(pref.getUInt32(ccMinCharge,initMinChargeCurrent));
+  Inverter.SetMaxChargeCurrent(pref.getUInt32(ccChargeCurrent, initBattChargeCurrent));
+  Inverter.SetDischargeVoltage(pref.getUInt32(ccDischargeVolt, initBattDischargeVoltage));
+  Inverter.SetMaxDischargeCurrent(pref.getUInt32(ccDischargeCurrent, initBattDischargeCurrent));
+  Inverter.SetLowSOCLimit((uint8_t) pref.getUInt8(ccLowSOCLimit, initLowSOCLimit));
+  Inverter.SetHighSOCLimit((uint8_t) pref.getUInt8(ccHighSOCLimit, initHighSOCLimit));
+  Inverter.SetBattCapacity(pref.getUInt32(ccBattCapacity, initBattCapacity));
+  Inverter.EnableSOCTrick(pref.getBool(ccSOCTrick, false));
+  Inverter.EnableRequestFlags(pref.getBool(ccRequestFlags, false));
+  Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));
+  Inverter.SetSlowChargeDivider(2,pref.getUInt8(ccSlowSOCDivider2,initSlowSOCDivider2));
+  Inverter.SetSlowChargeSOCLimit(1, pref.getUInt8(ccSlowSOCCharge1, initSlowSOCCharge1));
+  Inverter.SetSlowChargeSOCLimit(2, pref.getUInt8(ccSlowSOCCharge2, initSlowSOCCharge2));
+  Inverter.AutoCharge(pref.getBool(ccAutoAdjustCharge, true));
+  Inverter.SmartInterval(pref.getUInt8(ccSmartInterval,initSmartInterval));
+  
+  if(pref.getBool(ccCANBusEnabled,true) && canInitOK) {
+    Inverter.StartRunTask();
+    WS_LOG_I("CAN Bus task started");
   }
 
   SendCanBusMQTTUpdates = millis();
-  
   Lcd.UpdateScreenValues();
-
   xTaskCreate(&taskStartWebServices,"taskStartWebServices",4096, NULL, 6, NULL);
 
-  {
-    uint8_t vrx = (uint8_t) pref.getUInt8(ccVictronRX, 0);
-    uint8_t vtx = (uint8_t) pref.getUInt8(ccVictronTX, 0);
-    if (vrx && vtx && !IsForbiddenPin(vrx) && !IsForbiddenPin(vtx)) {
-      if(veHandle.OpenSerial(vrx, vtx))
-        veHandle.startReadTask();
-    } else if (vrx || vtx) {
-      log_e("Forbidden or zero GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
-    }
+  // Start VE.Direct Serial Reading if Enabled
+  uint8_t vrx = (uint8_t) pref.getUInt8(ccVictronRX, 0);
+  uint8_t vtx = (uint8_t) pref.getUInt8(ccVictronTX, 0);
+  if (vrx && vtx && !IsForbiddenPin(vrx) && !IsForbiddenPin(vtx)) {
+    if(veHandle.OpenSerial(vrx, vtx))
+      veHandle.startReadTask();
+  } else if (vrx || vtx) {
+    log_e("Forbidden or zero GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
   }
-
+  // Start NTP Clock Set Task
   xTaskCreate(&TaskSetClock,"taskSetClock", 2048, NULL, 5, NULL); 
   // Set the lcd timer
   time_t t = time(nullptr);

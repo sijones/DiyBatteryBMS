@@ -188,6 +188,28 @@
     button:active {
       transform: translateY(0);
     }
+
+    /* Toast notification */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 6px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      z-index: 2000;
+      min-width: 160px;
+      text-align: center;
+      font-weight: 500;
+    }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #28a745; }
+    .toast.pending { background: #ffc107; color: #333; }
+    .toast.error { background: #dc3545; }
     
     .section-title {
       font-size: 16px;
@@ -355,22 +377,22 @@
         <div class="form-row">
           <div class="form-group">
             <label for="chargevoltage">Charge Voltage (mV):</label>
-            <input type="number" id="chargevoltage" onblur="SendJSONUpdate('chargevoltage')">
+            <input type="number" id="chargevoltage" onchange="EnqueueUpdate('chargevoltage')" onkeypress="HandleEnter(event, 'chargevoltage')">
           </div>
           <div class="form-group">
             <label for="dischargevoltage">Discharge Voltage (mV):</label>
-            <input type="number" id="dischargevoltage" onblur="SendJSONUpdate('dischargevoltage')">
+            <input type="number" id="dischargevoltage" onchange="EnqueueUpdate('dischargevoltage')" onkeypress="HandleEnter(event, 'dischargevoltage')">
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
             <label for="fullvoltage">Battery Full Voltage (mV):</label>
-            <input type="number" id="fullvoltage" onblur="SendJSONUpdate('fullvoltage')">
+            <input type="number" id="fullvoltage" onchange="EnqueueUpdate('fullvoltage')" onkeypress="HandleEnter(event, 'fullvoltage')">
           </div>
           <div class="form-group">
             <label for="overvoltage">Battery Over Voltage (mV):</label>
-            <input type="number" id="overvoltage" onblur="SendJSONUpdate('overvoltage')">
+            <input type="number" id="overvoltage" onchange="EnqueueUpdate('overvoltage')" onkeypress="HandleEnter(event, 'overvoltage')">
           </div>
         </div>
         
@@ -378,29 +400,29 @@
         <div class="form-row">
           <div class="form-group">
             <label for="maxchargecurrent">Max Charge (mA):</label>
-            <input type="number" id="maxchargecurrent" onblur="SendJSONUpdate('maxchargecurrent')">
+            <input type="number" id="maxchargecurrent" onchange="EnqueueUpdate('maxchargecurrent')" onkeypress="HandleEnter(event, 'maxchargecurrent')">
           </div>
           <div class="form-group">
             <label for="maxdischargecurrent">Max Discharge (mA):</label>
-            <input type="number" id="maxdischargecurrent" onblur="SendJSONUpdate('maxdischargecurrent')">
+            <input type="number" id="maxdischargecurrent" onchange="EnqueueUpdate('maxdischargecurrent')" onkeypress="HandleEnter(event, 'maxdischargecurrent')">
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
             <label for="adjuststep">Charge Adjust Step (mA):</label>
-            <input type="number" id="adjuststep" onblur="SendJSONUpdate('adjuststep')">
+            <input type="number" id="adjuststep" onchange="EnqueueUpdate('adjuststep')" onkeypress="HandleEnter(event, 'adjuststep')">
           </div>
           <div class="form-group">
             <label for="minchargecurr">Min Charge (mA):</label>
-            <input type="number" id="minchargecurr" onblur="SendJSONUpdate('minchargecurr')">
+            <input type="number" id="minchargecurr" onchange="EnqueueUpdate('minchargecurr')" onkeypress="HandleEnter(event, 'minchargecurr')">
           </div>
         </div>
         
         <div class="form-row full">
           <div class="form-group">
             <label for="batterycapacity">Battery Capacity (mA):</label>
-            <input type="number" id="batterycapacity" onblur="SendJSONUpdate('batterycapacity')">
+            <input type="number" id="batterycapacity" onchange="EnqueueUpdate('batterycapacity')" onkeypress="HandleEnter(event, 'batterycapacity')">
           </div>
         </div>
         
@@ -408,11 +430,11 @@
         <div class="form-row">
           <div class="form-group">
             <label for="lowsoclimit">Low SOC (Stop Discharge):</label>
-            <input type="number" id="lowsoclimit" onblur="SendJSONUpdate('lowsoclimit')">
+            <input type="number" id="lowsoclimit" onchange="EnqueueUpdate('lowsoclimit')" onkeypress="HandleEnter(event, 'lowsoclimit')">
           </div>
           <div class="form-group">
             <label for="highsoclimit">High SOC (Stop Charge):</label>
-            <input type="number" id="highsoclimit" onblur="SendJSONUpdate('highsoclimit')">
+            <input type="number" id="highsoclimit" onchange="EnqueueUpdate('highsoclimit')" onkeypress="HandleEnter(event, 'highsoclimit')">
           </div>
         </div>
         
@@ -420,22 +442,22 @@
         <div class="form-row">
           <div class="form-group">
             <label for="slowchargesoc1">Slow Charge SOC 1:</label>
-            <input type="number" id="slowchargesoc1" onblur="SendJSONUpdate('slowchargesoc1')">
+            <input type="number" id="slowchargesoc1" onchange="EnqueueUpdate('slowchargesoc1')" onkeypress="HandleEnter(event, 'slowchargesoc1')">
           </div>
           <div class="form-group">
             <label for="slowchargesoc1div">Slow Charge 1 (divider):</label>
-            <input type="number" id="slowchargesoc1div" onblur="SendJSONUpdate('slowchargesoc1div')">
+            <input type="number" id="slowchargesoc1div" onchange="EnqueueUpdate('slowchargesoc1div')" onkeypress="HandleEnter(event, 'slowchargesoc1div')">
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
             <label for="slowchargesoc2">Slow Charge SOC 2:</label>
-            <input type="number" id="slowchargesoc2" onblur="SendJSONUpdate('slowchargesoc2')">
+            <input type="number" id="slowchargesoc2" onchange="EnqueueUpdate('slowchargesoc2')" onkeypress="HandleEnter(event, 'slowchargesoc2')">
           </div>
           <div class="form-group">
             <label for="slowchargesoc2div">Slow Charge 2 (divider):</label>
-            <input type="number" id="slowchargesoc2div" onblur="SendJSONUpdate('slowchargesoc2div')">
+            <input type="number" id="slowchargesoc2div" onchange="EnqueueUpdate('slowchargesoc2div')" onkeypress="HandleEnter(event, 'slowchargesoc2div')">
           </div>
         </div>
         
@@ -447,7 +469,7 @@
           </div>
           <div class="form-group">
             <label for="smartinterval">Smart Interval (seconds):</label>
-            <input type="number" id="smartinterval" onblur="SendJSONUpdate('smartinterval')">
+            <input type="number" id="smartinterval" onchange="EnqueueUpdate('smartinterval')" onkeypress="HandleEnter(event, 'smartinterval')">
           </div>
         </div>
         
@@ -470,11 +492,11 @@
         <div class="form-row">
           <div class="form-group">
             <label for="victronrxpin">Victron RX Pin:</label>
-            <input type="number" id="victronrxpin" onblur="SendJSONUpdate('victronrxpin')">
+            <input type="number" id="victronrxpin" onchange="EnqueueUpdate('victronrxpin')" onkeypress="HandleEnter(event, 'victronrxpin')">
           </div>
           <div class="form-group">
             <label for="victrontxpin">Victron TX Pin:</label>
-            <input type="number" id="victrontxpin" onblur="SendJSONUpdate('victrontxpin')">
+            <input type="number" id="victrontxpin" onchange="EnqueueUpdate('victrontxpin')" onkeypress="HandleEnter(event, 'victrontxpin')">
           </div>
         </div>
         
@@ -482,7 +504,6 @@
         <div class="section-title">{{CAN_CONFIG_TITLE}}</div>
         <div class="form-row">
           {{CAN_CONFIG_FIELDS}}
-          {{FAN_PIN_FIELD}}
         </div>
         <!-- END_CAN_CONFIG -->
         
@@ -497,6 +518,10 @@
           <label for="requestflagsenabled">Request Flags Enable (0x308 Status)</label>
         </div>
         
+        <div class="section-title">Other Settings</div>
+        <div class="form-row">
+          {{FAN_PIN_FIELD}}
+        </div>
         <div class="checkbox-row">
           <input type="checkbox" id="lcdenabled" onchange="SendJSONUpdate('lcdenabled')">
           <label for="lcdenabled">LCD Enabled</label>
@@ -505,7 +530,7 @@
         <div class="section-title">Network Configuration</div>
         <div class="form-group">
           <label for="ntpserver">NTP Server:</label>
-          <input type="textbox" id="ntpserver" onblur="SendJSONUpdate('ntpserver')">
+          <input type="textbox" id="ntpserver" onchange="EnqueueUpdate('ntpserver')" onkeypress="HandleEnter(event, 'ntpserver')">
         </div>
         
         <div class="button-group">
@@ -521,47 +546,47 @@
         <div class="form-group">
           <label for="wifissid">WiFi Network:</label>
           <div class="wifi-controls">
-            <select id="wifissid" onblur="SendJSONUpdate('wifissid')"></select>
+            <select id="wifissid" onchange="EnqueueUpdate('wifissid')"></select>
             <button onclick="GetWifiList()">Scan</button>
           </div>
         </div>
         
         <div class="form-group">
           <label for="wifipass">WiFi Password:</label>
-          <input type="password" id="wifipass" onblur="SendJSONUpdate('wifipass')">
+          <input type="password" id="wifipass" onchange="EnqueueUpdate('wifipass')" onkeypress="HandleEnter(event, 'wifipass')">
         </div>
         
         <div class="form-group">
           <label for="wifihostname">mDNS Hostname:</label>
-          <input type="textbox" id="wifihostname" onblur="SendJSONUpdate('wifihostname')">
+          <input type="textbox" id="wifihostname" onchange="EnqueueUpdate('wifihostname')" onkeypress="HandleEnter(event, 'wifihostname')">
         </div>
         
         <div class="section-title">MQTT Server Configuration</div>
         <div class="form-row">
           <div class="form-group">
             <label for="mqttserverip">MQTT Server IP:</label>
-            <input type="textbox" id="mqttserverip" onblur="SendJSONUpdate('mqttserverip')">
+            <input type="textbox" id="mqttserverip" onchange="EnqueueUpdate('mqttserverip')" onkeypress="HandleEnter(event, 'mqttserverip')">
           </div>
           <div class="form-group">
             <label for="mqttport">MQTT Port:</label>
-            <input type="number" id="mqttport" onblur="SendJSONUpdate('mqttport')">
+            <input type="number" id="mqttport" onchange="EnqueueUpdate('mqttport')" onkeypress="HandleEnter(event, 'mqttport')">
           </div>
         </div>
         
         <div class="form-group">
           <label for="mqttclientid">MQTT Client ID:</label>
-          <input type="textbox" id="mqttclientid" onblur="SendJSONUpdate('mqttclientid')">
+          <input type="textbox" id="mqttclientid" onchange="EnqueueUpdate('mqttclientid')" onkeypress="HandleEnter(event, 'mqttclientid')">
         </div>
         
         <div class="section-title">MQTT Topic Configuration</div>
         <div class="form-row">
           <div class="form-group">
             <label for="mqtttopic">MQTT Topic:</label>
-            <input type="textbox" id="mqtttopic" onblur="SendJSONUpdate('mqtttopic')">
+            <input type="textbox" id="mqtttopic" onchange="EnqueueUpdate('mqtttopic')" onkeypress="HandleEnter(event, 'mqtttopic')">
           </div>
           <div class="form-group">
             <label for="mqttparameter">MQTT Parameter:</label>
-            <input type="textbox" id="mqttparameter" onblur="SendJSONUpdate('mqttparameter')">
+            <input type="textbox" id="mqttparameter" onchange="EnqueueUpdate('mqttparameter')" onkeypress="HandleEnter(event, 'mqttparameter')">
           </div>
         </div>
         
@@ -569,18 +594,18 @@
         <div class="form-row">
           <div class="form-group">
             <label for="mqttuser">MQTT Username:</label>
-            <input type="textbox" id="mqttuser" onblur="SendJSONUpdate('mqttuser')">
+            <input type="textbox" id="mqttuser" onchange="EnqueueUpdate('mqttuser')" onkeypress="HandleEnter(event, 'mqttuser')">
           </div>
           <div class="form-group">
             <label for="mqttpass">MQTT Password:</label>
-            <input type="password" id="mqttpass" onblur="SendJSONUpdate('mqttpass')">
+            <input type="password" id="mqttpass" onchange="EnqueueUpdate('mqttpass')" onkeypress="HandleEnter(event, 'mqttpass')">
           </div>
         </div>
         
         <div class="section-title">Update Interval</div>
         <div class="form-group">
           <label for="velooptime">WiFi and MQTT Refresh Rate (seconds):</label>
-          <input type="number" id="velooptime" onblur="SendJSONUpdate('velooptime')">
+          <input type="number" id="velooptime" onchange="EnqueueUpdate('velooptime')" onkeypress="HandleEnter(event, 'velooptime')">
         </div>
         
         <div class="button-group">
@@ -627,10 +652,21 @@
     </div>
   </div>
 
+  <div id="toast" class="toast"></div>
+
   <script>
     var gateway = `ws://${window.location.hostname}/ws`; 
     var websocket;
     const PIN_FIELDS = ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin','canbuscspin','fanpin','onewirepin'];
+    
+    // Queue and debounce system
+    const DEBOUNCE_DELAY = 400;
+    const ACK_TIMEOUT = 5000;
+    const MAX_RETRIES = 3;
+    const sendQueue = [];
+    const debounceTimers = {};
+    const pendingAcks = {};
+    let toastTimer = null;
 
     window.addEventListener('load', onLoad);
 
@@ -691,19 +727,19 @@
       // console.log(event.data);
 
       if(obj.hasOwnProperty('BMS') && obj.BMS) {
-        if(obj.hasOwnProperty('chargevoltage')) document.getElementById('chargevoltage').value=obj.chargevoltage;
-        if(obj.hasOwnProperty('fullvoltage')) document.getElementById('fullvoltage').value=obj.fullvoltage;
-        if(obj.hasOwnProperty('minchargecurr')) document.getElementById('minchargecurr').value=obj.minchargecurr;
-        if(obj.hasOwnProperty('adjuststep')) document.getElementById('adjuststep').value=obj.adjuststep;
-        if(obj.hasOwnProperty('smartinterval')) document.getElementById('smartinterval').value=obj.smartinterval;
-        if(obj.hasOwnProperty('overvoltage')) document.getElementById('overvoltage').value=obj.overvoltage;
-        if(obj.hasOwnProperty('dischargevoltage')) document.getElementById('dischargevoltage').value=obj.dischargevoltage;
-        if(obj.hasOwnProperty('maxchargecurrent')) document.getElementById('maxchargecurrent').value=obj.maxchargecurrent;
-        if(obj.hasOwnProperty('maxdischargecurrent')) document.getElementById('maxdischargecurrent').value=obj.maxdischargecurrent;
-        if(obj.hasOwnProperty('batterycapacity')) document.getElementById('batterycapacity').value=obj.batterycapacity;
-        if(obj.hasOwnProperty('lowsoclimit')) document.getElementById('lowsoclimit').value=obj.lowsoclimit;
-        if(obj.hasOwnProperty('highsoclimit')) document.getElementById('highsoclimit').value=obj.highsoclimit;
-        if(obj.hasOwnProperty('velooptime')) document.getElementById('velooptime').value=obj.velooptime;
+        if(obj.hasOwnProperty('chargevoltage')) { document.getElementById('chargevoltage').value=obj.chargevoltage; AckUpdate('chargevoltage'); }
+        if(obj.hasOwnProperty('fullvoltage')) { document.getElementById('fullvoltage').value=obj.fullvoltage; AckUpdate('fullvoltage'); }
+        if(obj.hasOwnProperty('minchargecurr')) { document.getElementById('minchargecurr').value=obj.minchargecurr; AckUpdate('minchargecurr'); }
+        if(obj.hasOwnProperty('adjuststep')) { document.getElementById('adjuststep').value=obj.adjuststep; AckUpdate('adjuststep'); }
+        if(obj.hasOwnProperty('smartinterval')) { document.getElementById('smartinterval').value=obj.smartinterval; AckUpdate('smartinterval'); }
+        if(obj.hasOwnProperty('overvoltage')) { document.getElementById('overvoltage').value=obj.overvoltage; AckUpdate('overvoltage'); }
+        if(obj.hasOwnProperty('dischargevoltage')) { document.getElementById('dischargevoltage').value=obj.dischargevoltage; AckUpdate('dischargevoltage'); }
+        if(obj.hasOwnProperty('maxchargecurrent')) { document.getElementById('maxchargecurrent').value=obj.maxchargecurrent; AckUpdate('maxchargecurrent'); }
+        if(obj.hasOwnProperty('maxdischargecurrent')) { document.getElementById('maxdischargecurrent').value=obj.maxdischargecurrent; AckUpdate('maxdischargecurrent'); }
+        if(obj.hasOwnProperty('batterycapacity')) { document.getElementById('batterycapacity').value=obj.batterycapacity; AckUpdate('batterycapacity'); }
+        if(obj.hasOwnProperty('lowsoclimit')) { document.getElementById('lowsoclimit').value=obj.lowsoclimit; AckUpdate('lowsoclimit'); }
+        if(obj.hasOwnProperty('highsoclimit')) { document.getElementById('highsoclimit').value=obj.highsoclimit; AckUpdate('highsoclimit'); }
+        if(obj.hasOwnProperty('velooptime')) { document.getElementById('velooptime').value=obj.velooptime; AckUpdate('velooptime'); }
         if(obj.hasOwnProperty('canbusenabled')) document.getElementById('canbusenabled').checked=obj.canbusenabled;
       }
 
@@ -730,25 +766,25 @@
       if(obj.hasOwnProperty('soctrickenabled')) document.getElementById('soctrickenabled').checked=obj.soctrickenabled;
       if(obj.hasOwnProperty('requestflagsenabled')) document.getElementById('requestflagsenabled').checked=obj.requestflagsenabled;
       if(obj.hasOwnProperty('autocharge')) document.getElementById('autocharge').checked=obj.autocharge;
-      if(obj.hasOwnProperty('wifissid')) document.getElementById('wifissid').value=obj.wifissid;
-      if(obj.hasOwnProperty('wifipass')) document.getElementById('wifipass').value=obj.wifipass;
-      if(obj.hasOwnProperty('wifihostname')) document.getElementById('wifihostname').value=obj.wifihostname;
-      if(obj.hasOwnProperty('victronrxpin')) document.getElementById('victronrxpin').value=obj.victronrxpin;
-      if(obj.hasOwnProperty('victrontxpin')) document.getElementById('victrontxpin').value=obj.victrontxpin;
+      if(obj.hasOwnProperty('wifissid')) { document.getElementById('wifissid').value=obj.wifissid; AckUpdate('wifissid'); }
+      if(obj.hasOwnProperty('wifipass')) { document.getElementById('wifipass').value=obj.wifipass; AckUpdate('wifipass'); }
+      if(obj.hasOwnProperty('wifihostname')) { document.getElementById('wifihostname').value=obj.wifihostname; AckUpdate('wifihostname'); }
+      if(obj.hasOwnProperty('victronrxpin')) { document.getElementById('victronrxpin').value=obj.victronrxpin; AckUpdate('victronrxpin'); }
+      if(obj.hasOwnProperty('victrontxpin')) { document.getElementById('victrontxpin').value=obj.victrontxpin; AckUpdate('victrontxpin'); }
       {{CAN_FIELD_HANDLERS}}
-      if(obj.hasOwnProperty('mqttport')) document.getElementById('mqttport').value=obj.mqttport;
-      if(obj.hasOwnProperty('mqttserverip')) document.getElementById('mqttserverip').value=obj.mqttserverip;
-      if(obj.hasOwnProperty('mqttclientid')) document.getElementById('mqttclientid').value=obj.mqttclientid;
-      if(obj.hasOwnProperty('mqtttopic')) document.getElementById('mqtttopic').value=obj.mqtttopic;
-      if(obj.hasOwnProperty('mqttparameter')) document.getElementById('mqttparameter').value=obj.mqttparameter;
-      if(obj.hasOwnProperty('mqttuser')) document.getElementById('mqttuser').value=obj.mqttuser;
-      if(obj.hasOwnProperty('mqttpass')) document.getElementById('mqttpass').value=obj.mqttpass;
-      if(obj.hasOwnProperty('slowchargesoc1')) document.getElementById('slowchargesoc1').value=obj.slowchargesoc1;
-      if(obj.hasOwnProperty('slowchargesoc2')) document.getElementById('slowchargesoc2').value=obj.slowchargesoc2;
-      if(obj.hasOwnProperty('slowchargesoc1div')) document.getElementById('slowchargesoc1div').value=obj.slowchargesoc1div;
-      if(obj.hasOwnProperty('slowchargesoc2div')) document.getElementById('slowchargesoc2div').value=obj.slowchargesoc2div;
+      if(obj.hasOwnProperty('mqttport')) { document.getElementById('mqttport').value=obj.mqttport; AckUpdate('mqttport'); }
+      if(obj.hasOwnProperty('mqttserverip')) { document.getElementById('mqttserverip').value=obj.mqttserverip; AckUpdate('mqttserverip'); }
+      if(obj.hasOwnProperty('mqttclientid')) { document.getElementById('mqttclientid').value=obj.mqttclientid; AckUpdate('mqttclientid'); }
+      if(obj.hasOwnProperty('mqtttopic')) { document.getElementById('mqtttopic').value=obj.mqtttopic; AckUpdate('mqtttopic'); }
+      if(obj.hasOwnProperty('mqttparameter')) { document.getElementById('mqttparameter').value=obj.mqttparameter; AckUpdate('mqttparameter'); }
+      if(obj.hasOwnProperty('mqttuser')) { document.getElementById('mqttuser').value=obj.mqttuser; AckUpdate('mqttuser'); }
+      if(obj.hasOwnProperty('mqttpass')) { document.getElementById('mqttpass').value=obj.mqttpass; AckUpdate('mqttpass'); }
+      if(obj.hasOwnProperty('slowchargesoc1')) { document.getElementById('slowchargesoc1').value=obj.slowchargesoc1; AckUpdate('slowchargesoc1'); }
+      if(obj.hasOwnProperty('slowchargesoc2')) { document.getElementById('slowchargesoc2').value=obj.slowchargesoc2; AckUpdate('slowchargesoc2'); }
+      if(obj.hasOwnProperty('slowchargesoc1div')) { document.getElementById('slowchargesoc1div').value=obj.slowchargesoc1div; AckUpdate('slowchargesoc1div'); }
+      if(obj.hasOwnProperty('slowchargesoc2div')) { document.getElementById('slowchargesoc2div').value=obj.slowchargesoc2div; AckUpdate('slowchargesoc2div'); }
       if(obj.hasOwnProperty('lcdenabled')) document.getElementById('lcdenabled').checked=obj.lcdenabled;
-      if(obj.hasOwnProperty('ntpserver')) document.getElementById('ntpserver').value=obj.ntpserver;
+      if(obj.hasOwnProperty('ntpserver')) { document.getElementById('ntpserver').value=obj.ntpserver; AckUpdate('ntpserver'); }
       {{FAN_PIN_HANDLER}}
 
       if(obj.hasOwnProperty('Message')) alert(obj.Message);
@@ -886,51 +922,118 @@
       return true; // Allow form submission
     }
 
-    function SendJSONUpdate(textboxid) {
-      const element = document.getElementById(textboxid);
+    function showToast(message, status = 'success', duration = 1800) {
+      const toast = document.getElementById('toast');
+      if (!toast) return;
+      toast.textContent = message;
+      toast.classList.remove('success', 'pending', 'error');
+      toast.classList.add(status, 'show');
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
+    }
+
+    function HandleEnter(event, fieldId) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        SendQueuedUpdate(fieldId);
+      }
+    }
+
+    function EnqueueUpdate(fieldId) {
+      if (debounceTimers[fieldId]) clearTimeout(debounceTimers[fieldId]);
+      debounceTimers[fieldId] = setTimeout(() => SendQueuedUpdate(fieldId), DEBOUNCE_DELAY);
+    }
+
+    function SendQueuedUpdate(fieldId) {
+      if (debounceTimers[fieldId]) clearTimeout(debounceTimers[fieldId]);
+      delete debounceTimers[fieldId];
+
+      const element = document.getElementById(fieldId);
       if (!element) {
-        console.log('getElementById returned null.');
+        console.log('Element not found: ' + fieldId);
         return;
       }
 
       const rawValue = element.value;
       const trimmed = (rawValue === undefined || rawValue === null) ? '' : rawValue.toString().trim();
-      const isPinField = PIN_FIELDS.includes(textboxid);
+      const isPinField = PIN_FIELDS.includes(fieldId);
 
       let payload;
 
-      if (textboxid === 'wifissid') {
-        payload = { [textboxid]: element.options[element.selectedIndex].value };
+      if (fieldId === 'wifissid') {
+        payload = { [fieldId]: element.options[element.selectedIndex].value };
       } else if (element.type === 'checkbox') {
-        payload = { [textboxid]: element.checked };
+        payload = { [fieldId]: element.checked };
       } else {
         if (trimmed === '') {
           if (element.type === 'number' || isPinField) {
-            console.log('Ignoring empty value for ' + textboxid);
+            console.log('Ignoring empty value for ' + fieldId);
             return;
           }
-          payload = { [textboxid]: '' };
+          payload = { [fieldId]: '' };
         } else {
           if (isPinField) {
             const parsedPin = Number(trimmed);
             if (!Number.isFinite(parsedPin) || parsedPin <= 0) {
-              console.log('Ignoring invalid/zero pin value for ' + textboxid);
+              console.log('Ignoring invalid/zero pin value for ' + fieldId);
               return;
             }
           }
 
           const numericValue = Number(trimmed);
           if (!Number.isNaN(numericValue)) {
-            payload = { [textboxid]: numericValue };
+            payload = { [fieldId]: numericValue };
           } else {
-            payload = { [textboxid]: trimmed };
+            payload = { [fieldId]: trimmed };
           }
         }
       }
 
-      const jsonString = JSON.stringify(payload);
-      console.log('Sending to Websocket: ' + jsonString);
+      const item = {
+        id: fieldId,
+        payload: payload,
+        retries: 0
+      };
+
+      sendQueue.push(item);
+      ProcessQueue();
+    }
+
+    function ProcessQueue() {
+      if (sendQueue.length === 0) return;
+      if (Object.keys(pendingAcks).length > 0) return; // Wait for current ack
+
+      const item = sendQueue.shift();
+      const jsonString = JSON.stringify(item.payload);
+      console.log('Sending to WebSocket: ' + jsonString);
+      showToast('Saving...', 'pending');
+
+      pendingAcks[item.id] = {
+        timeout: setTimeout(() => {
+          delete pendingAcks[item.id];
+          if (item.retries < MAX_RETRIES) {
+            item.retries++;
+            sendQueue.unshift(item);
+            console.log('Retry ' + item.retries + ' for ' + item.id);
+            ProcessQueue();
+          } else {
+            showToast('Failed to save ' + item.id, 'error', 2500);
+            ProcessQueue();
+          }
+        }, ACK_TIMEOUT),
+        item: item
+      };
+
       websocket.send(jsonString);
+    }
+
+    function AckUpdate(fieldId) {
+      if (pendingAcks[fieldId]) {
+        clearTimeout(pendingAcks[fieldId].timeout);
+        delete pendingAcks[fieldId];
+        showToast('Saved', 'success');
+        ProcessQueue();
+      }
     }
 
     function addLogEntry(message, level) {

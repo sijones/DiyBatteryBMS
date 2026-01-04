@@ -198,6 +198,28 @@
       flex: 0;
       padding: 10px 20px;
     }
+
+    /* Toast notification */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 6px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      z-index: 2000;
+      min-width: 160px;
+      text-align: center;
+      font-weight: 500;
+    }
+    .toast.show { opacity: 1; }
+    .toast.success { background: #28a745; }
+    .toast.pending { background: #ffc107; color: #333; }
+    .toast.error { background: #dc3545; }
   </style>
 </head>
 <body>
@@ -220,19 +242,19 @@
         <div class="form-group">
           <label for="wifissid">WiFi Network:</label>
           <div class="wifi-controls">
-            <select id="wifissid" onblur="SendJSONUpdate('wifissid')"></select>
+            <select id="wifissid" onchange="EnqueueUpdate('wifissid')"></select>
             <button onclick="GetWifiList()">Scan</button>
           </div>
         </div>
         
         <div class="form-group">
           <label for="wifipass">WiFi Password:</label>
-          <input type="password" id="wifipass" onblur="SendJSONUpdate('wifipass')">
+          <input type="password" id="wifipass" onchange="EnqueueUpdate('wifipass')" onkeypress="HandleEnter(event, 'wifipass')">
         </div>
         
         <div class="form-group">
           <label for="wifihostname">mDNS Hostname:</label>
-          <input type="text" id="wifihostname" onblur="SendJSONUpdate('wifihostname')">
+          <input type="text" id="wifihostname" onchange="EnqueueUpdate('wifihostname')" onkeypress="HandleEnter(event, 'wifihostname')">
         </div>
       </div>
       
@@ -242,28 +264,28 @@
         <div class="form-row">
           <div class="form-group">
             <label for="mqttserverip">MQTT Server IP:</label>
-            <input type="text" id="mqttserverip" onblur="SendJSONUpdate('mqttserverip')">
+            <input type="text" id="mqttserverip" onchange="EnqueueUpdate('mqttserverip')" onkeypress="HandleEnter(event, 'mqttserverip')">
           </div>
           <div class="form-group">
             <label for="mqttport">MQTT Port:</label>
-            <input type="number" id="mqttport" onblur="SendJSONUpdate('mqttport')">
+            <input type="number" id="mqttport" onchange="EnqueueUpdate('mqttport')" onkeypress="HandleEnter(event, 'mqttport')">
           </div>
         </div>
         
         <div class="form-group">
           <label for="mqttclientid">MQTT Client ID:</label>
-          <input type="text" id="mqttclientid" onblur="SendJSONUpdate('mqttclientid')">
+          <input type="text" id="mqttclientid" onchange="EnqueueUpdate('mqttclientid')" onkeypress="HandleEnter(event, 'mqttclientid')">
         </div>
         
         <div class="section-title">Topic Configuration</div>
         <div class="form-row">
           <div class="form-group">
             <label for="mqtttopic">MQTT Topic:</label>
-            <input type="text" id="mqtttopic" onblur="SendJSONUpdate('mqtttopic')">
+            <input type="text" id="mqtttopic" onchange="EnqueueUpdate('mqtttopic')" onkeypress="HandleEnter(event, 'mqtttopic')">
           </div>
           <div class="form-group">
             <label for="mqttparameter">MQTT Parameter:</label>
-            <input type="text" id="mqttparameter" onblur="SendJSONUpdate('mqttparameter')">
+            <input type="text" id="mqttparameter" onchange="EnqueueUpdate('mqttparameter')" onkeypress="HandleEnter(event, 'mqttparameter')">
           </div>
         </div>
         
@@ -271,11 +293,11 @@
         <div class="form-row">
           <div class="form-group">
             <label for="mqttuser">MQTT Username:</label>
-            <input type="text" id="mqttuser" onblur="SendJSONUpdate('mqttuser')">
+            <input type="text" id="mqttuser" onchange="EnqueueUpdate('mqttuser')" onkeypress="HandleEnter(event, 'mqttuser')">
           </div>
           <div class="form-group">
             <label for="mqttpass">MQTT Password:</label>
-            <input type="password" id="mqttpass" onblur="SendJSONUpdate('mqttpass')">
+            <input type="password" id="mqttpass" onchange="EnqueueUpdate('mqttpass')" onkeypress="HandleEnter(event, 'mqttpass')">
           </div>
         </div>
       </div>
@@ -287,14 +309,23 @@
         {{CAN_CONFIG_FIELDS}}
         <!-- END_CAN_CONFIG -->
         
+        <div class="section-title">Other Settings</div>
+        <div class="form-row">
+          {{FAN_PIN_FIELD}}
+        </div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="lcdenabled" onchange="SendJSONUpdate('lcdenabled')">
+          <label for="lcdenabled">LCD Enabled</label>
+        </div>
+        
         <div class="form-row">
           <div class="form-group">
             <label for="victronrxpin">Victron RX Pin:</label>
-            <input type="number" id="victronrxpin" onblur="SendJSONUpdate('victronrxpin')">
+            <input type="number" id="victronrxpin" onchange="EnqueueUpdate('victronrxpin')" onkeypress="HandleEnter(event, 'victronrxpin')">
           </div>
           <div class="form-group">
-            <label for="victrontxpin">Victron TX Pin:</label>
-            <input type="number" id="victrontxpin" onblur="SendJSONUpdate('victrontxpin')">
+            <label for="victrontxpin">VE Direct TX Pin:</label>
+            <input type="number" id="victrontxpin" onchange="EnqueueUpdate('victrontxpin')" onkeypress="HandleEnter(event, 'victrontxpin')">
           </div>
         </div>
       </div>
@@ -305,10 +336,124 @@
     </div>
   </div>
 
+  <div id="toast" class="toast"></div>
+
   <script>
     var gateway = `ws://${window.location.hostname}/ws`;
     var websocket;
     const PIN_FIELDS = ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin','canbuscspin','fanpin','onewirepin'];
+    
+    // Queue and debounce system
+    const DEBOUNCE_DELAY = 400;
+    const ACK_TIMEOUT = 5000;
+    const MAX_RETRIES = 3;
+    const sendQueue = [];
+    const debounceTimers = {};
+    const pendingAcks = {};
+
+    function HandleEnter(event, fieldId) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        SendQueuedUpdate(fieldId);
+      }
+    }
+
+    function EnqueueUpdate(fieldId) {
+      if (debounceTimers[fieldId]) clearTimeout(debounceTimers[fieldId]);
+      debounceTimers[fieldId] = setTimeout(() => SendQueuedUpdate(fieldId), DEBOUNCE_DELAY);
+    }
+
+    function SendQueuedUpdate(fieldId) {
+      if (debounceTimers[fieldId]) clearTimeout(debounceTimers[fieldId]);
+      delete debounceTimers[fieldId];
+
+      const element = document.getElementById(fieldId);
+      if (!element) {
+        console.log('Element not found: ' + fieldId);
+        return;
+      }
+
+      const rawValue = element.value;
+      const trimmed = (rawValue === undefined || rawValue === null) ? '' : rawValue.toString().trim();
+      const isPinField = PIN_FIELDS.includes(fieldId);
+
+      let payload;
+
+      if (fieldId === 'wifissid') {
+        payload = { [fieldId]: element.options[element.selectedIndex].value };
+      } else if (element.type === 'checkbox') {
+        payload = { [fieldId]: element.checked };
+      } else {
+        if (trimmed === '') {
+          if (element.type === 'number' || isPinField) {
+            console.log('Ignoring empty value for ' + fieldId);
+            return;
+          }
+          payload = { [fieldId]: '' };
+        } else {
+          if (isPinField) {
+            const parsedPin = Number(trimmed);
+            if (!Number.isFinite(parsedPin) || parsedPin <= 0) {
+              console.log('Ignoring invalid/zero pin value for ' + fieldId);
+              return;
+            }
+          }
+
+          const numericValue = Number(trimmed);
+          if (!Number.isNaN(numericValue)) {
+            payload = { [fieldId]: numericValue };
+          } else {
+            payload = { [fieldId]: trimmed };
+          }
+        }
+      }
+
+      const item = {
+        id: fieldId,
+        payload: payload,
+        retries: 0
+      };
+
+      sendQueue.push(item);
+      ProcessQueue();
+    }
+
+    function ProcessQueue() {
+      if (sendQueue.length === 0) return;
+      if (Object.keys(pendingAcks).length > 0) return; // Wait for current ack
+
+      const item = sendQueue.shift();
+      const jsonString = JSON.stringify(item.payload);
+      console.log('Sending to WebSocket: ' + jsonString);
+      showToast('Saving...', 'pending');
+
+      pendingAcks[item.id] = {
+        timeout: setTimeout(() => {
+          delete pendingAcks[item.id];
+          if (item.retries < MAX_RETRIES) {
+            item.retries++;
+            sendQueue.unshift(item);
+            console.log('Retry ' + item.retries + ' for ' + item.id);
+            ProcessQueue();
+          } else {
+            showToast('Failed to save ' + item.id, 'error', 2500);
+            ProcessQueue();
+          }
+        }, ACK_TIMEOUT),
+        item: item
+      };
+
+      websocket.send(jsonString);
+    }
+
+    function AckUpdate(fieldId) {
+      if (pendingAcks[fieldId]) {
+        clearTimeout(pendingAcks[fieldId].timeout);
+        delete pendingAcks[fieldId];
+        showToast('Saved', 'success');
+        ProcessQueue();
+      }
+    }
 
     window.addEventListener('load', onLoad);
 
@@ -350,19 +495,21 @@
       console.log(event.data);
       const obj = JSON.parse(event.data);
 
-      if(obj.hasOwnProperty('wifissid')) document.getElementById('wifissid').value = obj.wifissid;
-      if(obj.hasOwnProperty('wifipass')) document.getElementById('wifipass').value = obj.wifipass;
-      if(obj.hasOwnProperty('wifihostname')) document.getElementById('wifihostname').value = obj.wifihostname;
+      if(obj.hasOwnProperty('wifissid')) { document.getElementById('wifissid').value = obj.wifissid; AckUpdate('wifissid'); }
+      if(obj.hasOwnProperty('wifipass')) { document.getElementById('wifipass').value = obj.wifipass; AckUpdate('wifipass'); }
+      if(obj.hasOwnProperty('wifihostname')) { document.getElementById('wifihostname').value = obj.wifihostname; AckUpdate('wifihostname'); }
       {{CAN_FIELD_HANDLERS}}
-      if(obj.hasOwnProperty('victronrxpin')) document.getElementById('victronrxpin').value = obj.victronrxpin;
-      if(obj.hasOwnProperty('victrontxpin')) document.getElementById('victrontxpin').value = obj.victrontxpin;
-      if(obj.hasOwnProperty('mqttport')) document.getElementById('mqttport').value = obj.mqttport;
-      if(obj.hasOwnProperty('mqttserverip')) document.getElementById('mqttserverip').value = obj.mqttserverip;
-      if(obj.hasOwnProperty('mqttuser')) document.getElementById('mqttuser').value = obj.mqttuser;
-      if(obj.hasOwnProperty('mqttpass')) document.getElementById('mqttpass').value = obj.mqttpass;
-      if(obj.hasOwnProperty('mqttclientid')) document.getElementById('mqttclientid').value = obj.mqttclientid;
-      if(obj.hasOwnProperty('mqtttopic')) document.getElementById('mqtttopic').value = obj.mqtttopic;
-      if(obj.hasOwnProperty('mqttparameter')) document.getElementById('mqttparameter').value = obj.mqttparameter;
+      {{FAN_PIN_HANDLER}}
+      if(obj.hasOwnProperty('victronrxpin')) { document.getElementById('victronrxpin').value = obj.victronrxpin; AckUpdate('victronrxpin'); }
+      if(obj.hasOwnProperty('victrontxpin')) { document.getElementById('victrontxpin').value = obj.victrontxpin; AckUpdate('victrontxpin'); }
+      if(obj.hasOwnProperty('lcdenabled')) document.getElementById('lcdenabled').checked = obj.lcdenabled;
+      if(obj.hasOwnProperty('mqttport')) { document.getElementById('mqttport').value = obj.mqttport; AckUpdate('mqttport'); }
+      if(obj.hasOwnProperty('mqttserverip')) { document.getElementById('mqttserverip').value = obj.mqttserverip; AckUpdate('mqttserverip'); }
+      if(obj.hasOwnProperty('mqttuser')) { document.getElementById('mqttuser').value = obj.mqttuser; AckUpdate('mqttuser'); }
+      if(obj.hasOwnProperty('mqttpass')) { document.getElementById('mqttpass').value = obj.mqttpass; AckUpdate('mqttpass'); }
+      if(obj.hasOwnProperty('mqttclientid')) { document.getElementById('mqttclientid').value = obj.mqttclientid; AckUpdate('mqttclientid'); }
+      if(obj.hasOwnProperty('mqtttopic')) { document.getElementById('mqtttopic').value = obj.mqtttopic; AckUpdate('mqtttopic'); }
+      if(obj.hasOwnProperty('mqttparameter')) { document.getElementById('mqttparameter').value = obj.mqttparameter; AckUpdate('mqttparameter'); }
       
       if(obj.hasOwnProperty('Message')) alert(obj.Message);
       if(obj.hasOwnProperty('ERROR')) alert(obj.ERROR);
@@ -376,6 +523,16 @@
     function rebootBMS() {
       console.log('Sending Reboot command');
       websocket.send(JSON.stringify({reboot: true}));
+    }
+
+    let toastTimer = null;
+    function showToast(message, status = 'info', duration = 1800) {
+      const toast = document.getElementById('toast');
+      if (!toast) return;
+      toast.textContent = message;
+      toast.className = 'show ' + status;
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
     }
 
     function SendJSONUpdate(textboxid) {
@@ -422,6 +579,7 @@
 
       console.log('Sending to WebSocket:', jsonobj);
       websocket.send(JSON.stringify(jsonobj));
+      showToast('Saved');
     }
 
     function GetWifiList() {

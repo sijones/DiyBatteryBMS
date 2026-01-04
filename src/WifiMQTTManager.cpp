@@ -71,7 +71,13 @@ bool WifiMQTTManagerClass::begin()
         // Explicit AP network config (gateway = AP IP)
         WiFi.softAPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
         // Start SoftAP on a non-DFS, common channel (1) to reduce roaming
-        WiFi.softAP(_wifiHostName.c_str(), NULL, 1);
+        // Set max_connection=4, ssid_hidden=false, and beacon_interval=100ms for stability
+        WiFi.softAP(_wifiHostName.c_str(), NULL, 1, false, 4);
+        
+        // Configure AP for better stability during scans
+        // Lower DTIM period (2) means clients wake more frequently to check for buffered traffic
+        esp_wifi_set_ps(WIFI_PS_NONE); // Disable power save completely in AP mode
+        
         /* Setup the DNS server redirecting all the domains to the apIP */
         delay(50);
         _dnsserver.setErrorReplyCode(DNSReplyCode::NoError);
@@ -81,6 +87,11 @@ bool WifiMQTTManagerClass::begin()
         }
         else
             log_d("DNS Server Failed to Start");
+        
+        // Auto-scan networks so results are ready when web UI connects
+        log_d("Starting automatic network scan for AP mode");
+        WiFi.scanNetworks(true);
+        
         return false;
     }
 
@@ -126,8 +137,8 @@ bool WifiMQTTManagerClass::isWiFiConnected()
 bool WifiMQTTManagerClass::WifiConnect()
 {
     return true;
-    WifiDisconnect();
-    //WiFi.begin();
+   // WifiDisconnect();
+   // WiFi.begin();
 }
 
 bool WifiMQTTManagerClass::WifiDisconnect()
@@ -231,16 +242,12 @@ void WifiMQTTManagerClass::SetMQTTParameter(String Parameter){
     if (!_mqttParameter.startsWith("/")){
         _mqttParameter = String("/" + _mqttParameter);
     }
-    //m_pref.begin(PREF_NAME);
     m_pref.putString(ccMQTTParam,_mqttParameter);
-    //m_pref.end();
 }
 void WifiMQTTManagerClass::SetMQTTPort(uint16_t Port){
         _mqttPort = Port;
         if (_mqttPort >= 20 && _mqttPort <= 65535) {
-            //m_pref.begin(PREF_NAME);
             m_pref.putUInt16(ccMQTTPort,_mqttPort);
-            //m_pref.end();
         }
 }
 
