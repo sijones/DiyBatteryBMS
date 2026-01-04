@@ -207,6 +207,7 @@ String generateDatatoJSON(bool All)
   doc["forcecharge"] = Inverter.ForceCharge();
   doc["chargecurrent"] = Inverter.GetChargeCurrent();
   doc["dischargecurrent"] = Inverter.GetDischargeCurrent();
+  doc["maxdischargecurrent"] = Inverter.GetMaxDischargeCurrent();
   doc["chargeadjust"] = Inverter.GetChargeAdjust();
   doc["totalheap"] = ESP.getHeapSize();
   doc["freeheap"] = ESP.getFreeHeap();

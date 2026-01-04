@@ -520,6 +520,7 @@ bool CANBUS::SendCANData(){
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
   uint16_t _tempDisChargeCurr = (_dischargeCurrentmA * 0.01);
+  u_int16_t _tempMaxDisChargeCurr = (_maxDischargeCurrentmA * 0.01);
   int16_t _tempBattTemp = (_battTemp * 10);
 
   byte sndStat;
@@ -616,6 +617,8 @@ bool CANBUS::SendCANData(){
     CAN_MSG[3] = 0;
   }
   if((_dischargeEnabled && _ManualAllowDischarge)){
+    if(_dischargeCurrentmA > _maxDischargeCurrentmA)
+      _tempDisChargeCurr = _tempMaxDisChargeCurr; 
     CAN_MSG[4] = lowByte(_tempDisChargeCurr);      // Maximum discharge current 
     CAN_MSG[5] = highByte(_tempDisChargeCurr);
   } else {

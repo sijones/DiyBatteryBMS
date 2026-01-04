@@ -199,10 +199,25 @@ def process_template(source, target, env, output_dir=None):
 
 
 
-def prepare_data_for_buildfs(env):
+def _restore_templates_if_needed(data_dir):
+  """Ensure visible templates exist if a previous run left them hidden."""
+  for fname in ['index.htm.template', 'index-ap.htm.template']:
+    visible = os.path.join(data_dir, fname)
+    hidden = visible + '.hidden'
+    if os.path.exists(hidden) and not os.path.exists(visible):
+      try:
+        os.rename(hidden, visible)
+        print("[HTML] Restored missing template before build: %s" % fname)
+      except Exception as e:
+        print("[HTML] Warning: Could not restore %s: %s" % (fname, str(e)))
+
+
+def prepare_data_for_buildfs(source, target, env):
   """Generate HTML files into data/ directory and hide templates before filesystem build."""
   project_dir = env['PROJECT_DIR']
   data_dir = os.path.join(project_dir, 'data')
+  
+  _restore_templates_if_needed(data_dir)
   
   # Render templates directly into data/ FIRST (will create index.htm and index-ap.htm)
   process_template(None, None, env, output_dir=data_dir)
@@ -250,13 +265,11 @@ def cleanup_data_after_buildfs(source, target, env):
       except Exception as e:
         print("[HTML] Warning: Could not restore %s: %s" % (fname, str(e)))
 
-# Run immediately on script import to prepare filesystem before buildfs scans
+# Wire pre/post actions around the buildfs target so templates are restored afterward
 try:
-  # Always prepare on import - generate into data/ for buildfs to pick up
-  prepare_data_for_buildfs(env)
-  # Schedule cleanup after buildfs completes
+  env.AddPreAction("buildfs", prepare_data_for_buildfs)
   env.AddPostAction("buildfs", cleanup_data_after_buildfs)
 except Exception as e:
-  print("[HTML] Error during filesystem preparation: %s" % str(e))
+  print("[HTML] Error registering buildfs hooks: %s" % str(e))
   import traceback
   traceback.print_exc()

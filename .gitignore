@@ -9,3 +9,5 @@ dist/
 data/index.htm
 data/index-ap.htm
 HTML_CONSOLIDATION.md
+data/index-ap.htm.template.hidden
+data/index.htm.template.hidden

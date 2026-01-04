@@ -226,6 +226,17 @@ void publishHADiscovery() {
      "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"" +
      deviceJson + "}").c_str(), true);
   yield();
+
+  // Max Discharge Current Number (runtime-set via MQTT, non-persistent)
+  mqttPublish((baseTopic + "/number/" + nodeId + "_maxdischargecurrent/config").c_str(),
+    (String("{\"name\":\"Max Discharge Current\",\"unique_id\":\"") + nodeId + "_maxdischargecurrent", +
+     "\",\n\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.maxdischargecurrent | multiply(0.001) | round(1) }}\"," +
+     "\"command_topic\":\"" + sTopic + "/set/MaxDischargeCurrent\"," +
+     "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"," +
+     "\"suggested_display_precision\":1" +
+     deviceJson + "}").c_str(), true);
+  yield();
   
   // Charge Adjust Sensor
   mqttPublish((baseTopic + "/sensor/" + nodeId + "_chargeadjust/config").c_str(),
@@ -427,6 +438,15 @@ if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
     Inverter.SetDischargeCurrent(message.toInt());
     log_d("Discharge current set to: %d", message.toInt());
     WS_LOG_I("Discharge current set to: %d", message.toInt());
+  }
+  else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/MaxDischargeCurrent")) {
+    float currentA = message.toFloat();
+    int currentmA = (int)round(currentA * 1000.0);  // Convert A to mA
+    if (currentmA > 0) {
+      Inverter.SetMaxDischargeCurrent(currentmA);
+      log_d("Max discharge current set (runtime) to: %.1f A (%d mA)", currentA, currentmA);
+      WS_LOG_I("Max discharge current set (runtime) to: %.1f A (%d mA)", currentA, currentmA);
+    }
   }
   else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/ChargeVoltage")) {
     float voltageV = message.toFloat();
