@@ -352,6 +352,7 @@ bool CANBUS::SendAllUpdates()
 
     uint16_t _tempOverVoltage = (_overVoltage * 0.1);
     uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
+    uint16_t _tempDischargeVoltage = (_dischargeVoltage * 0.1);
     // By default we want to be charging
     bool _tempChargeEnabled = true;
     // Track Charging / Discharging
@@ -425,10 +426,21 @@ bool CANBUS::SendAllUpdates()
     
     // If Low SOC is greater than 0 then we have a limit set
     // if the current battery soc is less or equal stop discharge
-    if( _lowSOCLimit > 0) {
-      if (_battSOC <= _lowSOCLimit && _dischargeEnabled == true)
+    // also stop discharge if voltage drops below discharge voltage
+    if( _lowSOCLimit > 0 || (_battVoltage < _tempDischargeVoltage && _dischargeVoltage > 0)) {
+      bool shouldStopDischarge = false;
+      
+      if (_lowSOCLimit > 0 && _battSOC <= _lowSOCLimit) {
+        shouldStopDischarge = true;
+      }
+      
+      if (_battVoltage < _tempDischargeVoltage && _dischargeVoltage > 0) {
+        shouldStopDischarge = true;
+      }
+      
+      if (shouldStopDischarge && _dischargeEnabled == true)
         DischargeEnable(false);
-      else if (_battSOC > _lowSOCLimit && _dischargeEnabled == false)
+      else if (!shouldStopDischarge && _dischargeEnabled == false)
       {
         DischargeEnable(true);
       }
@@ -619,6 +631,7 @@ bool CANBUS::SendCANData(){
   if((_dischargeEnabled && _ManualAllowDischarge)){
     if(_dischargeCurrentmA > _maxDischargeCurrentmA)
       _tempDisChargeCurr = _tempMaxDisChargeCurr; 
+
     CAN_MSG[4] = lowByte(_tempDisChargeCurr);      // Maximum discharge current 
     CAN_MSG[5] = highByte(_tempDisChargeCurr);
   } else {

@@ -227,12 +227,12 @@ void publishHADiscovery() {
      deviceJson + "}").c_str(), true);
   yield();
 
-  // Max Discharge Current Number (runtime-set via MQTT, non-persistent)
-  mqttPublish((baseTopic + "/number/" + nodeId + "_maxdischargecurrent/config").c_str(),
-    (String("{\"name\":\"Max Discharge Current\",\"unique_id\":\"") + nodeId + "_maxdischargecurrent", +
+  // Discharge Current Number (runtime-set via MQTT, non-persistent)
+  mqttPublish((baseTopic + "/number/" + nodeId + "_dischargecurrent/config").c_str(),
+    (String("{\"name\":\"Discharge Current\",\"unique_id\":\"") + nodeId + "_dischargecurrent", +
      "\",\n\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.maxdischargecurrent | multiply(0.001) | round(1) }}\"," +
-     "\"command_topic\":\"" + sTopic + "/set/MaxDischargeCurrent\"," +
+     "\"value_template\":\"{{ value_json.dischargecurrent | multiply(0.001) | round(1) }}\"," +
+     "\"command_topic\":\"" + sTopic + "/set/DischargeCurrent\"," +
      "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"," +
      "\"suggested_display_precision\":1" +
      deviceJson + "}").c_str(), true);
