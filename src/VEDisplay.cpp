@@ -101,8 +101,6 @@ void Display::SetScreen(Screen Number){
         WriteStringXY((Data.CANBusData._currentValue==true) ? "OK":"No",18,Line2);
         WriteStringXY("MQTT :",0,2);
         WriteStringXY((Data.MQTTConnected._currentValue==true) ? "OK":"No",7,Line3);
-        WriteStringXY("L FS :", 11, 2);
-        WriteStringXY((Data.LittleFSMounted._currentValue==true) ? "OK":"No",18,Line3);
         WriteStringXY("IP: ", 0, Line4);
         WriteStringXY(Data.IPAddr._currentValue,19-Data.IPAddr._currentValue.length(),Line4);              
         break;
@@ -180,9 +178,6 @@ void Display::UpdateScreenValues(){
         }
         if(Data.MQTTConnected.hasChanged()){
             WriteStringXY((Data.MQTTConnected._currentValue==true) ? "OK":"No",7,Line3);
-        }
-        if(Data.LittleFSMounted.hasChanged()){
-            WriteStringXY((Data.LittleFSMounted._currentValue==true)?"OK":"No",18,Line3);
         }
         //if(Data.WebServerState.hasChanged()){
         //    M5.Display.fillRect(_width-_textClear,Line7,_width,Line7+M5.Display.fontHeight(),BLACK);

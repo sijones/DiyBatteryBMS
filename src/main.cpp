@@ -23,7 +23,6 @@
 #include <nvs_flash.h>
 #include "config.h"
 #include "FS.h"
-#include "LittleFS.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include "VEDisplay.h"
@@ -174,19 +173,8 @@ void setup()
   // OW_WAIT_TIME = pref.getInt("OW_WAIT_TIME", OW_WAIT_TIME);
   // #endif
     
-  if (LittleFS.begin(false))
-  {
-    Lcd.Data.LittleFSMounted.setValue(true);
-    log_d("LittleFS storage mounted successfully.");
-    LittleFS.exists("/index.htm") ? log_d("index.htm file found.") : log_d("index.htm file NOT found.");
-    log_d("Testing for index-ap.htm file...");
-    LittleFS.exists("/index-ap.htm") ? log_d("index-ap.htm file found.") : log_d("index-ap.htm file NOT found.");
-  }
-  else
-  {
-    Lcd.Data.LittleFSMounted.setValue(false);
-    log_d("Failed to mount storage (LittleFS).");
-  }
+  // LittleFS removed - HTML now embedded in firmware
+  log_d("Using embedded HTML (no filesystem).");
   
   if (!wifiManager.begin())
   {

@@ -168,6 +168,48 @@
       cursor: pointer;
     }
     
+    .password-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    
+    .password-wrapper input[type="password"],
+    .password-wrapper input[type="text"] {
+      padding-right: 45px;
+    }
+    
+    .password-toggle {
+      position: absolute;
+      right: 8px;
+      cursor: pointer;
+      color: #667eea;
+      font-size: 12px;
+      font-weight: 600;
+      user-select: none;
+      background: rgba(102, 126, 234, 0.1);
+      border: 1px solid #667eea;
+      border-radius: 4px;
+      padding: 4px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: auto;
+      height: 28px;
+      box-shadow: none;
+      transition: all 0.2s ease;
+    }
+    
+    .password-toggle:hover {
+      color: #764ba2;
+      transform: none;
+      box-shadow: none;
+    }
+    
+    .password-toggle:active {
+      transform: none;
+    }
+    
     button {
       padding: 10px 20px;
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -314,7 +356,6 @@
 <body>
   <div class="container">
     <div class="header">
-      <img src="diy-logo-hoz-web.jpg" alt="DIY Battery Integration BMS">
       <h1>DIY Battery BMS</h1>
       <p>System Control & Configuration</p>
     </div>
@@ -553,7 +594,10 @@
         
         <div class="form-group">
           <label for="wifipass">WiFi Password:</label>
-          <input type="password" id="wifipass" onchange="EnqueueUpdate('wifipass')" onkeypress="HandleEnter(event, 'wifipass')">
+          <div class="password-wrapper">
+            <input type="password" id="wifipass" onchange="EnqueueUpdate('wifipass')" onkeypress="HandleEnter(event, 'wifipass')">
+            <button type="button" class="password-toggle" onclick="togglePassword('wifipass')">Show</button>
+          </div>
         </div>
         
         <div class="form-group">
@@ -598,7 +642,10 @@
           </div>
           <div class="form-group">
             <label for="mqttpass">MQTT Password:</label>
-            <input type="password" id="mqttpass" onchange="EnqueueUpdate('mqttpass')" onkeypress="HandleEnter(event, 'mqttpass')">
+            <div class="password-wrapper">
+              <input type="password" id="mqttpass" onchange="EnqueueUpdate('mqttpass')" onkeypress="HandleEnter(event, 'mqttpass')">
+              <button type="button" class="password-toggle" onclick="togglePassword('mqttpass')">Show</button>
+            </div>
           </div>
         </div>
         
@@ -641,13 +688,13 @@
           </form>
         </div>
         
-        <div class="form-group" style="margin-top: 20px;">
+   <!-- <div class="form-group" style="margin-top: 20px;">
           <form id="filesystemForm" action="update?name=filesystem" enctype="multipart/form-data" method="POST" onsubmit="return handleFilesystemUpdate(event)">
             <label>FileSystem:</label>
             <input type="file" accept=".bin,.bin.gz" name="filesystem" id="filesystemFile" style="margin-bottom: 10px;" required>
             <button type="submit" id="filesystemBtn">Update FileSystem</button>
           </form>
-        </div>
+        </div> -->
       </div>
     </div>
   </div>
@@ -658,6 +705,19 @@
     var gateway = `ws://${window.location.hostname}/ws`; 
     var websocket;
     const PIN_FIELDS = ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin','canbuscspin','fanpin','onewirepin'];
+    
+    // Toggle password visibility
+    function togglePassword(fieldId) {
+      const input = document.getElementById(fieldId);
+      const button = input.parentElement.querySelector('.password-toggle');
+      if (input.type === 'password') {
+        input.type = 'text';
+        button.textContent = 'Hide';
+      } else {
+        input.type = 'password';
+        button.textContent = 'Show';
+      }
+    }
     
     // Queue and debounce system
     const DEBOUNCE_DELAY = 400;

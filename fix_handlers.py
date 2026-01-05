@@ -2,7 +2,7 @@
 import re
 
 # Read templates
-for template_file in ['data/index.htm.template', 'data/index-ap.htm.template']:
+for template_file in ['data/index.htm.template']:
     with open(template_file, 'r', encoding='utf-8') as f:
         content = f.read()
     

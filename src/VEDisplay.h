@@ -127,8 +127,6 @@ public:
         String _battAmps = String(BattAmps.getValue()*0.1);
         _battAmps.remove(_battAmps.length()-1);
         return _battAmps + "A";}
-    boolData LittleFSMounted;
-    String GetLittleFSMounted() { return (LittleFSMounted.getValue()) ? String("OK") : String("No"); }
     stringData IPAddr;
     String GetIPAddress() { return IPAddr.getValue(); }
     boolData ForceCharging;

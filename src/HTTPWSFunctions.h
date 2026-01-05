@@ -3,7 +3,8 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <Update.h>
-#include <LittleFS.h>
+#include "config.h"
+#include "embedded_html.h"
 #include "GPIOForbidden.h"
 
 // Log buffer for web UI
@@ -795,126 +796,68 @@ void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEven
   }
 }
 
+// Helper function to send embedded HTML from PROGMEM
+void sendEmbeddedHTML(AsyncWebServerRequest *request) {
+  // Use send() with PROGMEM data (recommended method for ESPAsyncWebServer 3.9.4+)
+  request->send(200, "text/html", (const uint8_t*)EMBEDDED_HTML, EMBEDDED_HTML_LEN);
+}
+
 void StartWebServices()
 {
   log_d("Configuring Web Services.");
-  bool littlefsMounted = Lcd.Data.LittleFSMounted.getValue();
 
-  // Helpers: serve captive page if present, otherwise fall back to /update.
-  // For onNotFound: check if file exists before serving AP page (allows static files through)
-  auto sendIndexAP = [](AsyncWebServerRequest *request){
-    if (LittleFS.exists("/index-ap.htm"))
-      request->send(LittleFS, "/index-ap.htm", "text/html");
-    else
-      request->redirect("/update");
+  // Helpers: serve embedded HTML
+  auto sendIndex = [](AsyncWebServerRequest *request){
+    log_i("Serving Embedded HTML Page");
+    sendEmbeddedHTML(request);
   };
   
-  auto sendIndexAPFallback = [](AsyncWebServerRequest *request){
-    // Only serve AP page for root-like requests; let static files pass through
-    String path = request->url();
-    if (path == "/" || path.indexOf(".") == -1) {  // root or no extension = likely a route
-      if (LittleFS.exists("/index-ap.htm"))
-        request->send(LittleFS, "/index-ap.htm", "text/html");
-      else
-        request->redirect("/update");
-    } else {
-      // Has extension (file request) - let it 404 so static serving can try
-      request->send(404);
-    }
-  };
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    log_i("Serving Embedded HTML Page");
+    request->send(200, "text/html", (const uint8_t*)EMBEDDED_HTML, EMBEDDED_HTML_LEN);
+  });
 
-  auto sendIndexSTA = [](AsyncWebServerRequest *request){
-    if (LittleFS.exists("/index.htm"))
-      request->send(LittleFS, "/index.htm", "text/html");
-    else
-      request->redirect("/update");
-  };
+  server.on("/index.htm", HTTP_GET, [](AsyncWebServerRequest *request){
+  log_i("Serving Embedded HTML Page");
+  request->send(200, "text/html", (const uint8_t*)EMBEDDED_HTML, EMBEDDED_HTML_LEN);
+});
+
+  // Windows NCSI: serve plain text responses to stabilize connectivity classification
+  server.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(200, "text/plain", "Microsoft Connect Test");
+  });
   
-  auto sendIndexSTAFallback = [](AsyncWebServerRequest *request){
-    // Only serve STA page for root-like requests; let static files pass through
-    String path = request->url();
-    if (path == "/" || path.indexOf(".") == -1) {
-      if (LittleFS.exists("/index.htm"))
-        request->send(LittleFS, "/index.htm", "text/html");
-      else
-        request->redirect("/update");
-    } else {
-      request->send(404);
-    }
-  };
-
-  if (wifiManager.GetMode() == WIFI_MODE_AP) {
-    // Check if filesystem is flashed - redirect accordingly
-    if (LittleFS.exists("/index-ap.htm")) {
-      server.rewrite("/", "/index-ap.htm");
-      log_d("LittleFS mounted with index-ap.htm - captive portal mode serving index-ap.htm");
-    } else {
-      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->redirect("/update");
-      });
-      log_w("LittleFS not flashed or missing index-ap.htm - redirecting root to /update");
-    }
-    
-    // Captive portal handlers - serve the page directly; fallback to /update if missing
-    server.on("/generate_204", HTTP_GET, sendIndexAP);
-    // Windows NCSI: serve plain text responses to stabilize connectivity classification
-    server.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(200, "text/plain", "Microsoft Connect Test");
-    });
-    server.on("/redirect", HTTP_GET, sendIndexAP);
-    server.on("/hotspot-detect.html", HTTP_GET, sendIndexAP);
-    server.on("/library/test/success.html", HTTP_GET, sendIndexAP);
-    server.on("/kindle-wifi/wifistub.html", HTTP_GET, sendIndexAP);
-    server.on("/mobile/status.php", HTTP_GET, sendIndexAP);
-    server.on("/ncsi.txt", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(200, "text/plain", "Microsoft NCSI");
-    });
-    server.on("/success.txt", HTTP_GET, sendIndexAP);
-    server.onNotFound(sendIndexAPFallback);  // Smart fallback: allow static files through
-  }
-  else {
-    // Check if filesystem is flashed - redirect accordingly
-    if (LittleFS.exists("/index.htm")) {
-      server.rewrite("/", "/index.htm");
-      log_d("LittleFS mounted with index.htm - redirecting root to index.htm");
-    } else {
-      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->redirect("/update");
-      });
-      log_w("LittleFS not flashed or missing index.htm - redirecting root to /update");
-    }
-    server.onNotFound(sendIndexSTAFallback);  // Smart fallback: allow static files through
-  }
+  server.on("/redirect", HTTP_GET, sendIndex);
+  server.on("/generate_204", HTTP_GET, sendIndex);
+  server.on("/hotspot-detect.html", HTTP_GET, sendIndex);
+  server.on("/library/test/success.html", HTTP_GET, sendIndex);
+  server.on("/kindle-wifi/wifistub.html", HTTP_GET, sendIndex);
+  server.on("/mobile/status.php", HTTP_GET, sendIndex);
+  server.on("/ncsi.txt", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(200, "text/plain", "Microsoft NCSI");
+  });
+  
+  server.on("/success.txt", HTTP_GET, sendIndex);
+  server.onNotFound(sendIndex);
 
   //setup the updateServer with credentials
   updateServer.setup(&server);
   //hook to update events if you need to
   updateServer.onUpdateBegin = [](const UpdateType type, int &result)
   {
-      // Ensure LittleFS is mounted so LittleFS.totalBytes() returns the partition size.
-      // Without mounting, the library passes size 0 to Update.begin(), causing "Bad Size Given".
-      if (type == UpdateType::FILE_SYSTEM) {
-        if (!LittleFS.begin(false)) {
-          log_w("LittleFS mount failed before OTA FS update, formatting and retrying");
-          if (!LittleFS.begin(true)) {
-            log_e("LittleFS format/mount failed; filesystem OTA may still fail");
-          }
-        }
-      }
-      //you can force abort the update like this if you need to:
-      //result = UpdateResult::UPDATE_ABORT;        
-      Serial.println("Update started : " + String(type));
+    // Firmware updates only - filesystem OTA disabled
+    if (type == UpdateType::FILE_SYSTEM) {
+      log_w("Filesystem OTA disabled - embedded HTML only");
+      result = UpdateResult::UPDATE_ABORT;
+    }
+    //you can force abort the update like this if you need to:
+    //result = UpdateResult::UPDATE_ABORT;        
+    Serial.println("Update started : " + String(type));
   };
   updateServer.onUpdateEnd = [](const UpdateType type, int &result)
   {
-      Serial.println("Update finished : " + String(type) + " result: " + String(result));
+    Serial.println("Update finished : " + String(type) + " result: " + String(result));
   };
-
-  // Serve static files only if FS is mounted
-  //server.rewrite("/index.htm", "/index-ap.htm").setFilter(ON_AP_FILTER);
-  if (Lcd.Data.LittleFSMounted.getValue()) {
-    server.serveStatic("/", LittleFS, "/");
-  }
 
   // Web Socket handler
   ws.onEvent(onEvent);
@@ -958,7 +901,10 @@ void StartWebServices()
     request->send(200, "application/json", json);
     json = String();
   });
-  
+  // Start server
+  log_i("Starting Web Server");
+  server.begin();
+  log_i("Completed Web Services setup.");
 }
 
 
@@ -973,30 +919,8 @@ void taskStartWebServices(void * pointer)
   }
   
   log_d("Starting Web Services");
-  
-  if (Lcd.Data.LittleFSMounted.getValue()){
-   /* server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(LittleFS, "/index.html", "text/html");
-    }); */
-    StartWebServices();
-
-/*
-    server.on("/BMS/ChargeVoltage", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/plain", String(Inverter.GetChargeVoltage()).c_str());
-    });
-    server.on("/BMS/DischargeVoltage", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/plain", String(Inverter.GetDischargeVoltage()).c_str());
-    });
-    server.on("/BMS/ChargeCurrent", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/plain", String(Inverter.GetChargeCurrent()).c_str());
-    });
-    server.on("/BMS/DischargeCurrent", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/plain", String(Inverter.GetDischargeCurrent()).c_str());
-    });
-*/
-    Lcd.Data.WebServerState.setValue(true);
-  }
-  server.begin();
+  StartWebServices();
+  Lcd.Data.WebServerState.setValue(true);
   vTaskDelete( NULL );
 }
   

@@ -166,32 +166,6 @@ def process_template(source, target, env, output_dir=None):
       f.write(html_content)
 
     print("[HTML] Generated %s for environment: %s" % (index_output, env_name))
-
-    # Process index-ap.htm (AP mode)
-    ap_template = os.path.join(project_dir, 'data', 'index-ap.htm.template')
-    # Check for hidden template first
-    if not os.path.exists(ap_template):
-      ap_template_hidden = ap_template + '.hidden'
-      if os.path.exists(ap_template_hidden):
-        ap_template = ap_template_hidden
-    ap_output = os.path.join(output_dir, 'index-ap.htm')
-
-    if os.path.exists(ap_template):
-      with open(ap_template, 'r', encoding='utf-8') as f:
-        ap_content = f.read()
-
-      ap_content = ap_content.replace('{{CAN_CONFIG_TITLE}}', config['title'])
-      ap_content = ap_content.replace('{{CAN_CONFIG_FIELDS}}', config['fields'])
-      ap_content = ap_content.replace('{{CAN_FIELD_HANDLERS}}', config['handlers'])
-      ap_content = ap_content.replace('{{FAN_PIN_FIELD}}', fan_field)
-      ap_content = ap_content.replace('{{FAN_PIN_HANDLER}}', fan_handler)
-
-      with open(ap_output, 'w', encoding='utf-8') as f:
-        f.write(ap_content)
-
-      print("[HTML] Generated %s for environment: %s" % (ap_output, env_name))
-    else:
-      print("[HTML] Warning: AP template not found at %s" % ap_template)
   except Exception as e:
     print("[HTML] Error: %s" % str(e))
     import traceback
@@ -201,7 +175,7 @@ def process_template(source, target, env, output_dir=None):
 
 def _restore_templates_if_needed(data_dir):
   """Ensure visible templates exist if a previous run left them hidden."""
-  for fname in ['index.htm.template', 'index-ap.htm.template']:
+  for fname in ['index.htm.template']:
     visible = os.path.join(data_dir, fname)
     hidden = visible + '.hidden'
     if os.path.exists(hidden) and not os.path.exists(visible):
@@ -219,11 +193,11 @@ def prepare_data_for_buildfs(source, target, env):
   
   _restore_templates_if_needed(data_dir)
   
-  # Render templates directly into data/ FIRST (will create index.htm and index-ap.htm)
+  # Render templates directly into data/ FIRST (will create index.htm)
   process_template(None, None, env, output_dir=data_dir)
   
   # THEN hide template files by renaming them (buildfs won't see them)
-  for fname in ['index.htm.template', 'index-ap.htm.template']:
+  for fname in ['index.htm.template']:
     src = os.path.join(data_dir, fname)
     dst = os.path.join(data_dir, fname + '.hidden')
     if os.path.exists(src):
@@ -243,7 +217,7 @@ def cleanup_data_after_buildfs(source, target, env):
   data_dir = os.path.join(project_dir, 'data')
   
   # Remove generated files
-  for fname in ['index.htm', 'index-ap.htm']:
+  for fname in ['index.htm']:
     fpath = os.path.join(data_dir, fname)
     if os.path.exists(fpath):
       try:
@@ -253,7 +227,7 @@ def cleanup_data_after_buildfs(source, target, env):
         print("[HTML] Warning: Could not remove %s: %s" % (fname, str(e)))
   
   # Restore template files
-  for fname in ['index.htm.template', 'index-ap.htm.template']:
+  for fname in ['index.htm.template']:
     src = os.path.join(data_dir, fname + '.hidden')
     dst = os.path.join(data_dir, fname)
     if os.path.exists(src):
