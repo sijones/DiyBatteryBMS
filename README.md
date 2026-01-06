@@ -1,8 +1,6 @@
-Latest source has a breaking change (Jan 2025), the wifi and MQTT details are now stored in a seperate area of the NVS, so if using an older version on upgrade the details will need to be put back in using the AP setup method.
+This is a hobby project and I add features as and when I have time, it means sometimes it's not updated for a while and then sometimes I add a number of features!
 
-Please also note, this is a hobby project and I add features as and when I have time, it means sometimes it's not updated for a while and then sometimes I add a number of features!
-
-This is the new V2 version of https://github.com/sijones/VE.DirectMQTTCANBUS, this will be the version for the future and is actively being developed.
+You can now sponsor and donate to me, the link is on here to buy me a coffee ;)
 
 The new UI means no coding knowledge is required, just flash and set up.
 
@@ -143,3 +141,4 @@ https://www.amazon.co.uk/Victron-Energy-SmartShunt-Battery-Bluetooth/dp/B0856PHN
 ## Disclaimer
 I WILL NOT BE HELD LIABLE FOR ANY DAMAGE THAT YOU DO TO YOU, ONE OF YOUR DEVICES, BURN YOUR HOUSE DOWN, ETC.
 A CERTAIN LEVEL OF KNOWLEDGE IS EXPECTED, LIKE HOW TO WIRE THINGS AND PROGRAM THE SOFTWARE TO YOUR DEVICE.
+
