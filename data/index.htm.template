@@ -346,6 +346,18 @@
       padding: 10px 20px;
     }
     
+    .save-btn {
+      background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+      padding: 12px 30px;
+      font-weight: 600;
+      margin-top: 10px;
+    }
+    
+    .save-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+    }
+    
     @media (max-width: 768px) {
       .form-row {
         grid-template-columns: 1fr;
@@ -587,7 +599,7 @@
         <div class="form-group">
           <label for="wifissid">WiFi Network:</label>
           <div class="wifi-controls">
-            <select id="wifissid" onchange="EnqueueUpdate('wifissid')"></select>
+            <select id="wifissid"></select>
             <button onclick="GetWifiList()">Scan</button>
           </div>
         </div>
@@ -595,14 +607,18 @@
         <div class="form-group">
           <label for="wifipass">WiFi Password:</label>
           <div class="password-wrapper">
-            <input type="password" id="wifipass" onchange="EnqueueUpdate('wifipass')" onkeypress="HandleEnter(event, 'wifipass')">
+            <input type="password" id="wifipass" onkeypress="HandleEnter(event, 'SaveWifiConfig')">
             <button type="button" class="password-toggle" onclick="togglePassword('wifipass')">Show</button>
           </div>
         </div>
         
         <div class="form-group">
           <label for="wifihostname">mDNS Hostname:</label>
-          <input type="textbox" id="wifihostname" onchange="EnqueueUpdate('wifihostname')" onkeypress="HandleEnter(event, 'wifihostname')">
+          <input type="textbox" id="wifihostname" onkeypress="HandleEnter(event, 'SaveWifiConfig')">
+        </div>
+        
+        <div class="form-group">
+          <button onclick="SaveWifiConfig()" class="save-btn">Save WiFi Configuration</button>
         </div>
         
         <div class="section-title">MQTT Server Configuration</div>
@@ -727,6 +743,7 @@
     const debounceTimers = {};
     const pendingAcks = {};
     let toastTimer = null;
+    let savedWifiSSID = '';  // Store the currently saved WiFi SSID
 
     window.addEventListener('load', onLoad);
 
@@ -826,7 +843,23 @@
       if(obj.hasOwnProperty('soctrickenabled')) document.getElementById('soctrickenabled').checked=obj.soctrickenabled;
       if(obj.hasOwnProperty('requestflagsenabled')) document.getElementById('requestflagsenabled').checked=obj.requestflagsenabled;
       if(obj.hasOwnProperty('autocharge')) document.getElementById('autocharge').checked=obj.autocharge;
-      if(obj.hasOwnProperty('wifissid')) { document.getElementById('wifissid').value=obj.wifissid; AckUpdate('wifissid'); }
+      if(obj.hasOwnProperty('wifissid')) { 
+        // Save the SSID as the current saved network
+        savedWifiSSID = obj.wifissid;
+        console.log("Updated saved WiFi SSID: " + savedWifiSSID);
+        // Set the selected SSID in dropdown
+        var select = document.getElementById('wifissid');
+        select.value = obj.wifissid;
+        // If dropdown is empty or doesn't have this SSID option, create it
+        if(select.value !== obj.wifissid) {
+          var el = document.createElement('option');
+          el.textContent = obj.wifissid;
+          el.value = obj.wifissid;
+          el.selected = true;
+          select.appendChild(el);
+        }
+        AckUpdate('wifissid');
+      }
       if(obj.hasOwnProperty('wifipass')) { document.getElementById('wifipass').value=obj.wifipass; AckUpdate('wifipass'); }
       if(obj.hasOwnProperty('wifihostname')) { document.getElementById('wifihostname').value=obj.wifihostname; AckUpdate('wifihostname'); }
       if(obj.hasOwnProperty('victronrxpin')) { document.getElementById('victronrxpin').value=obj.victronrxpin; AckUpdate('victronrxpin'); }
@@ -846,6 +879,11 @@
       if(obj.hasOwnProperty('lcdenabled')) document.getElementById('lcdenabled').checked=obj.lcdenabled;
       if(obj.hasOwnProperty('ntpserver')) { document.getElementById('ntpserver').value=obj.ntpserver; AckUpdate('ntpserver'); }
       {{FAN_PIN_HANDLER}}
+
+      // Handle WiFi scan results from WebSocket
+      if(obj.hasOwnProperty('wifinetworks')) {
+        PopulateWifiList(obj.wifinetworks);
+      }
 
       if(obj.hasOwnProperty('Message')) alert(obj.Message);
       if(obj.hasOwnProperty('ERROR')) alert(obj.ERROR);
@@ -995,7 +1033,47 @@
     function HandleEnter(event, fieldId) {
       if (event.key === 'Enter') {
         event.preventDefault();
-        SendQueuedUpdate(fieldId);
+        if(fieldId === 'SaveWifiConfig') {
+          SaveWifiConfig();
+        } else {
+          SendQueuedUpdate(fieldId);
+        }
+      }
+    }
+
+    function SaveWifiConfig() {
+      // Collect WiFi configuration values
+      const wifissid = document.getElementById('wifissid').value;
+      const wifipass = document.getElementById('wifipass').value;
+      const wifihostname = document.getElementById('wifihostname').value;
+      
+      // Validate that at least SSID is provided
+      if(!wifissid || wifissid.trim() === '') {
+        showToast('Please select a WiFi network', 'error');
+        return;
+      }
+      
+      if(!wifipass || wifipass.trim() === '') {
+        showToast('Please enter a WiFi password', 'error');
+        return;
+      }
+      
+      // Send WiFi configuration via JSON
+      const payload = {
+        wifissid: wifissid,
+        wifipass: wifipass,
+        wifihostname: wifihostname
+      };
+      
+      const jsonString = JSON.stringify(payload);
+      console.log('Saving WiFi config: ' + jsonString);
+      showToast('Saving WiFi configuration...', 'pending');
+      
+      // Send directly to WebSocket without queuing
+      if(websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send(jsonString);
+      } else {
+        showToast('WebSocket not connected', 'error');
       }
     }
 
@@ -1124,31 +1202,76 @@
     }
     
     function GetWifiList() {
-      console.log("Getting Wifi List");
-      var serverurl = `http://${window.location.hostname}/scan`; 
+      console.log("Requesting WiFi scan");
+      // Save the currently selected SSID before clearing
+      var select = document.getElementById('wifissid');
+      if(select.value && select.value !== 'Please Wait...') {
+        savedWifiSSID = select.value;
+        console.log("Saved current WiFi SSID: " + savedWifiSSID);
+      }
+      // Show "Please Wait" in the dropdown - make it selected so it displays
+      select.innerHTML = '';
+      var el = document.createElement('option');
+      el.textContent = 'Please Wait...';
+      el.disabled = true;
+      el.selected = true;  // Make it selected so it shows
+      select.appendChild(el);
+      // Send request via WebSocket
+      websocket.send('GetWifiScan()');
+      // The results will arrive asynchronously via the wifinetworks message
+    }
     
-      fetch(serverurl)
-        .then(response => response.json())
-        .then(json => {
-          var select = document.getElementById("wifissid");
-          var previous = '';
+    function DedupeNetworks(networks) {
+      // Create a map to store the best signal strength for each SSID
+      const ssidMap = {};
+      
+      networks.forEach(network => {
+        if(network.ssid) {
+          // Keep the network with the strongest signal (highest RSSI value)
+          if(!ssidMap[network.ssid] || network.rssi > ssidMap[network.ssid].rssi) {
+            ssidMap[network.ssid] = network;
+          }
+        }
+      });
+      
+      // Convert map back to array and sort by signal strength (strongest first)
+      const deduped = Object.values(ssidMap).sort((a, b) => {
+        // Sort by RSSI in descending order (higher signal strength first)
+        return b.rssi - a.rssi;
+      });
+      
+      console.log("Deduplicated networks: " + networks.length + " -> " + deduped.length);
+      return deduped;
+    }
+    
+    function PopulateWifiList(networks) {
+      console.log("Populating WiFi list with " + networks.length + " networks");
+      
+      // Deduplicate networks, keeping the one with best signal for each SSID
+      const deduped = DedupeNetworks(networks);
+      
+      var select = document.getElementById("wifissid");
+      document.getElementById('wifissid').innerHTML = '';
 
-          document.getElementById('wifissid').innerHTML = '';
-
-          json.forEach(user => {
-            var el = document.createElement("option");
-            if (user.ssid != previous) {
-              previous = user.ssid;
-              el.textContent = user.ssid;
-              el.value = user.ssid;
-              el.className = "dropdown-item";
-              select.appendChild(el);
-              console.log('Adding Option: ' + user.ssid); 
-            } else {
-              console.log('Ignoring duplicate SSID: ' + user.ssid);
-            }
-          });
-        });
+      deduped.forEach(network => {
+        var el = document.createElement("option");
+        el.textContent = network.ssid;
+        el.value = network.ssid;
+        el.className = "dropdown-item";
+        
+        // Select this option if it matches the saved SSID
+        if(network.ssid === savedWifiSSID) {
+          el.selected = true;
+          console.log("Selected saved WiFi: " + network.ssid);
+        }
+        
+        select.appendChild(el);
+        console.log('Adding WiFi Option: ' + network.ssid + ' (RSSI: ' + network.rssi + ')'); 
+      });
+      
+      if(deduped.length === 0) {
+        console.log('No WiFi networks found');
+      }
     }
   </script>
 </body>

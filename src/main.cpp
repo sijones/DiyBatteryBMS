@@ -278,6 +278,49 @@ void setup()
   return;
 }
 
+// Monitor WiFi scan completion and send results via WebSocket
+void UpdateWifiScanResults() {
+  int n = WiFi.scanComplete();
+  
+  // Check if scan completed (n >= 0) and results changed or newly requested
+  taskENTER_CRITICAL(&wifiScanMutex);
+  bool shouldSend = (n >= 0 && (lastWifiScanCount != n || wifiScanRequested));
+  if(shouldSend) {
+    lastWifiScanCount = n;
+    wifiScanRequested = false;
+  }
+  taskEXIT_CRITICAL(&wifiScanMutex);
+  
+  // Build and send JSON outside critical section
+  if(shouldSend) {
+    String json = "{\"wifinetworks\":[";
+    
+    if(n > 0) {
+      for(int i = 0; i < n; i++) {
+        if(i > 0) json += ",";
+        // Get network info - store locally to minimize WiFi API calls
+        String ssid = WiFi.SSID(i);
+        int rssi = WiFi.RSSI(i);
+        uint8_t channel = WiFi.channel(i);
+        uint8_t secure = WiFi.encryptionType(i);
+        json += "{\"ssid\":\"" + ssid + "\",\"rssi\":" + String(rssi) + ",\"channel\":" + String(channel) + ",\"secure\":" + String(secure) + "}";
+      }
+      log_d("WiFi scan completed: %d networks found", n);
+      WS_LOG_I("WiFi scan completed: %d networks found", n);
+    } else {
+      log_d("WiFi scan completed: no networks found");
+      WS_LOG_I("WiFi scan completed: no networks found");
+    }
+    
+    json += "]}";
+    
+    // Send to all WebSocket clients
+    if(ws.count() > 0 && ws.availableForWriteAll()) {
+      ws.textAll(json);
+    }
+  }
+}
+
 void loop()
 {
 
@@ -288,7 +331,10 @@ void loop()
     WS_LOG_I("WiFi connected, IP: %s", WiFi.localIP().toString().c_str());
     FirstRun = false; }
   
-  wifiManager.loop(); 
+  wifiManager.loop();
+
+  // Monitor WiFi scan completion and send results via WebSocket
+  UpdateWifiScanResults();
 
   // Read serial data with timeout protection to prevent watchdog issues
   uint32_t serialStartTime = millis();

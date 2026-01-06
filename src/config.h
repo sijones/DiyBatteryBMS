@@ -23,10 +23,10 @@
 */
 #define SYSLOG 1
 
-#define initBattChargeVoltage 55600       // Battery Charge Voltage sent to inverter
+#define initBattChargeVoltage 0       // Battery Charge Voltage sent to inverter
 #define initBattFullVoltage 0             // Battery Full Voltage - keep SOC from 100% until this value.
 #define initBattOverVoltage 0             // Battery Over Voltage - stop charging if Batt Volts hits this.
-#define initBattDischargeVoltage 45000    // Battery discharge voltage, not currently used
+#define initBattDischargeVoltage 0    // Battery discharge voltage, not currently used
 #define initBattChargeCurrent 0           // in mA, 
 #define initBattDischargeCurrent 0        // in mA 
 #define initBattCapacity 0                // used for charge limits when batteries becoming full.

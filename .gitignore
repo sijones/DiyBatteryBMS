@@ -11,3 +11,4 @@ data/index-ap.htm
 HTML_CONSOLIDATION.md
 data/index-ap.htm.template.hidden
 data/index.htm.template.hidden
+src/embedded_html.h

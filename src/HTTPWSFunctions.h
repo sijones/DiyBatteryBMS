@@ -18,6 +18,11 @@ LogEntry logBuffer[LOG_BUFFER_SIZE];
 int logBufferIndex = 0;
 portMUX_TYPE logMutex = portMUX_INITIALIZER_UNLOCKED;
 
+// WiFi scan state tracking
+int lastWifiScanCount = -2;  // -2 = no scan in progress, -1 = scan in progress, >=0 = completed with count
+portMUX_TYPE wifiScanMutex = portMUX_INITIALIZER_UNLOCKED;
+bool wifiScanRequested = false;  // Track if scan was requested to trigger background scan
+
 // Function to send log to WebSocket clients
 void sendLogToWS(const char* message, const char* level) {
   // Only send if WebSocket is initialized and has connected clients
@@ -277,6 +282,22 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         }
       }
     }
+    else if (strncmp(data,"GetWifiScan()",len)==0) {
+      // Request new WiFi scan in background
+      log_d("WiFi scan requested via WebSocket");
+      taskENTER_CRITICAL(&wifiScanMutex);
+      int scanStatus = WiFi.scanComplete();
+      taskEXIT_CRITICAL(&wifiScanMutex);
+      
+      // Start scan only if not already in progress
+      if(scanStatus != -1) {
+        log_d("Starting background WiFi scan");
+        WS_LOG_D("Started background WiFi scan via WebSocket request");
+        WiFi.scanNetworks(true);
+      } else {
+        log_d("WiFi scan already in progress");
+      }
+    }
     else if (strncmp(data,"GetChargeVoltage",len)==0)
       wsclient->printf(GetWSDataJson((String) "chargevoltage",(String) Inverter.GetChargeVoltage()));
     else if (strncmp(data,"GetDischargeVoltage",len)==0)
@@ -323,16 +344,34 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       wsclient->printf(GetWSDataJson((String) "soctrickenabled",(String) pref.getBool(ccSOCTrick,false)));
     else if (strncmp(data,"GetRequestFlagsEnabled()",len)==0)
       wsclient->printf(GetWSDataJson((String) "requestflagsenabled",(String) pref.getBool(ccRequestFlags,false)));
-    else 
+    else {
+      WS_LOG_D("Unknown Get Request via WebSocket: %s", data);
       wsclient->printf("{\"ERROR\" : \"Unknown Get Request\"}");
     }
-    else {
-      //if (strncmp(data,"Set",(int)3)==0)  
-        // Handle Set Commands
-        bool handled = false;
-        deserializeJson(doc,data);
-       // pref.begin(PREF_NAME);
+  }
+  else {
+      // Handle Set Commands
+      bool handled = false;
+      deserializeJson(doc,data);
 
+      if (!doc["wifiscan"].isNull()) {
+        // Trigger WiFi scan in background
+        log_d("WiFi scan requested via JSON Set");
+        taskENTER_CRITICAL(&wifiScanMutex);
+        int scanStatus = WiFi.scanComplete();
+        taskEXIT_CRITICAL(&wifiScanMutex);
+        
+        // Start scan only if not already in progress
+        if(scanStatus != -1) {
+          log_d("Starting background WiFi scan");
+          WiFi.scanNetworks(true);
+          WS_LOG_I("WiFi scan started");
+        } else {
+          log_d("WiFi scan already in progress");
+        }
+        handled = true;
+      }
+      
       if (!doc["chargevoltage"].isNull()) {
         pref.putUInt32(ccChargeVolt,(uint32_t) doc["chargevoltage"]);
         Inverter.SetChargeVoltage((uint32_t) doc["chargevoltage"]); 
@@ -713,6 +752,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         {
         //  ws.textAll("{ \"Message\" : \"Rebooting now\" }");
         //  delay(25);
+          WS_LOG_I("Rebooting as requested via WebSocket");
           ws.closeAll();
           delay(25);
           handled = true;
@@ -751,6 +791,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       
       if (!doc["erasekeepwifi"].isNull()){
         if(doc["erasekeepwifi"]){
+          WS_LOG_I("Erasing all preferences except WiFi settings as requested via WebSocket");
           pref.clear(false);
           handled = true;
           ESP.restart();
@@ -768,6 +809,7 @@ void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEven
   if(type == WS_EVT_CONNECT){
     //client connected
     log_i("ws[%s][%u] connected", wsserver->url(), wsclient->id());
+    WS_LOG_I("WebSocket Client %u connected", wsclient->id());
     //wsclient->printf("Your Client %u :)", wsclient->id());
     wsclient->ping();
   } else if(type == WS_EVT_DISCONNECT){
@@ -862,18 +904,15 @@ void StartWebServices()
   // Web Socket handler
   ws.onEvent(onEvent);
   server.addHandler(&ws);
-  // Scan network URL call
+  // Scan network URL call (deprecated, use WebSocket GetWifiScan() instead)
   server.on("/scan", HTTP_POST | HTTP_GET, [](AsyncWebServerRequest *request)
   {
     String json = "[";
+    taskENTER_CRITICAL(&wifiScanMutex);
     int n = WiFi.scanComplete();
-    if(n == -2)
-    {
-      // Start scan if no scan in progress
-      log_d("Starting Network Scan");
-      WiFi.scanNetworks(true);
-    } 
-    else if(n)
+    
+    // Return current results (if any completed scan exists)
+    if(n > 0)
     {
       int i = 0;
       for (i = 0; i < n; ++i)
@@ -888,15 +927,17 @@ void StartWebServices()
         json += "}";
       }
       log_d("Network scan returning %d results",i);
-      WiFi.scanDelete();
-//      if(WiFi.scanComplete() == -2)
-//      {
-//        // Only re-trigger scan if still in AP mode
-//        if(WiFi.getMode() == WIFI_MODE_AP) {
-//          WiFi.scanNetworks(true);
-//        }
-//      }
     }
+    
+    // Always trigger a new background scan for next request
+    if(WiFi.scanComplete() != -1)
+    {
+      // Only start if no scan is already in progress
+      log_d("Starting new background network scan");
+      WiFi.scanNetworks(true);
+    }
+    taskEXIT_CRITICAL(&wifiScanMutex);
+    
     json += "]";
     request->send(200, "application/json", json);
     json = String();
