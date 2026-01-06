@@ -31,13 +31,20 @@ The device itself no longer requires internet as the NTP Servers are now configu
 
 ## Features
 - Setup from a browser, flash to your ESP32 device then go to http://192.168.4.1 and connect it to your wifi, once connected go to http://diy-batterybms.local or it's IP address to configure all settings.
+- **NEW**: Improved WiFi Setup Experience:
+  - WebSocket-based WiFi network scanning with automatic background refresh
+  - Networks sorted by signal strength for easier selection
+  - Duplicate networks filtered (strongest signal retained)
+  - Preserved saved SSID selection across scans
+  - WiFi configuration requires explicit save (manual save button for SSID, password, and mDNS hostname)
 - Listen to VE.Direct messages and publish some of the information to a MQTT broker<br> The MQTT Topic is fully configurable.
-- **NEW**: Home Assistant MQTT Discovery - Automatically creates all sensors and switches in Home Assistant with no manual configuration required
+- Home Assistant MQTT Discovery - Automatically creates all sensors and switches in Home Assistant with no manual configuration required
 - Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates. See the home assistant file for the commands and config (optional - discovery creates these automatically).
 - Supports single MQTT server
 - OTA (Over The Air Update)<br> use your browser and go to http://IPADDRESS/update and upload the lastest binary - please note the donation button does not donate to me.
 - LCD Screen Support (LCD 20x4 via I2C)
 - Configurable NTP Server - This is for a future feature.
+- Voltage Limited Charging, automatically reducing charge current to keep the voltage stable
 
 ### Home Assistant Integration
 The device now supports **MQTT Discovery** which automatically creates all entities when connected:
@@ -54,7 +61,7 @@ The device now supports **MQTT Discovery** which automatically creates all entit
 - **Request Flags Enable**: Controls charge/discharge request flags sent to inverter (allows different ways to control inverter response)
 
 ## Features to come:
-- Voltage Limited Charging, automatically reducing charge current to keep the voltage stable
+
 - MQTT to CAN BUS support, use esphome BMS intgrations to feed the data in and send to the inverter.
 - Multi Inverter support
 - OneWire temperature sensors for charge control
