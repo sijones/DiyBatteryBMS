@@ -53,13 +53,92 @@ void VEDataProcess()
         taskEXIT_CRITICAL(&(Inverter.CANMutex));
       }
     }
-    
-   /* if (key.compareTo(String('SOC')) == 0)
+
+    if (key.compareTo(String('P')) == 0)
     {
-      log_i("Battery Temp Update: %sC",parsedValue.c_str());
-      BattTemp((uint16_t) (parsedValue.toInt()*0.1));
-    } */
-   // taskEXIT_CRITICAL(&MainMutex);
+      log_i("Battery Power Update: %sW",parsedValue.c_str());
+      if (dataValid) {
+        taskENTER_CRITICAL(&(Inverter.CANMutex));
+        // Power is in watts (1W increments, can be negative for discharge)
+        int32_t power = parsedValue.toInt();
+        if (value.startsWith("-")) power = -power;
+        Inverter.BattPower(power);
+        taskEXIT_CRITICAL(&(Inverter.CANMutex));
+      }
+    }
+
+    if (key.compareTo(String("TTG")) == 0)
+    {
+      log_i("Time To Go Update: %s minutes",parsedValue.c_str());
+      if (dataValid) {
+        int32_t ttg = parsedValue.toInt();
+        if (value.startsWith("-")) ttg = -ttg;
+        taskENTER_CRITICAL(&(Inverter.CANMutex));
+        // TTG is in minutes (already in correct units)
+        Inverter.TimeToGo(ttg);
+        taskEXIT_CRITICAL(&(Inverter.CANMutex));
+      }
+    }
+
+    if (key.compareTo(String('T')) == 0)
+    {
+      log_i("Battery Temperature Update: %s°C",parsedValue.c_str());
+      if (dataValid) {
+        taskENTER_CRITICAL(&(Inverter.CANMutex));
+        // Temperature is in 0.1°C increments
+        Inverter.BattTemp((int16_t) round(parsedValue.toInt() * 0.1));
+        taskEXIT_CRITICAL(&(Inverter.CANMutex));
+      }
+    }
+
+    if (key.compareTo(String("Alarm")) == 0)
+    {
+      bool alarmState = value.compareTo(String("ON")) == 0;
+      log_i("Alarm State Update: %s", alarmState ? "ON" : "OFF");
+      taskENTER_CRITICAL(&(Inverter.CANMutex));
+      Inverter.AlarmActive(alarmState);
+      taskEXIT_CRITICAL(&(Inverter.CANMutex));
+    }
+
+    if (key.compareTo(String("AR")) == 0)
+    {
+      log_i("Alarm Reason Update: %s",value.c_str());
+      taskENTER_CRITICAL(&(Inverter.CANMutex));
+      Inverter.AlarmReason(value);
+      taskEXIT_CRITICAL(&(Inverter.CANMutex));
+    }
+
+    if (key.compareTo(String("PID")) == 0)
+    {
+      log_i("Product ID Update: %s",value.c_str());
+      taskENTER_CRITICAL(&(Inverter.CANMutex));
+      Inverter.PIDString(value);
+      taskEXIT_CRITICAL(&(Inverter.CANMutex));
+    }
+
+    if (key.compareTo(String("FW")) == 0)
+    {
+      log_i("Firmware Version Update: %s",value.c_str());
+      taskENTER_CRITICAL(&(Inverter.CANMutex));
+      Inverter.FWVersion(value);
+      taskEXIT_CRITICAL(&(Inverter.CANMutex));
+    }
+
+    if (key.compareTo(String("SER#")) == 0)
+    {
+      log_i("Serial Number Update: %s",value.c_str());
+      taskENTER_CRITICAL(&(Inverter.CANMutex));
+      Inverter.SerialNumber(value);
+      taskEXIT_CRITICAL(&(Inverter.CANMutex));
+    }
+
+    if (key.compareTo(String("BMV")) == 0)
+    {
+      log_i("Model Update: BMV-%s",value.c_str());
+      taskENTER_CRITICAL(&(Inverter.CANMutex));
+      Inverter.ModelString("BMV-" + value);
+      taskEXIT_CRITICAL(&(Inverter.CANMutex));
+    }
 
   }
 

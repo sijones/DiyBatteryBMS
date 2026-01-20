@@ -204,6 +204,15 @@ String generateDatatoJSON(bool All)
   doc["battsoc"] = Inverter.BattSOC();
   doc["battvoltage"] = Inverter.BattVoltage();
   doc["battcurrent"] = Inverter.BattCurrentmA();
+  doc["battpower"] = Inverter.BattPower();
+  doc["batttemp"] = Inverter.BattTemp();
+  doc["timetogo"] = Inverter.TimeToGo();
+  doc["alarmactive"] = Inverter.AlarmActive();
+  doc["alarmreason"] = Inverter.AlarmReason();
+  doc["pidstring"] = Inverter.PIDString();
+  doc["fwversion"] = Inverter.FWVersion();
+  doc["serialnumber"] = Inverter.SerialNumber();
+  doc["modelstring"] = Inverter.ModelString();
   doc["chargevoltage"] = Inverter.GetChargeVoltage();
   taskEXIT_CRITICAL(&(Inverter.CANMutex));
   

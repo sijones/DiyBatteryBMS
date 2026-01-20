@@ -160,6 +160,19 @@ bool sendVE2MQTT() {
   // Send SOC
   sprintf (buffer, "%i", Inverter.BattSOC());
   mqttPublish((sTopic + "/SOC").c_str(),buffer,false);
+  // Send Power (signed, can be negative for discharge)
+  sprintf (buffer, "%ld", Inverter.BattPower());
+  mqttPublish((sTopic + "/P").c_str(),buffer,false);
+  // Send Temperature
+  sprintf (buffer, "%d", Inverter.BattTemp());
+  mqttPublish((sTopic + "/T").c_str(),buffer,false);
+  // Send Time to Go
+  sprintf (buffer, "%ld", Inverter.TimeToGo());
+  mqttPublish((sTopic + "/TTG").c_str(),buffer,false);
+  // Send Alarm Status
+  mqttPublish((sTopic + "/Alarm").c_str(), Inverter.AlarmActive() ? "ON" : "OFF", false);
+  // Send Alarm Reason
+  mqttPublish((sTopic + "/AR").c_str(), Inverter.AlarmReason().c_str(), false);
 
   return true;
 }
@@ -204,8 +217,17 @@ void publishHADiscovery() {
     (String("{\"name\":\"Battery Current\",\"unique_id\":\"") + nodeId + "_current\"," +
     "\"state_topic\":\"" + sTopic + "/Data\"," +
     "\"value_template\":\"{{ value_json.battcurrent | multiply(0.1) | round(1) }}\"," +
-    "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"" +
+    "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"," +
     "\"suggested_display_precision\":1" +
+     deviceJson + "}").c_str(), true);
+  yield();
+
+  // Battery Temperature Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_temperature/config").c_str(),
+    (String("{\"name\":\"Battery Temperature\",\"unique_id\":\"") + nodeId + "_temperature\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.batttemp }}\"," +
+     "\"unit_of_measurement\":\"°C\",\"device_class\":\"temperature\",\"state_class\":\"measurement\"" +
      deviceJson + "}").c_str(), true);
   yield();
   
@@ -224,6 +246,7 @@ void publishHADiscovery() {
      "\"state_topic\":\"" + sTopic + "/Data\"," +
      "\"value_template\":\"{{ value_json.dischargecurrent | multiply(0.001) | round(1) }}\"," +
      "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"" +
+     "\"suggested_display_precision\":1" +
      deviceJson + "}").c_str(), true);
   yield();
 
@@ -242,8 +265,9 @@ void publishHADiscovery() {
   mqttPublish((baseTopic + "/sensor/" + nodeId + "_chargeadjust/config").c_str(),
     (String("{\"name\":\"Charge Adjust\",\"unique_id\":\"") + nodeId + "_chargeadjust\"," +
      "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.chargeadjust | multiply(0.001) | round(2) }}\"," +
+     "\"value_template\":\"{{ value_json.chargeadjust | multiply(0.001) | round(1) }}\"," +
      "\"state_class\":\"measurement\"" +
+     "\"suggested_display_precision\":1" +
      deviceJson + "}").c_str(), true);
   yield();
   
@@ -367,9 +391,88 @@ void publishHADiscovery() {
      "\"min\":0.0,\"max\":100.0,\"step\":0.1" +
      deviceJson + "}").c_str(), true);
   yield();
+
+  // Battery Power Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_power/config").c_str(),
+    (String("{\"name\":\"Battery Power\",\"unique_id\":\"") + nodeId + "_power\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.battpower }}\"," +
+     "\"unit_of_measurement\":\"W\",\"device_class\":\"power\",\"state_class\":\"measurement\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+
+  // Time To Go Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_timetogo/config").c_str(),
+    (String("{\"name\":\"Time To Go\",\"unique_id\":\"") + nodeId + "_timetogo\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.timetogo }}\"," +
+     "\"unit_of_measurement\":\"min\",\"device_class\":\"duration\",\"state_class\":\"measurement\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+
+  // VE.Direct Alarm Binary Sensor
+  mqttPublish((baseTopic + "/binary_sensor/" + nodeId + "_vealarm/config").c_str(),
+    (String("{\"name\":\"VE.Direct Alarm\",\"unique_id\":\"") + nodeId + "_vealarm\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{% if value_json.alarmactive %}ON{% else %}OFF{% endif %}\"," +
+     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"," +
+     "\"entity_category\":\"diagnostic\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+
+  // VE.Direct Alarm Reason Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_vealarmmessage/config").c_str(),
+    (String("{\"name\":\"VE.Direct Alarm Reason\",\"unique_id\":\"") + nodeId + "_vealarmmessage\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.alarmreason }}\"," +
+     "\"entity_category\":\"diagnostic\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+
+  // Device Info Sensors
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_devicemodel/config").c_str(),
+    (String("{\"name\":\"Device Model\",\"unique_id\":\"") + nodeId + "_devicemodel\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.modelstring }}\"," +
+     "\"entity_category\":\"diagnostic\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_devicefirmware/config").c_str(),
+    (String("{\"name\":\"Device Firmware\",\"unique_id\":\"") + nodeId + "_devicefirmware\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.fwversion }}\"," +
+     "\"entity_category\":\"diagnostic\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
+
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_deviceserialnumber/config").c_str(),
+    (String("{\"name\":\"Device Serial Number\",\"unique_id\":\"") + nodeId + "_deviceserialnumber\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.serialnumber }}\"," +
+     "\"entity_category\":\"diagnostic\"" +
+     deviceJson + "}").c_str(), true);
+  yield();
   
   log_i("Home Assistant Discovery published successfully.");
   WS_LOG_I("Home Assistant Discovery published successfully.");
+}
+
+void mqttReconnectTimerCallback(TimerHandle_t xTimer) {
+    if (!mqttEnabled) return;
+    
+    // Only attempt reconnect if WiFi is connected
+    if (!wifiManager.isWiFiConnected()) {
+        log_w("Cannot reconnect to MQTT: WiFi not connected");
+        WS_LOG_W("Cannot reconnect to MQTT: WiFi not connected");
+        return;
+    }
+    
+    if (!mqttClient.connected()) {
+        log_i("MQTT reconnect timer triggered, attempting connection...");
+        WS_LOG_I("MQTT reconnect timer triggered, attempting connection...");
+        mqttClient.connect();
+    }
 }
 
 void connectToMqtt() {
@@ -399,6 +502,7 @@ void onMqttConnect(bool sessionPresent) {
 
 void onMqttDisconnect(bool sessionPresent) {
   log_d("Disconnected from MQTT, sessionPresent: %d, Cleaning up pending messages.", sessionPresent);
+  WS_LOG_W("MQTT disconnected, scheduling reconnect...");
   Lcd.Data.MQTTConnected.setValue(false);
   for (int i = 0; i < MAX_PENDING_MSGS; i++) {
   if (pending_msgs[i].active) {
@@ -409,6 +513,14 @@ void onMqttDisconnect(bool sessionPresent) {
     pending_msgs[i].msg_id = -1;
     pending_msgs[i].active = false;
     }
+  }
+  
+  // Schedule reconnection attempt after delay
+  if (mqttEnabled && mqttReconnectTimer != NULL) {
+    log_i("Scheduling MQTT reconnect in 10 seconds...");
+    WS_LOG_I("Scheduling MQTT reconnect in 10 seconds...");
+    xTimerChangePeriod(mqttReconnectTimer, pdMS_TO_TICKS(10000), pdMS_TO_TICKS(100));
+    xTimerStart(mqttReconnectTimer, pdMS_TO_TICKS(100));
   }
 }
 
@@ -569,8 +681,15 @@ void mqttsetup() {
     mqttClient.onDisconnect(onMqttDisconnect);
     mqttClient.onSubscribe(onMqttSubscribe);
   //  mqttClient.onUnsubscribe(onMqttUnsubscribe);
-    mqttClient.onMessage(onMqttMessage);  
-
-
+    mqttClient.onMessage(onMqttMessage);
     
+    // Create timer for MQTT reconnection (10 second intervals)
+    if (mqttReconnectTimer == NULL) {
+      mqttReconnectTimer = xTimerCreate("mqttReconnectTimer", pdMS_TO_TICKS(10000), pdFALSE, (void*)0, mqttReconnectTimerCallback);
+      if (mqttReconnectTimer == NULL) {
+        log_e("Failed to create MQTT reconnect timer");
+      } else {
+        log_d("MQTT reconnect timer created successfully");
+      }
+    }
 }

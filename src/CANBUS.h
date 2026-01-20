@@ -80,6 +80,16 @@ volatile int32_t _battCurrentmA = 0;
 volatile int16_t _battTemp = 10;
 volatile uint32_t _battCapacity = 0; // Only used for limiting current at high SOC.
 
+// Additional VE.Direct parameters
+volatile int32_t _battPower = 0;       // Power in watts (can be negative for discharge)
+volatile int32_t _timeToGo = -1;       // Time to go in minutes (-1 = unknown)
+volatile bool _alarmActive = false;    // Alarm state
+String _alarmReason = "";             // Alarm reason string
+String _pidString = "";               // Product ID (e.g., "0x203")
+String _fwVersion = "";               // Firmware version
+String _serialNumber = "";            // Serial number
+String _modelString = "";             // Model name (e.g., "BMV-700")
+
     // Used to tell the inverter battery limits
 volatile uint16_t _chargeVoltage = 0;
 volatile uint32_t _dischargeVoltage = 0; 
@@ -257,5 +267,23 @@ public:
   bool EnableSOCTrick(){return _enableSOCTrick;}
   bool EnableRequestFlags(){return _enableRequestFlags;}
   bool CanBusFailed(){return (_failedCanSendCount > _maxFailedCanSendCount || !_initialised); }
+
+  // Additional VE.Direct parameter accessors
+  int32_t BattPower(){return _battPower;}
+  void BattPower(int32_t power){_battPower = power;}
+  int32_t TimeToGo(){return _timeToGo;}
+  void TimeToGo(int32_t ttg){_timeToGo = ttg;}
+  bool AlarmActive(){return _alarmActive;}
+  void AlarmActive(bool state){_alarmActive = state;}
+  String AlarmReason(){return _alarmReason;}
+  void AlarmReason(String reason){_alarmReason = reason;}
+  String PIDString(){return _pidString;}
+  void PIDString(String pid){_pidString = pid;}
+  String FWVersion(){return _fwVersion;}
+  void FWVersion(String fw){_fwVersion = fw;}
+  String SerialNumber(){return _serialNumber;}
+  void SerialNumber(String sn){_serialNumber = sn;}
+  String ModelString(){return _modelString;}
+  void ModelString(String model){_modelString = model;}
 
 }; // End of Class

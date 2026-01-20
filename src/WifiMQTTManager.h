@@ -21,6 +21,9 @@ class WifiMQTTManagerClass {
         bool _wifiOK;
         bool _wifiEnabled = false;
         bool _dnsStarted = false;
+        unsigned long _lastWifiCheckTime = 0;
+        unsigned long _wifiReconnectDelay = 10000; // 10 seconds between reconnect attempts
+        bool _wifiWasConnected = false;
         String _wifiSSID = "";
         String _wifiPass = "";
         String _mqttServer = "";

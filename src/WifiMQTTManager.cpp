@@ -61,6 +61,8 @@ bool WifiMQTTManagerClass::begin()
         WiFi.setAutoReconnect(true);
         _wifiEnabled = true;
         _needConfig = false;
+        _wifiWasConnected = false;
+        _lastWifiCheckTime = millis();
     }
     else {
         log_d("Wifi needs configuring, Starting AP Mode");
@@ -156,6 +158,33 @@ void WifiMQTTManagerClass::loop()
 {
     if (_dnsStarted)         
       _dnsserver.processNextRequest();
+    
+    // Handle WiFi reconnection in STA mode
+    if (_wifiEnabled && WiFi.getMode() == WIFI_MODE_STA) {
+        bool isConnected = WiFi.isConnected();
+        unsigned long now = millis();
+        
+        // Detect connection loss and log it
+        if (!isConnected && _wifiWasConnected) {
+            log_w("WiFi disconnected, attempting reconnection...");
+            _wifiWasConnected = false;
+            _lastWifiCheckTime = now;
+        }
+        
+        // Track successful connections
+        if (isConnected && !_wifiWasConnected) {
+            log_i("WiFi reconnected successfully");
+            _wifiWasConnected = true;
+            _lastWifiCheckTime = now;
+        }
+        
+        // Attempt reconnect with backoff timing
+        if (!isConnected && (now - _lastWifiCheckTime) >= _wifiReconnectDelay) {
+            log_d("Triggering WiFi reconnect");
+            WiFi.reconnect();
+            _lastWifiCheckTime = now;
+        }
+    }
 }
 
 String WifiMQTTManagerClass::GetIPAddr()
