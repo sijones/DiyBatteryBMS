@@ -113,21 +113,229 @@
     .stat-box {
       background: #f8f8f8;
       border-radius: 8px;
-      padding: 15px;
+      padding: 20px 15px;
       text-align: center;
       margin-bottom: 15px;
+      position: relative;
+      border-left: 4px solid #667eea;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      min-height: 100px;
     }
-    
+
+    .stat-box:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15);
+    }
+
+    .stat-box.clickable {
+      cursor: pointer;
+    }
+
+    .stat-box.clickable:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
+    }
+
+    .stat-box.clickable:active {
+      transform: translateY(-1px);
+    }
+
     .stat-label {
-      font-size: 16px;
+      font-size: 20px;
       color: #666;
-      margin-bottom: 5px;
+      margin-bottom: 8px;
     }
-    
+
     .stat-value {
-      font-size: 28px;
+      font-size: 20px;
       color: #667eea;
-      font-weight: 600;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    /* Battery Visual Indicator */
+    .battery-visual {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 20px 0;
+      gap: 0;
+    }
+
+    .battery-container {
+      position: relative;
+      width: 220px;
+      height: 100px;
+      border: 4px solid #667eea;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #f0f0f0;
+    }
+
+    .battery-level {
+      height: 100%;
+      background: linear-gradient(90deg, #4caf50 0%, #8bc34a 100%);
+      transition: width 0.5s ease, background 0.3s ease;
+      position: absolute;
+      left: 0;
+      top: 0;
+    }
+
+    .battery-level.low { background: linear-gradient(90deg, #f44336 0%, #e91e63 100%); }
+    .battery-level.medium { background: linear-gradient(90deg, #ff9800 0%, #ffc107 100%); }
+    .battery-level.high { background: linear-gradient(90deg, #4caf50 0%, #8bc34a 100%); }
+
+    /* Battery Wave Animation */
+    .battery-wave {
+      position: absolute;
+      width: 200%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      opacity: 0.3;
+      display: none;
+    }
+
+    .battery-wave.active {
+      display: block;
+    }
+
+    .battery-wave::before {
+      content: '';
+      position: absolute;
+      width: 200%;
+      height: 100%;
+      top: 0;
+      left: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+      animation: wave 2s linear infinite;
+    }
+
+    .battery-wave.charging {
+      animation: waveUp 1.5s ease-in-out infinite;
+    }
+
+    .battery-wave.discharging {
+      animation: waveDown 1.5s ease-in-out infinite;
+    }
+
+    @keyframes wave {
+      0% { transform: translateX(-50%); }
+      100% { transform: translateX(0); }
+    }
+
+    @keyframes waveUp {
+      0%, 100% { transform: translateY(3px); }
+      50% { transform: translateY(-3px); }
+    }
+
+    @keyframes waveDown {
+      0%, 100% { transform: translateY(-3px); }
+      50% { transform: translateY(3px); }
+    }
+
+    .battery-percentage {
+      position: absolute;
+      width: 100%;
+      text-align: center;
+      line-height: 100px;
+      font-size: 38px;
+      font-weight: 700;
+      color: #333;
+      z-index: 1;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.8);
+    }
+
+    .battery-tip {
+      width: 12px;
+      height: 40px;
+      background: #667eea;
+      border-radius: 0 4px 4px 0;
+      margin-left: -2px;
+    }
+
+    /* Power Flow Indicator - Compact */
+    .power-flow-indicator {
+      text-align: center;
+      margin: 10px 0;
+      padding: 8px 15px;
+      background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+      border-radius: 6px;
+      border: 2px solid rgba(102, 126, 234, 0.2);
+    }
+
+    .flow-text {
+      font-size: 18px;
+      font-weight: 700;
+      color: #667eea;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .flow-text::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .flow-text.charging::before {
+      animation: pulse 1s infinite;
+    }
+
+    .flow-text.discharging::before {
+      animation: pulse 1s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(1.5); }
+    }
+
+    /* Status Warnings */
+    .status-warnings {
+      margin-top: 20px;
+      padding: 15px;
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+      border-radius: 6px;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .status-warnings.error {
+      background: #f8d7da;
+      border-left-color: #f44336;
+    }
+
+    .warning-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #856404;
+      font-weight: 500;
+    }
+
+    .status-warnings.error .warning-box {
+      color: #721c24;
+    }
+
+    .warning-icon {
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+
+    /* Last Update Timestamp */
+    .last-update {
+      text-align: center;
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px solid #e0e0e0;
+      color: #999;
+      font-size: 16px;
     }
     
     label {
@@ -135,7 +343,7 @@
       margin-bottom: 8px;
       font-weight: 500;
       color: #333;
-      font-size: 14px;
+      font-size: 22px;
     }
     
     input[type="text"],
@@ -385,11 +593,30 @@
       <!-- Home Tab -->
       <div id="home" class="tab-pane active">
         <h2 style="margin-bottom: 20px; color: #667eea;">Battery Status</h2>
-        <div class="stat-box">
-          <div class="stat-label">State of Charge</div>
-          <div class="stat-value"><label id="battsoc">0</label>%</div>
+
+        <!-- Visual Battery Indicator -->
+        <div class="battery-visual">
+          <div class="battery-container">
+            <div class="battery-level" id="batteryLevel" style="width: 0%"></div>
+            <div class="battery-wave" id="batteryWave"></div>
+            <div class="battery-percentage" id="batteryPercentage">0%</div>
+          </div>
+          <div class="battery-tip"></div>
         </div>
-        
+
+        <!-- Power Flow Indicator - Compact -->
+        <div class="power-flow-indicator">
+          <div id="powerFlowText" class="flow-text">Idle</div>
+        </div>
+
+        <!-- Status Warnings (hidden by default) -->
+        <div id="statusWarnings" class="status-warnings" style="display: none;">
+          <div class="warning-box">
+            <span class="warning-icon">&#9888;</span>
+            <span id="warningText">System warning</span>
+          </div>
+        </div>
+
         <div class="form-row">
           <div class="stat-box">
             <div class="stat-label">Battery Voltage</div>
@@ -400,7 +627,7 @@
             <div class="stat-value"><label id="battcurrent">0</label>A</div>
           </div>
         </div>
-        
+
         <div class="form-row">
           <div class="stat-box">
             <div class="stat-label">Charge Limit</div>
@@ -411,16 +638,21 @@
             <div class="stat-value"><label id="dischargecurrent">0</label>A</div>
           </div>
         </div>
-        
+
         <div class="form-row">
-          <div class="stat-box">
+          <div class="stat-box clickable" onclick="toggleChargeEnable()">
             <div class="stat-label">Charge Enabled</div>
             <div class="stat-value" id="chargeenabledStatus" style="font-size: 16px; color: #f44336;">OFF</div>
           </div>
-          <div class="stat-box">
+          <div class="stat-box clickable" onclick="toggleDischargeEnable()">
             <div class="stat-label">Discharge Enabled</div>
             <div class="stat-value" id="dischargeenabledStatus" style="font-size: 16px; color: #f44336;">OFF</div>
           </div>
+        </div>
+
+        <!-- Last Update Timestamp -->
+        <div class="last-update">
+          Last updated: <span id="lastUpdate">--</span>
         </div>
       </div>
       
@@ -821,22 +1053,94 @@
       }
 
       if(obj.hasOwnProperty('RealTime') && obj.RealTime) {
-        if(obj.hasOwnProperty('battsoc')) document.getElementById('battsoc').innerHTML=obj.battsoc;
+        // Update battery SOC and visual indicator
+        if(obj.hasOwnProperty('battsoc')) {
+          const soc = obj.battsoc;
+
+          // Update battery visual
+          const batteryLevel = document.getElementById('batteryLevel');
+          const batteryPercentage = document.getElementById('batteryPercentage');
+
+          if(batteryLevel && batteryPercentage) {
+            batteryLevel.style.width = soc + '%';
+            batteryPercentage.innerHTML = soc + '%';
+
+            // Update battery color based on level
+            batteryLevel.className = 'battery-level';
+            if(soc <= 20) {
+              batteryLevel.classList.add('low');
+            } else if(soc <= 50) {
+              batteryLevel.classList.add('medium');
+            } else {
+              batteryLevel.classList.add('high');
+            }
+          }
+
+          // Show warning if SOC is low
+          updateWarnings(soc, obj.chargeenabled, obj.dischargeenabled);
+        }
+
         if(obj.hasOwnProperty('battvoltage')) document.getElementById('battvoltage').innerHTML=(obj.battvoltage*0.01).toFixed(1);
-        if(obj.hasOwnProperty('battcurrent')) document.getElementById('battcurrent').innerHTML=(obj.battcurrent*0.1).toFixed(1);
+
+        // Update battery current and power flow indicator
+        if(obj.hasOwnProperty('battcurrent')) {
+          const current = obj.battcurrent * 0.1;
+          const battCurrentElem = document.getElementById('battcurrent');
+          if(battCurrentElem) {
+            battCurrentElem.innerHTML = current.toFixed(1);
+          }
+
+          // Update battery wave animation and power flow indicator
+          const batteryWave = document.getElementById('batteryWave');
+          const flowText = document.getElementById('powerFlowText');
+
+          if(batteryWave && flowText) {
+            // Remove all classes first
+            batteryWave.className = 'battery-wave';
+            flowText.className = 'flow-text';
+
+            if(current > 0.5) {
+              // Charging
+              batteryWave.classList.add('active', 'charging');
+              flowText.classList.add('charging');
+              flowText.innerHTML = '&#9650; Charging';
+              flowText.style.color = '#4caf50';
+            } else if(current < -0.5) {
+              // Discharging
+              batteryWave.classList.add('active', 'discharging');
+              flowText.classList.add('discharging');
+              flowText.innerHTML = '&#9660; Discharging';
+              flowText.style.color = '#ff9800';
+            } else {
+              // Idle
+              flowText.innerHTML = 'Idle';
+              flowText.style.color = '#667eea';
+            }
+          }
+        }
+
         if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').innerHTML=(obj.chargecurrent*0.001).toFixed(0);
         if(obj.hasOwnProperty('dischargecurrent')) document.getElementById('dischargecurrent').innerHTML=(obj.dischargecurrent*0.001).toFixed(0);
-        
+
         // Update Charge/Discharge enabled status with color coding
         if(obj.hasOwnProperty('chargeenabled')) {
+          chargeEnabled = obj.chargeenabled;  // Track state for toggle
           let chargeStatus = document.getElementById('chargeenabledStatus');
           chargeStatus.innerHTML = obj.chargeenabled ? 'ON' : 'OFF';
           chargeStatus.style.color = obj.chargeenabled ? '#4caf50' : '#f44336';
         }
         if(obj.hasOwnProperty('dischargeenabled')) {
+          dischargeEnabled = obj.dischargeenabled;  // Track state for toggle
           let dischargeStatus = document.getElementById('dischargeenabledStatus');
           dischargeStatus.innerHTML = obj.dischargeenabled ? 'ON' : 'OFF';
           dischargeStatus.style.color = obj.dischargeenabled ? '#4caf50' : '#f44336';
+        }
+
+        // Update last update timestamp
+        const lastUpdateElem = document.getElementById('lastUpdate');
+        if(lastUpdateElem) {
+          const now = new Date().toLocaleTimeString();
+          lastUpdateElem.textContent = now;
         }
       }
 
@@ -945,6 +1249,24 @@
       var jsonobj = '{"reboot" : true}';
       websocket.send(jsonobj);
       setTimeout(() => setUpdateButtonsDisabled(false), 3000);
+    }
+
+    // Track current charge/discharge enable states
+    let chargeEnabled = false;
+    let dischargeEnabled = false;
+
+    function toggleChargeEnable() {
+      chargeEnabled = !chargeEnabled;
+      console.log('Toggling Charge Enable to: ' + chargeEnabled);
+      showFeedback(chargeEnabled ? 'Enabling charge...' : 'Disabling charge...');
+      websocket.send(JSON.stringify({"manualallowcharge": chargeEnabled}));
+    }
+
+    function toggleDischargeEnable() {
+      dischargeEnabled = !dischargeEnabled;
+      console.log('Toggling Discharge Enable to: ' + dischargeEnabled);
+      showFeedback(dischargeEnabled ? 'Enabling discharge...' : 'Disabling discharge...');
+      websocket.send(JSON.stringify({"manualallowdischarge": dischargeEnabled}));
     }
 
     function showFeedback(message) {
@@ -1171,6 +1493,41 @@
         delete pendingAcks[fieldId];
         showToast('Saved', 'success');
         ProcessQueue();
+      }
+    }
+
+    function updateWarnings(soc, chargeEnabled, dischargeEnabled) {
+      const warningsDiv = document.getElementById('statusWarnings');
+      const warningText = document.getElementById('warningText');
+      let warnings = [];
+
+      // Check for low battery
+      if(soc <= 20) {
+        warnings.push('Low battery: ' + soc + '%');
+      }
+
+      // Check if charging/discharging is disabled
+      if(!chargeEnabled && soc < 80) {
+        warnings.push('Charging disabled');
+      }
+
+      if(!dischargeEnabled && soc > 20) {
+        warnings.push('Discharge disabled');
+      }
+
+      // Display warnings if any
+      if(warnings.length > 0) {
+        warningText.innerHTML = warnings.join(' • ');
+        warningsDiv.style.display = 'block';
+
+        // Make it error style if SOC is critically low
+        if(soc <= 10) {
+          warningsDiv.className = 'status-warnings error';
+        } else {
+          warningsDiv.className = 'status-warnings';
+        }
+      } else {
+        warningsDiv.style.display = 'none';
       }
     }
 

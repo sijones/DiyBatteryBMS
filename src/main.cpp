@@ -84,8 +84,13 @@ void setup()
 {
   pref.begin();
   Serial.begin(115200);
+#if defined(ESPCAN_S3) || defined(ESPCAN_C3)
+  // ESP32-S3 and ESP32-C3 USB-CDC needs time to initialize
+  delay(2000);
+#else
   delay(100);
-  
+#endif
+
   WS_LOG_I("=== DIY Battery BMS Starting ===");
 
   if (!pref.isKey("EEPROMSetup"))
@@ -269,7 +274,12 @@ void setup()
     log_e("Forbidden or zero GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
   }
   // Start NTP Clock Set Task
-  xTaskCreate(&TaskSetClock,"taskSetClock", 2048, NULL, 5, NULL); 
+#if defined(ESPCAN_S3) || defined(ESPCAN_C3)
+  // ESP32-S3 and ESP32-C3 require more stack space for String operations and NTP
+  xTaskCreate(&TaskSetClock,"taskSetClock", 8192, NULL, 5, NULL);
+#else
+  xTaskCreate(&TaskSetClock,"taskSetClock", 2048, NULL, 5, NULL);
+#endif 
   // Set the lcd timer
   time_t t = time(nullptr);
   last_lcd_refresh = t;

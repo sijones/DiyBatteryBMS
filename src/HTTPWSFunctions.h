@@ -443,6 +443,16 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         WS_LOG_I("Set Discharge Enabled to %s", (bool) doc["dischargeenabled"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
+      if (!doc["manualallowcharge"].isNull()) {
+        Inverter.ManualAllowCharge((bool) doc["manualallowcharge"]);
+        WS_LOG_I("Manual Allow Charge set to %s", (bool) doc["manualallowcharge"] ? "true" : "false");
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["manualallowdischarge"].isNull()) {
+        Inverter.ManualAllowDischarge((bool) doc["manualallowdischarge"]);
+        WS_LOG_I("Manual Allow Discharge set to %s", (bool) doc["manualallowdischarge"] ? "true" : "false");
+        handled = true;
+        notifyWSClients(); }
       // Low SOC OFF
       if (!doc["lowsoclimit"].isNull()) {
         pref.putUInt8(ccLowSOCLimit,(uint8_t) doc["lowsoclimit"]);

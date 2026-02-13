@@ -326,7 +326,12 @@ bool CANBUS::StartRunTask()
 {
   if(CanBusAvailable && _canbusEnabled){
   // Create task and pin to Core
-    xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,0);    
+#if defined(ESPCAN_S3) || defined(ESPCAN_C3)
+    // ESP32-S3 and ESP32-C3 require more stack space
+    xTaskCreatePinnedToCore(&canSendTask,"canSendTask",4096,this,6,&tHandle,0);
+#else
+    xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,0);
+#endif
     return true;
   }
   else
@@ -353,6 +358,16 @@ bool CANBUS::SendAllUpdates()
     uint16_t _tempOverVoltage = (_overVoltage * 0.1);
     uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
     uint16_t _tempDischargeVoltage = (_dischargeVoltage * 0.1);
+    uint16_t _tempChargeVoltage = (_chargeVoltage * 0.01);
+
+    // Use a working SOC for charging decisions
+    // If SOC is 100% but voltage hasn't reached charge voltage, fake it to 99% to keep charging
+    uint8_t workingSOC = _battSOC;
+    if (workingSOC >= 100 && _battVoltage < _tempChargeVoltage) {
+      workingSOC = 99;
+      log_d("SOC at 100%% but voltage (%d) < charge voltage (%d), using fake SOC 99%% to continue charging", _battVoltage, _tempChargeVoltage);
+    }
+
     // By default we want to be charging
     bool _tempChargeEnabled = true;
     // Track Charging / Discharging
@@ -363,12 +378,12 @@ bool CANBUS::SendAllUpdates()
     // Calculate charging current
     if (_battCapacity > 0 && _initialBattData)
     {
-      // Initial Calcuation
-      if(_slowchargeSOC[1] > 0 && _battSOC >= _slowchargeSOC[1] && _slowchargeSOCdiv[1] > 0) {
-        _tempChargingCurrent = (_battCapacity / _slowchargeSOCdiv[1]); 
+      // Initial Calcuation - use workingSOC for charging decisions
+      if(_slowchargeSOC[1] > 0 && workingSOC >= _slowchargeSOC[1] && _slowchargeSOCdiv[1] > 0) {
+        _tempChargingCurrent = (_battCapacity / _slowchargeSOCdiv[1]);
         ChargingState = Level2;
       }
-      else if(_slowchargeSOC[0] > 0 && _battSOC >= _slowchargeSOC[0] && _slowchargeSOCdiv[0] > 0) {
+      else if(_slowchargeSOC[0] > 0 && workingSOC >= _slowchargeSOC[0] && _slowchargeSOCdiv[0] > 0) {
         _tempChargingCurrent = (_battCapacity / _slowchargeSOCdiv[0]);
         ChargingState = Level1;
       }
@@ -406,8 +421,8 @@ bool CANBUS::SendAllUpdates()
                 if (_chargeAdjust<0) _chargeAdjust = 0;
                 log_d("Increase Charge Current %i and Adjustment is: %i",_tempChargingCurrent,_chargeAdjust);
               }
-            } else if (_battVoltage < (_tempFullVoltage-50) && _chargeEnabled == false && _battSOC <= 97) {
-              // Start charging if battery voltage under full voltage by 500mV
+            } else if (_battVoltage < (_tempFullVoltage-50) && _chargeEnabled == false && workingSOC <= 97) {
+              // Start charging if battery voltage under full voltage by 500mV - use workingSOC
               ChargeEnable(true);
               log_d("Charging Reenabled by Charge Adjustment");
             }
@@ -447,9 +462,9 @@ bool CANBUS::SendAllUpdates()
     }
 
     // If High SOC is set lower than 100 then we have a limit set
-    // if the current battery soc is equal or more stop charge
+    // if the current battery soc is equal or more stop charge - use workingSOC
     if(_highSOCLimit < 100) {
-      if (_battSOC >= _highSOCLimit && _chargeEnabled == true)
+      if (workingSOC >= _highSOCLimit && _chargeEnabled == true)
       _tempChargeEnabled = false;
     }
     // If Battery Voltage is over "Battery Over Voltage" then stop charging.
