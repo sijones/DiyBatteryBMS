@@ -48,7 +48,7 @@ void VEDataProcess()
       log_i("Battery SOC Update: %s%%",parsedValue.c_str());
       if (dataValid) {
         taskENTER_CRITICAL(&(Inverter.CANMutex));
-        Inverter.BattSOC((uint8_t) round((parsedValue.toInt()*0.1)));
+        Inverter.BattSOC((uint8_t)(parsedValue.toInt() / 10));
         Lcd.Data.BattSOC.setValue(Inverter.BattSOC());
         taskEXIT_CRITICAL(&(Inverter.CANMutex));
       }
