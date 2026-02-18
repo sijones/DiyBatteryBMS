@@ -278,7 +278,7 @@ void setup()
   // ESP32-S3 and ESP32-C3 require more stack space for String operations and NTP
   xTaskCreate(&TaskSetClock,"taskSetClock", 8192, NULL, 5, NULL);
 #else
-  xTaskCreate(&TaskSetClock,"taskSetClock", 2048, NULL, 5, NULL);
+  xTaskCreate(&TaskSetClock,"taskSetClock", 4096, NULL, 5, NULL);
 #endif 
   // Set the lcd timer
   time_t t = time(nullptr);
