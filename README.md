@@ -1,5 +1,7 @@
 This is a hobby project and I add features as and when I have time, it means sometimes it's not updated for a while and then sometimes I add a number of features!
 
+I now accept donations towards supporting the project: https://buymeacoffee.com/sijones2012
+
 You can now sponsor and donate to me, the link is on here to buy me a coffee ;)
 
 The new UI means no coding knowledge is required, just flash and set up.
@@ -141,4 +143,5 @@ https://www.amazon.co.uk/Victron-Energy-SmartShunt-Battery-Bluetooth/dp/B0856PHN
 ## Disclaimer
 I WILL NOT BE HELD LIABLE FOR ANY DAMAGE THAT YOU DO TO YOU, ONE OF YOUR DEVICES, BURN YOUR HOUSE DOWN, ETC.
 A CERTAIN LEVEL OF KNOWLEDGE IS EXPECTED, LIKE HOW TO WIRE THINGS AND PROGRAM THE SOFTWARE TO YOUR DEVICE.
+
 
