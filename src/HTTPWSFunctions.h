@@ -10,8 +10,8 @@
 // Log buffer for web UI
 #define LOG_BUFFER_SIZE 100
 struct LogEntry {
-  String message;
-  String level;
+  char message[201];  // max 200 chars + null terminator
+  char level[10];
   unsigned long timestamp;
 };
 LogEntry logBuffer[LOG_BUFFER_SIZE];
@@ -38,10 +38,12 @@ void sendLogToWS(const char* message, const char* level) {
     ws.textAll(json);
   }
   
-  // Also store in circular buffer
+  // Also store in circular buffer (strncpy is safe inside critical section - no heap alloc)
   taskENTER_CRITICAL(&logMutex);
-  logBuffer[logBufferIndex].message = String(message).substring(0, 200);
-  logBuffer[logBufferIndex].level = level;
+  strncpy(logBuffer[logBufferIndex].message, message, 200);
+  logBuffer[logBufferIndex].message[200] = '\0';
+  strncpy(logBuffer[logBufferIndex].level, level, 9);
+  logBuffer[logBufferIndex].level[9] = '\0';
   logBuffer[logBufferIndex].timestamp = millis();
   logBufferIndex = (logBufferIndex + 1) % LOG_BUFFER_SIZE;
   taskEXIT_CRITICAL(&logMutex);
@@ -238,15 +240,15 @@ void notifyWSClients(bool sendalldata = true) {
     ws.textAll(generateDatatoJSON(sendalldata));
 }
 
-const char * GetWSDataJson(String data, String value)
+String GetWSDataJson(const String& data, const String& value)
 {
   for (auto x : value)
     {
-      if (!isDigit(x) || x == '.' || x == '-' )
-        return String("{\"" + data +"\":\"" + value + "\"}").c_str();
+      if (!isDigit(x) && x != '.' && x != '-' )
+        return "{\"" + data +"\":\"" + value + "\"}";
     }
-    // if we get here all charaters was digits i.e. number
-  return String("{\"" + data +"\":" + value + "}").c_str();
+    // if we get here all characters were digits i.e. number
+  return "{\"" + data +"\":" + value + "}";
 }
 
 void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len){
@@ -259,29 +261,27 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
     else if (strncmp(data,"GetLogs()",len)==0) {
       // Send buffered logs to requesting client (last 50 entries)
       // Copy logs out of critical section first to avoid blocking
-      LogEntry tempLogs[50];
+      // static to avoid ~10KB on stack; struct copy is safe (no heap alloc with char arrays)
+      static LogEntry tempLogs[50];
       int count = 0;
-      
+
       taskENTER_CRITICAL(&logMutex);
       for(int i = 0; i < LOG_BUFFER_SIZE && count < 50; i++) {
         int idx = (logBufferIndex + i) % LOG_BUFFER_SIZE;
-        if(logBuffer[idx].message.length() > 0) {
+        if(logBuffer[idx].message[0] != '\0') {
           tempLogs[count] = logBuffer[idx];
           count++;
         }
       }
       taskEXIT_CRITICAL(&logMutex);
-      
+
       // Send logs outside critical section
       for(int i = 0; i < count; i++) {
         if(wsclient->status() == WS_CONNECTED) {
-          String json = "{\"log\":\"";
-          json += tempLogs[i].message;
-          json += "\",\"level\":\"";
-          json += tempLogs[i].level;
-          json += "\"}";
+          char json[256];
+          snprintf(json, sizeof(json), "{\"log\":\"%s\",\"level\":\"%s\"}", tempLogs[i].message, tempLogs[i].level);
           wsclient->text(json);
-          
+
           // Yield every 10 messages to prevent WDT
           if(i % 10 == 0) {
             yield();
@@ -308,51 +308,51 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       }
     }
     else if (strncmp(data,"GetChargeVoltage",len)==0)
-      wsclient->printf(GetWSDataJson((String) "chargevoltage",(String) Inverter.GetChargeVoltage()));
+      wsclient->printf("%s", GetWSDataJson("chargevoltage", String(Inverter.GetChargeVoltage())).c_str());
     else if (strncmp(data,"GetDischargeVoltage",len)==0)
-      wsclient->printf(GetWSDataJson((String) "dischargevoltage",(String) Inverter.GetDischargeVoltage()));
+      wsclient->printf("%s", GetWSDataJson("dischargevoltage", String(Inverter.GetDischargeVoltage())).c_str());
     else if (strncmp(data,"GetChargeCurrent",len)==0)
-      wsclient->printf(GetWSDataJson((String) "chargecurrent",(String) Inverter.GetChargeCurrent()));
+      wsclient->printf("%s", GetWSDataJson("chargecurrent", String(Inverter.GetChargeCurrent())).c_str());
     else if (strncmp(data,"GetDischargeCurrent",len)==0)
-      wsclient->printf(GetWSDataJson((String) "dischargecurrent",(String) Inverter.GetDischargeCurrent()));
+      wsclient->printf("%s", GetWSDataJson("dischargecurrent", String(Inverter.GetDischargeCurrent())).c_str());
     else if (strncmp(data,"GetMaxChargeCurrent",len)==0)
-      wsclient->printf(GetWSDataJson((String) "maxchargecurrent",(String) Inverter.GetMaxChargeCurrent()));
+      wsclient->printf("%s", GetWSDataJson("maxchargecurrent", String(Inverter.GetMaxChargeCurrent())).c_str());
     else if (strncmp(data,"GetMaxDischargeCurrent",len)==0)
-      wsclient->printf(GetWSDataJson((String) "maxdischargecurrent",(String) Inverter.GetMaxDischargeCurrent()));
+      wsclient->printf("%s", GetWSDataJson("maxdischargecurrent", String(Inverter.GetMaxDischargeCurrent())).c_str());
     else if (strncmp(data,"GetSOC()",len)==0) {
       taskENTER_CRITICAL(&(Inverter.CANMutex));
       uint8_t soc = Inverter.BattSOC();
       taskEXIT_CRITICAL(&(Inverter.CANMutex));
-      wsclient->printf(GetWSDataJson((String) "battsoc",(String) soc));
+      wsclient->printf("%s", GetWSDataJson("battsoc", String(soc)).c_str());
     }
     else if (strncmp(data,"GetBattCurrent()",len)==0) {
       taskENTER_CRITICAL(&(Inverter.CANMutex));
       int32_t current = Inverter.BattCurrentmA();
       taskEXIT_CRITICAL(&(Inverter.CANMutex));
-      wsclient->printf(GetWSDataJson((String) "battcurrent",(String) current));
+      wsclient->printf("%s", GetWSDataJson("battcurrent", String(current)).c_str());
     }
     else if (strncmp(data,"GetBattVoltage()",len)==0) {
       taskENTER_CRITICAL(&(Inverter.CANMutex));
       uint16_t voltage = Inverter.BattVoltage();
       taskEXIT_CRITICAL(&(Inverter.CANMutex));
-      wsclient->printf(GetWSDataJson((String) "battvoltage",(String) voltage));
+      wsclient->printf("%s", GetWSDataJson("battvoltage", String(voltage)).c_str());
     }
     else if (strncmp(data,"GetChargeEnabled()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "chargeenabled",(String) Inverter.ChargeEnable()));
+      wsclient->printf("%s", GetWSDataJson("chargeenabled", String(Inverter.ChargeEnable())).c_str());
     else if (strncmp(data,"GetDischargeEnabled()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "dischargeenabled",(String) Inverter.DischargeEnable()));
+      wsclient->printf("%s", GetWSDataJson("dischargeenabled", String(Inverter.DischargeEnable())).c_str());
     else if (strncmp(data,"GetCANCSPin()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "canbuscspin",(String) pref.getUInt8(ccCanCSPin,0)));
+      wsclient->printf("%s", GetWSDataJson("canbuscspin", String(pref.getUInt8(ccCanCSPin,0))).c_str());
     else if (strncmp(data,"GetVictronRXPin()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "victronrxpin",(String) pref.getUInt8(ccVictronRX,0)));
+      wsclient->printf("%s", GetWSDataJson("victronrxpin", String(pref.getUInt8(ccVictronRX,0))).c_str());
     else if (strncmp(data,"GetVictronTXPin()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "victrontxpin",(String) pref.getUInt8(ccVictronTX,0)));
+      wsclient->printf("%s", GetWSDataJson("victrontxpin", String(pref.getUInt8(ccVictronTX,0))).c_str());
     else if (strncmp(data,"GetPylontechEnabled()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "pylontechenabled",(String) pref.getBool(ccRequestFlags,false)));
+      wsclient->printf("%s", GetWSDataJson("pylontechenabled", String(pref.getBool(ccRequestFlags,false))).c_str());
     else if (strncmp(data,"GetSOCTrickEnabled()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "soctrickenabled",(String) pref.getBool(ccSOCTrick,false)));
+      wsclient->printf("%s", GetWSDataJson("soctrickenabled", String(pref.getBool(ccSOCTrick,false))).c_str());
     else if (strncmp(data,"GetRequestFlagsEnabled()",len)==0)
-      wsclient->printf(GetWSDataJson((String) "requestflagsenabled",(String) pref.getBool(ccRequestFlags,false)));
+      wsclient->printf("%s", GetWSDataJson("requestflagsenabled", String(pref.getBool(ccRequestFlags,false))).c_str());
     else {
       WS_LOG_D("Unknown Get Request via WebSocket: %s", data);
       wsclient->printf("{\"ERROR\" : \"Unknown Get Request\"}");
@@ -927,9 +927,9 @@ void StartWebServices()
   server.on("/scan", HTTP_POST | HTTP_GET, [](AsyncWebServerRequest *request)
   {
     String json = "[";
-    taskENTER_CRITICAL(&wifiScanMutex);
+    // WiFi API is thread-safe internally; no critical section needed
     int n = WiFi.scanComplete();
-    
+
     // Return current results (if any completed scan exists)
     if(n > 0)
     {
@@ -947,7 +947,7 @@ void StartWebServices()
       }
       log_d("Network scan returning %d results",i);
     }
-    
+
     // Always trigger a new background scan for next request
     if(WiFi.scanComplete() != -1)
     {
@@ -955,7 +955,6 @@ void StartWebServices()
       log_d("Starting new background network scan");
       WiFi.scanNetworks(true);
     }
-    taskEXIT_CRITICAL(&wifiScanMutex);
     
     json += "]";
     request->send(200, "application/json", json);

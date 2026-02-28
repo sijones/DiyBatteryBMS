@@ -84,7 +84,7 @@ void setup()
 {
   pref.begin();
   Serial.begin(115200);
-#if defined(ESPCAN_S3) || defined(ESPCAN_C3)
+#if defined(BMS_S3) || defined(BMS_C3)
   // ESP32-S3 and ESP32-C3 USB-CDC needs time to initialize
   delay(2000);
 #else
@@ -274,7 +274,7 @@ void setup()
     log_e("Forbidden or zero GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
   }
   // Start NTP Clock Set Task
-#if defined(ESPCAN_S3) || defined(ESPCAN_C3)
+#if defined(BMS_S3) || defined(BMS_C3)
   // ESP32-S3 and ESP32-C3 require more stack space for String operations and NTP
   xTaskCreate(&TaskSetClock,"taskSetClock", 8192, NULL, 5, NULL);
 #else

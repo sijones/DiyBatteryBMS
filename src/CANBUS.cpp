@@ -326,7 +326,7 @@ bool CANBUS::StartRunTask()
 {
   if(CanBusAvailable && _canbusEnabled){
   // Create task and pin to Core
-#if defined(ESPCAN_S3) || defined(ESPCAN_C3)
+#if defined(BMS_S3) || defined(BMS_C3)
     // ESP32-S3 and ESP32-C3 require more stack space
     xTaskCreatePinnedToCore(&canSendTask,"canSendTask",4096,this,6,&tHandle,0);
 #else
@@ -418,7 +418,6 @@ bool CANBUS::SendAllUpdates()
             if (BatteryCharging && _battVoltage < (_tempFullVoltage-30) && _chargeAdjust > 0) {
               if(_chargeAdjust>=_adjustStep) {
                 _chargeAdjust-=_adjustStep;
-                if (_chargeAdjust<0) _chargeAdjust = 0;
                 log_d("Increase Charge Current %i and Adjustment is: %i",_tempChargingCurrent,_chargeAdjust);
               }
             } else if (_battVoltage < (_tempFullVoltage-50) && _chargeEnabled == false && workingSOC <= 97) {
@@ -429,7 +428,10 @@ bool CANBUS::SendAllUpdates()
           }
       } // End of Auto Charge Logic
 
-      _tempChargingCurrent=(_tempChargingCurrent-_chargeAdjust);
+      if (_chargeAdjust < _tempChargingCurrent)
+        _tempChargingCurrent = _tempChargingCurrent - _chargeAdjust;
+      else
+        _tempChargingCurrent = 0;
       // Here we check we dont go under the min charge
       if(_tempChargingCurrent < _minChargeCurrent)
         _tempChargingCurrent = _minChargeCurrent;
@@ -663,7 +665,7 @@ bool CANBUS::SendCANData(){
     _failedCanSendTotal++;
   } 
   
-  delay(_canSendDelay); 
+  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
 

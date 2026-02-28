@@ -28,7 +28,7 @@ String sTopicData;
 String sClientid;
 uint16_t iPort = 1883; // Default MQTT Port
 
-char buffer[10];
+char buffer[16];
 
 typedef struct 
 {
