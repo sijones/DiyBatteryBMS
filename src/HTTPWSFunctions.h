@@ -49,34 +49,8 @@ void sendLogToWS(const char* message, const char* level) {
   taskEXIT_CRITICAL(&logMutex);
 }
 
-// Custom log function that forwards to WebSocket
-#define WS_LOG_D(format, ...) do { \
-  char buf[256]; \
-  snprintf(buf, sizeof(buf), format, ##__VA_ARGS__); \
-  log_d("%s", buf); \
-  sendLogToWS(buf, "debug"); \
-} while(0)
-
-#define WS_LOG_I(format, ...) do { \
-  char buf[256]; \
-  snprintf(buf, sizeof(buf), format, ##__VA_ARGS__); \
-  log_i("%s", buf); \
-  sendLogToWS(buf, "info"); \
-} while(0)
-
-#define WS_LOG_W(format, ...) do { \
-  char buf[256]; \
-  snprintf(buf, sizeof(buf), format, ##__VA_ARGS__); \
-  log_w("%s", buf); \
-  sendLogToWS(buf, "warning"); \
-} while(0)
-
-#define WS_LOG_E(format, ...) do { \
-  char buf[256]; \
-  snprintf(buf, sizeof(buf), format, ##__VA_ARGS__); \
-  log_e("%s", buf); \
-  sendLogToWS(buf, "error"); \
-} while(0)
+// WS_LOG macros - shared with other translation units via WebLog.h
+#include "WebLog.h"
 
 
 void TaskSetClock(void * pointer) {
@@ -187,12 +161,22 @@ String generateDatatoJSON(bool All)
     doc["slowchargesoc2div"] = Inverter.GetSlowChargeDivider(2);
     doc["lcdenabled"] = pref.getBool(ccLcdEnabled,false);
     doc["ntpserver"] = pref.getString(ccNTPServer,"");
-    doc["fullvoltage"] = Inverter.GetFullVoltage();
     doc["overvoltage"] = Inverter.GetOverVoltage();
     doc["fanpin"] = pref.getUInt8(ccFanPin,0);
     doc["onewirepin"] = pref.getUInt8(ccOneWirePin,0);
     doc["autocharge"] = Inverter.AutoCharge();
     doc["smartinterval"] = Inverter.SmartInterval();
+    doc["tailcurrent"] = Inverter.GetTailCurrentmA();
+    doc["tailduration"] = Inverter.GetTailCurrentDuration();
+    doc["maxabsorptiontime"] = Inverter.GetMaxAbsorptionTime();
+    doc["rechargesoc"] = Inverter.GetRechargeSOC();
+    doc["rechargevoltageoffset"] = Inverter.GetRechargeVoltageOffset();
+    doc["tempprotection"] = Inverter.TempProtectionEnabled();
+    doc["chargehightemp"] = Inverter.GetChargeHighTemp();
+    doc["chargelowtemp"] = Inverter.GetChargeLowTemp();
+    doc["dischargehightemp"] = Inverter.GetDischargeHighTemp();
+    doc["dischargelowtemp"] = Inverter.GetDischargeLowTemp();
+    doc["showtempdashboard"] = Inverter.ShowTempOnDashboard();
     #ifdef ESPCAN
     doc["can_tx_pin"] = pref.getUInt8(ccCAN_TX_PIN, 0);
     doc["can_rx_pin"] = pref.getUInt8(ccCAN_RX_PIN, 0);
@@ -201,7 +185,6 @@ String generateDatatoJSON(bool All)
   }
 
   doc["RealTime"] = true;
-  // CRITICAL: Protect battery state reads with mutex
   taskENTER_CRITICAL(&(Inverter.CANMutex));
   doc["battsoc"] = Inverter.BattSOC();
   doc["battvoltage"] = Inverter.BattVoltage();
@@ -225,7 +208,9 @@ String generateDatatoJSON(bool All)
   doc["chargecurrent"] = Inverter.GetChargeCurrent();
   doc["dischargecurrent"] = Inverter.GetDischargeCurrent();
   doc["maxdischargecurrent"] = Inverter.GetMaxDischargeCurrent();
-  doc["chargeadjust"] = Inverter.GetChargeAdjust();
+  doc["chargephase"] = Inverter.GetChargePhaseName();
+  doc["showtempdashboard"] = Inverter.ShowTempOnDashboard();
+  doc["cantotalfails"] = Inverter.GetFailedTotalCount();
   doc["totalheap"] = ESP.getHeapSize();
   doc["freeheap"] = ESP.getFreeHeap();
   
@@ -385,12 +370,6 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         pref.putUInt32(ccChargeVolt,(uint32_t) doc["chargevoltage"]);
         Inverter.SetChargeVoltage((uint32_t) doc["chargevoltage"]); 
         WS_LOG_I("Set Charge Voltage to %u", (uint32_t) doc["chargevoltage"]);
-        handled = true;
-        notifyWSClients(); }
-      if (!doc["fullvoltage"].isNull()) {
-        pref.putUInt32(ccFullVoltage,(uint32_t) doc["fullvoltage"]);
-        Inverter.SetFullVoltage((uint32_t) doc["fullvoltage"]); 
-        WS_LOG_I("Set Full Voltage to %u", (uint32_t) doc["fullvoltage"]);
         handled = true;
         notifyWSClients(); }
       if (!doc["overvoltage"].isNull()) {
@@ -766,6 +745,74 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         Inverter.SmartInterval(value);
         notifyWSClients();}
 
+      if (!doc["tailcurrent"].isNull()) {
+        pref.putUInt32(ccTailCurrent,(uint32_t) doc["tailcurrent"]);
+        Inverter.SetTailCurrentmA((uint32_t) doc["tailcurrent"]);
+        WS_LOG_I("Set Tail Current to %u mA", (uint32_t) doc["tailcurrent"]);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["tailduration"].isNull()) {
+        pref.putUInt16(ccTailDuration,(uint16_t) doc["tailduration"]);
+        Inverter.SetTailCurrentDuration((uint16_t) doc["tailduration"]);
+        WS_LOG_I("Set Tail Duration to %u s", (uint16_t) doc["tailduration"]);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["maxabsorptiontime"].isNull()) {
+        pref.putUInt16(ccMaxAbsTime,(uint16_t) doc["maxabsorptiontime"]);
+        Inverter.SetMaxAbsorptionTime((uint16_t) doc["maxabsorptiontime"]);
+        WS_LOG_I("Set Max Absorption Time to %u min", (uint16_t) doc["maxabsorptiontime"]);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["rechargesoc"].isNull()) {
+        pref.putUInt8(ccRechargeSOC,(uint8_t) doc["rechargesoc"]);
+        Inverter.SetRechargeSOC((uint8_t) doc["rechargesoc"]);
+        WS_LOG_I("Set Recharge SOC to %u%%", (uint8_t) doc["rechargesoc"]);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["rechargevoltageoffset"].isNull()) {
+        pref.putUInt16(ccRechargeVOff,(uint16_t) doc["rechargevoltageoffset"]);
+        Inverter.SetRechargeVoltageOffset((uint16_t) doc["rechargevoltageoffset"]);
+        WS_LOG_I("Set Recharge Voltage Offset to %u mV", (uint16_t) doc["rechargevoltageoffset"]);
+        handled = true;
+        notifyWSClients(); }
+
+      if (!doc["tempprotection"].isNull()) {
+        bool value = doc["tempprotection"];
+        pref.putBool(ccTempProtect, value);
+        Inverter.TempProtectionEnabled(value);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["chargehightemp"].isNull()) {
+        int16_t value = doc["chargehightemp"];
+        pref.putInt16(ccChgHighTemp, value);
+        Inverter.SetChargeHighTemp(value);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["chargelowtemp"].isNull()) {
+        int16_t value = doc["chargelowtemp"];
+        pref.putInt16(ccChgLowTemp, value);
+        Inverter.SetChargeLowTemp(value);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["dischargehightemp"].isNull()) {
+        int16_t value = doc["dischargehightemp"];
+        pref.putInt16(ccDisHighTemp, value);
+        Inverter.SetDischargeHighTemp(value);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["dischargelowtemp"].isNull()) {
+        int16_t value = doc["dischargelowtemp"];
+        pref.putInt16(ccDisLowTemp, value);
+        Inverter.SetDischargeLowTemp(value);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["showtempdashboard"].isNull()) {
+        bool value = doc["showtempdashboard"];
+        pref.putBool(ccShowTemp, value);
+        Inverter.ShowTempOnDashboard(value);
+        handled = true;
+        notifyWSClients(); }
+
       if (!doc["reboot"].isNull()) {
         if(doc["reboot"])
         {
@@ -795,6 +842,11 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           pref.putUInt8(ccSlowSOCCharge2,Inverter.GetSlowChargeSOCLimit(2));
           pref.putUInt8(ccSlowSOCDivider1,Inverter.GetSlowChargeDivider(1));
           pref.putUInt8(ccSlowSOCDivider2,Inverter.GetSlowChargeDivider(2));
+          pref.putUInt32(ccTailCurrent,Inverter.GetTailCurrentmA());
+          pref.putUInt16(ccTailDuration,Inverter.GetTailCurrentDuration());
+          pref.putUInt16(ccMaxAbsTime,Inverter.GetMaxAbsorptionTime());
+          pref.putUInt8(ccRechargeSOC,Inverter.GetRechargeSOC());
+          pref.putUInt16(ccRechargeVOff,Inverter.GetRechargeVoltageOffset());
           log_d("Save all completed.");
           handled = true;
         }
