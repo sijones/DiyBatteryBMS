@@ -9,7 +9,7 @@ extern "C" {
 }
 //#include <AsyncMqttClient.h>
 #include <PsychicMqttClient.h>
-#define MAX_PENDING_MSGS 10
+#define MAX_PENDING_MSGS 40
 #define MQTT_BUFFER_SIZE 2048
 const unsigned long MQTT_TIMEOUT_MS = 5000;  
 
@@ -173,6 +173,8 @@ bool sendVE2MQTT() {
   mqttPublish((sTopic + "/Alarm").c_str(), Inverter.AlarmActive() ? "ON" : "OFF", false);
   // Send Alarm Reason
   mqttPublish((sTopic + "/AR").c_str(), Inverter.AlarmReason().c_str(), false);
+  // Send Charge Phase
+  mqttPublish((sTopic + "/Param/ChargePhase").c_str(), Inverter.GetChargePhaseName(), false);
 
   return true;
 }
@@ -261,13 +263,22 @@ void publishHADiscovery() {
      deviceJson + "}").c_str(), true);
   yield();
   
-  // Charge Adjust Sensor
+  // Charge Adjust Sensor (deprecated)
   mqttPublish((baseTopic + "/sensor/" + nodeId + "_chargeadjust/config").c_str(),
     (String("{\"name\":\"Charge Adjust\",\"unique_id\":\"") + nodeId + "_chargeadjust\"," +
      "\"state_topic\":\"" + sTopic + "/Data\"," +
      "\"value_template\":\"{{ value_json.chargeadjust | multiply(0.001) | round(1) }}\"," +
-     "\"state_class\":\"measurement\"" +
+     "\"state_class\":\"measurement\"," +
      "\"suggested_display_precision\":1" +
+     deviceJson + "}").c_str(), true);
+  yield();
+
+  // Charge Phase Sensor
+  mqttPublish((baseTopic + "/sensor/" + nodeId + "_chargephase/config").c_str(),
+    (String("{\"name\":\"Charge Phase\",\"unique_id\":\"") + nodeId + "_chargephase\"," +
+     "\"state_topic\":\"" + sTopic + "/Data\"," +
+     "\"value_template\":\"{{ value_json.chargephase }}\"," +
+     "\"icon\":\"mdi:battery-charging\"" +
      deviceJson + "}").c_str(), true);
   yield();
   
@@ -609,13 +620,28 @@ if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
     // Publish updated state immediately
     mqttPublish((wifiManager.GetMQTTTopic() + "/Param/SmartCharge").c_str(), (Inverter.AutoCharge() == true) ? "ON" : "OFF" , true);
   }
-  
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/TailCurrent") {
+    float currentA = message.toFloat();
+    uint32_t currentmA = (uint32_t)round(currentA * 1000.0);
+    Inverter.SetTailCurrentmA(currentmA);
+    pref.putUInt32(ccTailCurrent, currentmA);
+    log_d("Tail current set to: %.1f A (%u mA)", currentA, currentmA);
+    WS_LOG_I("Tail current set to: %.1f A (%u mA)", currentA, currentmA);
+  }
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/RechargeSOC") {
+    uint8_t soc = (uint8_t)message.toInt();
+    Inverter.SetRechargeSOC(soc);
+    pref.putUInt8(ccRechargeSOC, soc);
+    log_d("Recharge SOC set to: %u%%", soc);
+    WS_LOG_I("Recharge SOC set to: %u%%", soc);
+  }
+
 }
 
 void onMqttPublish(uint16_t msg_id) {
  
   // Free buffer associated with this msg_id
-  log_i("MQTT Publish acknowledged. Msg ID: %d", msg_id);
+  log_d("MQTT Publish acknowledged. Msg ID: %d", msg_id);
   for (int i = 0; i < MAX_PENDING_MSGS; i++) {
     if (pending_msgs[i].msg_id == msg_id) {
       free(pending_msgs[i].payloadbuffer);

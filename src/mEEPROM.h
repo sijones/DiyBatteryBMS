@@ -13,7 +13,6 @@ const char* const ccChargeVolt = "ChargeVolt";
 const char* const ccDischargeVolt = "DischargeVolt";
 const char* const ccChargeCurrent = "ChargeCurr";
 const char* const ccDischargeCurrent = "DischargeCurr";
-const char* const ccFullVoltage = "fullvoltage";
 const char* const ccOverVoltage = "overvoltage";
 
 const char* const ccLowSOCLimit = "LowSOCLimit";
@@ -55,6 +54,20 @@ const char* const ccAdjustStep = "AdjustStep";
 const char* const ccMinCharge = "MinCharge";
 const char* const ccMinDischarge = "MinDischarge";
 const char* const ccCAN16Mhz = "CAN16Mhz";
+
+// CC-CV Charging Parameters
+const char* const ccTailCurrent = "TailCurr";
+const char* const ccTailDuration = "TailDuration";
+const char* const ccMaxAbsTime = "MaxAbsTime";
+const char* const ccRechargeSOC = "RechargeSOC";
+const char* const ccRechargeVOff = "RechargeVOff";
+
+const char* const ccTempProtect = "TempProtect";
+const char* const ccChgHighTemp = "ChgHighTemp";
+const char* const ccChgLowTemp = "ChgLowTemp";
+const char* const ccDisHighTemp = "DisHighTemp";
+const char* const ccDisLowTemp = "DisLowTemp";
+const char* const ccShowTemp = "ShowTemp";
 
 const char* const ccVELOOPTIME = "VE_LOOP_TIME";
 const char* const ccCANBusEnabled  = "CANEnabled";

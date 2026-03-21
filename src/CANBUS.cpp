@@ -1,5 +1,6 @@
 #include "CANBUS.h"
 #include "mEEPROM.h"
+#include "WebLog.h"
 
 // Implements Pylontech CAN BUS communication
 // using either MCP2515 or ESP32 TWAI peripheral
@@ -52,7 +53,7 @@ void canSendTask(void * pointer){
 
   while (true)
   {
-    // Critical section not needed here - only reading from CAN RX
+    // Check TWAI alerts and receive any incoming frames
 
 #ifdef ESPCAN
   // Check for TWAI alerts
@@ -76,9 +77,6 @@ void canSendTask(void * pointer){
     }
   }
 
-  // TWAI receive implementation (unified for ESP32 and ESP32-S3)
-  // Note: This task monitors incoming CAN frames for debugging.
-  // Actual Pylontech protocol processing happens in SendAllUpdates().
   twai_message_t rx_msg;
 
   // Receive next CAN frame (non-blocking)
@@ -107,8 +105,6 @@ void canSendTask(void * pointer){
     }
   }
 #endif
-        // Send updates without holding the CAN mutex to avoid long blocking
-        // TWAI transmit calls may block; wrapping them in a critical section can starve other tasks.
         if(!Inverter->SendAllUpdates())
           log_e("Failure returned from SendAllUpdates");
         vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -209,8 +205,7 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
 #endif
   _initialised = true;
   CanBusAvailable = true;
-  _failedCanSendTotal = 0;   
-  _lastChangeInterval = time(nullptr);
+  _failedCanSendTotal = 0;
   return true;
 
   #else
@@ -273,8 +268,6 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
     return false;
   }
   
-  _lastChangeInterval = time(nullptr);
-
   return true;
 
   #endif
@@ -326,12 +319,7 @@ bool CANBUS::StartRunTask()
 {
   if(CanBusAvailable && _canbusEnabled){
   // Create task and pin to Core
-#if defined(BMS_S3) || defined(BMS_C3)
-    // ESP32-S3 and ESP32-C3 require more stack space
     xTaskCreatePinnedToCore(&canSendTask,"canSendTask",4096,this,6,&tHandle,0);
-#else
-    xTaskCreatePinnedToCore(&canSendTask,"canSendTask",2048,this,6,&tHandle,0);
-#endif
     return true;
   }
   else
@@ -346,147 +334,188 @@ bool CANBUS::SendAllUpdates()
     {
     time_t t = time(nullptr);
 
-    // Turn off force charge, this is defined in PylonTech Protocol
-   // if (_battSOC > 96 && _forceCharge){
-   //   ForceCharge(false);
-   // }
-   // Check Auto charge settings are setup
-    if (!_enableAutoCharge){
-      if(_overVoltage > 0 && _fullVoltage > 0 && _adjustStep > 0 && _minChargeCurrent > 0) _enableAutoCharge = true;
-    }
+    // Unit conversions: mV -> centivolts, mA -> deciamps
+    uint16_t chargeVCentiV = (uint16_t)(_chargeVoltage * 0.1);
+    uint16_t overVCentiV = (uint16_t)(_overVoltage * 0.1);
+    uint16_t dischargeVCentiV = (uint16_t)(_dischargeVoltage * 0.1);
+    int32_t tailDA = (int32_t)(_tailCurrentmA / 100);
+    if (tailDA < 1) tailDA = 1;
+    uint16_t rechargeOffCentiV = _rechargeVoltageOffset / 10;
 
-    uint16_t _tempOverVoltage = (_overVoltage * 0.1);
-    uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
-    uint16_t _tempDischargeVoltage = (_dischargeVoltage * 0.1);
-    uint16_t _tempChargeVoltage = (_chargeVoltage * 0.01);
-
-    // Use a working SOC for charging decisions
-    // If SOC is 100% but voltage hasn't reached charge voltage, fake it to 99% to keep charging
+    // If SOC=100 but voltage hasn't reached target, use 99 to keep charging
     uint8_t workingSOC = _battSOC;
-    if (workingSOC >= 100 && _battVoltage < _tempChargeVoltage) {
+    if (workingSOC >= 100 && _battVoltage < chargeVCentiV) {
       workingSOC = 99;
-      log_d("SOC at 100%% but voltage (%d) < charge voltage (%d), using fake SOC 99%% to continue charging", _battVoltage, _tempChargeVoltage);
+      if (!_socOverrideLogged) {
+        _socOverrideLogged = true;
+        WS_LOG_D("SOC at 100%% but voltage (%d) < charge voltage (%d), using SOC 99%%", _battVoltage, chargeVCentiV);
+      }
+    } else {
+      _socOverrideLogged = false;
     }
 
-    // By default we want to be charging
+    bool isCharging = (_battCurrentmA >= 1);
     bool _tempChargeEnabled = true;
-    // Track Charging / Discharging
-    bool BatteryCharging = (_battCurrentmA >= 5) ? true : false;
-    // New Charge Current
-    uint32_t _tempChargingCurrent;
 
-    // Calculate charging current
-    if (_battCapacity > 0 && _initialBattData)
-    {
-      // Initial Calcuation - use workingSOC for charging decisions
-      if(_slowchargeSOC[1] > 0 && workingSOC >= _slowchargeSOC[1] && _slowchargeSOCdiv[1] > 0) {
-        _tempChargingCurrent = (_battCapacity / _slowchargeSOCdiv[1]);
-        ChargingState = Level2;
+    uint32_t baseChargeCurrent = _maxChargeCurrentmA;
+    if (_battCapacity > 0 && _initialBattData) {
+      if (_slowchargeSOC[1] > 0 && workingSOC >= _slowchargeSOC[1] && _slowchargeSOCdiv[1] > 0) {
+        baseChargeCurrent = (_battCapacity / _slowchargeSOCdiv[1]);
       }
-      else if(_slowchargeSOC[0] > 0 && workingSOC >= _slowchargeSOC[0] && _slowchargeSOCdiv[0] > 0) {
-        _tempChargingCurrent = (_battCapacity / _slowchargeSOCdiv[0]);
-        ChargingState = Level1;
+      else if (_slowchargeSOC[0] > 0 && workingSOC >= _slowchargeSOC[0] && _slowchargeSOCdiv[0] > 0) {
+        baseChargeCurrent = (_battCapacity / _slowchargeSOCdiv[0]);
       }
-      else // If no limits set or not hit a limit
-      {
-        ChargingState = Bulk;
-        _tempChargingCurrent = _maxChargeCurrentmA;
-      }
+    }
 
-      if(ChargingState != PrevChargingState){
-        PrevChargingState = ChargingState;
+    ChargePhase prevPhase = _chargePhase;
+
+    switch (_chargePhase) {
+
+    case PHASE_BULK:
+      _chargeAdjust = 0;
+      if (baseChargeCurrent != GetChargeCurrent())
+        SetChargeCurrent(baseChargeCurrent);
+
+      if (isCharging && chargeVCentiV > 5 && _battVoltage >= (chargeVCentiV - 5)) {
+        _chargePhase = PHASE_ABSORPTION;
+        _absorptionStartTime = t;
+        _tailCurrentSustained = false;
+        _tailCurrentStartTime = 0;
         _chargeAdjust = 0;
+        WS_LOG_I("CC-CV: BULK -> ABSORPTION (V=%d, target=%d)", _battVoltage, chargeVCentiV);
       }
+      break;
 
-      if(_useAutoCharge && _enableAutoCharge) 
-      {
-          // Calculate if an adjust is required
-          if(BatteryCharging && (_battVoltage > _tempFullVoltage) &&  (abs(t - _lastChangeInterval) >= SMARTINTERVAL) ) {
-            _lastChangeInterval = t;
-            //   25                   22                2               4 / 6
-            if(((_tempChargingCurrent-_chargeAdjust) + _adjustStep) > (_minChargeCurrent+_adjustStep)) {
-              _chargeAdjust+=_adjustStep;
-              log_d("Decrease Charge Current %i and Adjustment is: %i",_tempChargingCurrent,_chargeAdjust);
-            } else {
-              // Stop charging if no more adjustment available
-              ChargeEnable(false);
-              log_d("Minimum Charge Hit, Stopping Charge by Charge Adjustment");
-            }
-          } 
-          else
-          {
-            if (BatteryCharging && _battVoltage < (_tempFullVoltage-30) && _chargeAdjust > 0) {
-              if(_chargeAdjust>=_adjustStep) {
-                _chargeAdjust-=_adjustStep;
-                log_d("Increase Charge Current %i and Adjustment is: %i",_tempChargingCurrent,_chargeAdjust);
-              }
-            } else if (_battVoltage < (_tempFullVoltage-50) && _chargeEnabled == false && workingSOC <= 97) {
-              // Start charging if battery voltage under full voltage by 500mV - use workingSOC
-              ChargeEnable(true);
-              log_d("Charging Reenabled by Charge Adjustment");
-            }
+    case PHASE_ABSORPTION:
+    {
+      if (_useAutoCharge && _adjustStep > 0) {
+        if (_battVoltage >= chargeVCentiV) {
+          if (_chargeAdjust + _adjustStep < baseChargeCurrent &&
+              baseChargeCurrent - (_chargeAdjust + _adjustStep) >= _minChargeCurrent) {
+            _chargeAdjust += _adjustStep;
+            WS_LOG_D("Absorption: decrease current, adjust=%d", _chargeAdjust);
           }
-      } // End of Auto Charge Logic
+        } else if (_battVoltage < (chargeVCentiV - 3) && _chargeAdjust > 0) {
+          _chargeAdjust = (_chargeAdjust >= _adjustStep) ? (_chargeAdjust - _adjustStep) : 0;
+          WS_LOG_D("Absorption: increase current, adjust=%d", _chargeAdjust);
+        }
+      }
 
-      if (_chargeAdjust < _tempChargingCurrent)
-        _tempChargingCurrent = _tempChargingCurrent - _chargeAdjust;
-      else
-        _tempChargingCurrent = 0;
-      // Here we check we dont go under the min charge
-      if(_tempChargingCurrent < _minChargeCurrent)
-        _tempChargingCurrent = _minChargeCurrent;
+      if (_chargeAdjust > baseChargeCurrent)
+        _chargeAdjust = baseChargeCurrent;
 
-      // Check the charge current has changed and if so set it.
-      if (_tempChargingCurrent != GetChargeCurrent())
-        SetChargeCurrent(_tempChargingCurrent);
+      uint32_t absorptionCurrent = baseChargeCurrent - _chargeAdjust;
+      if (absorptionCurrent < _minChargeCurrent)
+        absorptionCurrent = _minChargeCurrent;
+
+      if (absorptionCurrent != GetChargeCurrent())
+        SetChargeCurrent(absorptionCurrent);
+
+      if (rechargeOffCentiV > 0 && chargeVCentiV > rechargeOffCentiV
+          && _battVoltage < (chargeVCentiV - rechargeOffCentiV)) {
+        _chargePhase = PHASE_BULK;
+        _tailCurrentSustained = false;
+        _chargeAdjust = 0;
+        WS_LOG_I("CC-CV: ABSORPTION -> BULK (voltage dropped: V=%d)", _battVoltage);
+        break;
+      }
+
+      if (_battCurrentmA < tailDA
+          && _battVoltage >= (chargeVCentiV - 10)) {
+        if (!_tailCurrentSustained) {
+          _tailCurrentSustained = true;
+          _tailCurrentStartTime = t;
+          WS_LOG_D("Tail current detected: I=%d DA (threshold=%d DA), timer started", _battCurrentmA, tailDA);
+        } else if ((t - _tailCurrentStartTime) >= _tailCurrentDuration) {
+          _chargePhase = PHASE_COMPLETE;
+          WS_LOG_I("CC-CV: ABSORPTION -> COMPLETE (tail current sustained %ds)", _tailCurrentDuration);
+          break;
+        }
+      } else {
+        if (_tailCurrentSustained) {
+          WS_LOG_D("Tail current lost: I=%d DA, timer reset", _battCurrentmA);
+        }
+        _tailCurrentSustained = false;
+        _tailCurrentStartTime = 0;
+      }
+
+      if (_maxAbsorptionTime > 0 && _absorptionStartTime > 0
+          && (t - _absorptionStartTime) >= ((time_t)_maxAbsorptionTime * 60)) {
+        _chargePhase = PHASE_COMPLETE;
+        WS_LOG_I("CC-CV: ABSORPTION -> COMPLETE (max absorption time %d min)", _maxAbsorptionTime);
+      }
+      break;
     }
-    
-    // If Low SOC is greater than 0 then we have a limit set
-    // if the current battery soc is less or equal stop discharge
-    // also stop discharge if voltage drops below discharge voltage
-    if( _lowSOCLimit > 0 || (_battVoltage < _tempDischargeVoltage && _dischargeVoltage > 0)) {
-      bool shouldStopDischarge = false;
-      
-      if (_lowSOCLimit > 0 && _battSOC <= _lowSOCLimit) {
-        shouldStopDischarge = true;
-      }
-      
-      if (_battVoltage < _tempDischargeVoltage && _dischargeVoltage > 0) {
-        shouldStopDischarge = true;
-      }
-      
-      if (shouldStopDischarge && _dischargeEnabled == true)
-        DischargeEnable(false);
-      else if (!shouldStopDischarge && _dischargeEnabled == false)
-      {
-        DischargeEnable(true);
-      }
-    }
 
-    // If High SOC is set lower than 100 then we have a limit set
-    // if the current battery soc is equal or more stop charge - use workingSOC
-    if(_highSOCLimit < 100) {
-      if (workingSOC >= _highSOCLimit && _chargeEnabled == true)
+    case PHASE_COMPLETE:
       _tempChargeEnabled = false;
+      SetChargeCurrent(0);
+
+      if (_rechargeSOC > 0 && workingSOC < _rechargeSOC) {
+        _chargePhase = PHASE_BULK;
+        WS_LOG_I("CC-CV: COMPLETE -> BULK (SOC %d < recharge %d)", workingSOC, _rechargeSOC);
+      }
+      else if (rechargeOffCentiV > 0 && chargeVCentiV > rechargeOffCentiV
+               && _battVoltage < (chargeVCentiV - rechargeOffCentiV)) {
+        _chargePhase = PHASE_BULK;
+        WS_LOG_I("CC-CV: COMPLETE -> BULK (voltage %d < %d)", _battVoltage, chargeVCentiV - rechargeOffCentiV);
+      }
+      break;
     }
-    // If Battery Voltage is over "Battery Over Voltage" then stop charging.
-    if ((_overVoltage > _dischargeVoltage && _battVoltage >= _tempOverVoltage))
+
+    if (_chargePhase != prevPhase) {
+      _dataChanged = true;
+    }
+
+    bool shouldStopDischarge = false;
+    if (_lowSOCLimit > 0 && _battSOC <= _lowSOCLimit)
+      shouldStopDischarge = true;
+    if (_dischargeVoltage > 0 && _battVoltage < dischargeVCentiV)
+      shouldStopDischarge = true;
+    if (_tempProtectionEnabled) {
+      if (_battTemp >= _dischargeHighTemp || _battTemp <= _dischargeLowTemp)
+        shouldStopDischarge = true;
+    }
+
+    if (shouldStopDischarge && _dischargeEnabled) {
+      DischargeEnable(false);
+      WS_LOG_W("Discharge disabled (SOC=%d, V=%d, T=%d, limit=%d, Vlimit=%d)",
+               _battSOC, _battVoltage, _battTemp, _lowSOCLimit, dischargeVCentiV);
+    }
+    else if (!shouldStopDischarge && !_dischargeEnabled) {
+      DischargeEnable(true);
+      WS_LOG_I("Discharge re-enabled (SOC=%d, V=%d, T=%d)", _battSOC, _battVoltage, _battTemp);
+    }
+
+    if (_highSOCLimit < 100 && workingSOC >= _highSOCLimit)
       _tempChargeEnabled = false;
-      
-    if(_tempChargeEnabled != _chargeEnabled)
+    if (_overVoltage > _dischargeVoltage && _battVoltage >= overVCentiV)
+      _tempChargeEnabled = false;
+    if (_tempProtectionEnabled) {
+      if (_battTemp >= _chargeHighTemp || _battTemp <= _chargeLowTemp)
+        _tempChargeEnabled = false;
+    }
+
+    if (_tempChargeEnabled != _chargeEnabled)
       ChargeEnable(_tempChargeEnabled);
 
-    if (SendCANData()) 
-      return true;
-    else 
-      return false;
+    return SendCANData();
   } 
   else 
   {
-    log_e("CAN Bus Data not initialised or configured.");
+    WS_LOG_E("CAN Bus Data not initialised or configured.");
     return false;
   }
     
+}
+
+const char* CANBUS::GetChargePhaseName() {
+  switch (_chargePhase) {
+    case PHASE_BULK:       return "Bulk";
+    case PHASE_ABSORPTION: return "Absorption";
+    case PHASE_COMPLETE:   return "Complete";
+    default:               return "Unknown";
+  }
 }
 
 void CANBUS::SetChargeVoltage(uint16_t Voltage){
@@ -541,10 +570,9 @@ bool CANBUS::DataChanged(){
 
 bool CANBUS::SendCANData(){
 
-  if (!Initialised() && !Configured()) {
+  if (!Initialised() || !Configured()) {
     return false;
   }
-  uint16_t _tempFullVoltage = (_fullVoltage * 0.1);
   uint16_t _tempChargeVolt = (_chargeVoltage * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
@@ -558,7 +586,7 @@ bool CANBUS::SendCANData(){
   // Send PYLON String
   //if(_enablePYLONTECH) {
   sndStat = SendToDriver(0x35E, 8, MSG_PYLON);
-  if (sndStat != false){
+  if (!sndStat){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   }   
@@ -580,7 +608,7 @@ bool CANBUS::SendCANData(){
   //if (_dischargeEnabled && _ManualAllowDischarge) CAN_MSG[0] |= bmsDischargeEnable;
   
   sndStat = SendToDriver(0x35C, 2, CAN_MSG);
-  if (sndStat != false){
+  if (!sndStat){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 
@@ -598,7 +626,7 @@ bool CANBUS::SendCANData(){
 
   sndStat = SendToDriver(0x356, 6, CAN_MSG);
 
-  if (sndStat != false){
+  if (!sndStat){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 
@@ -606,16 +634,14 @@ bool CANBUS::SendCANData(){
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
 
-  //log_d("Statistics: SOC: %i, BV: %i, BC: %i, Full Voltage: %i, Discharge Voltage: %i",_battSOC,_battVoltage,_battCurrentmA,_tempFullVoltage,_dischargeVoltage);
-  
   if (_enableSOCTrick && _forceCharge) {
     CAN_MSG[0] = lowByte(u_int8_t(_battSOC * 0.1));
     CAN_MSG[1] = highByte(u_int8_t(_battSOC * 0.1));
   }
-  else if(_battVoltage < _tempChargeVolt && _battSOC >= 99) {
+  else if(_battSOC >= 100 && _chargePhase != PHASE_COMPLETE) {
     CAN_MSG[0] = lowByte(99);
-    CAN_MSG[1] = highByte(99);      
-  } 
+    CAN_MSG[1] = highByte(99);
+  }
   else {
     CAN_MSG[0] = lowByte(_battSOC);
     CAN_MSG[1] = highByte(_battSOC);
@@ -625,7 +651,7 @@ bool CANBUS::SendCANData(){
   CAN_MSG[3] = highByte(_battSOH);
 
   sndStat = SendToDriver(0x355, 4, CAN_MSG);
-  if (sndStat != false){
+  if (!sndStat){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 
@@ -660,7 +686,7 @@ bool CANBUS::SendCANData(){
 
   sndStat = SendToDriver(0x351, 8, CAN_MSG);
 
-  if (sndStat != false){
+  if (!sndStat){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 
@@ -679,7 +705,7 @@ bool CANBUS::SendCANData(){
   CAN_MSG[7] = 0x00;
 
   sndStat = SendToDriver(0x359, 8, CAN_MSG);
-  if (sndStat != false){
+  if (!sndStat){
     _failedCanSendCount++;
     _failedCanSendTotal++;
   } 
@@ -688,7 +714,7 @@ bool CANBUS::SendCANData(){
 log_i("CAN send cycle complete - Current failures: %d, Total failures: %d", _failedCanSendCount, _failedCanSendTotal);
 if(_failedCanSendCount > 0)
 {
-  log_e("Failed to Send CAN Packets: %i",_failedCanSendCount);
+  WS_LOG_E("Failed to Send CAN Packets: %i",_failedCanSendCount);
 }
 if (CanBusFailed()) 
     CanBusDataOK = false;

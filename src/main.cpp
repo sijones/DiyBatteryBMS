@@ -116,7 +116,6 @@ void setup()
     pref.putUInt8(ccCAN_TX_PIN, 0); // Must be set via web interface
 #endif
     pref.putUInt16(ccChargeVolt, initBattChargeVoltage);
-    pref.putUInt16(ccFullVoltage,initBattFullVoltage);
     pref.putUInt16(ccOverVoltage, initBattOverVoltage);
     pref.getUInt16(ccAdjustStep,initAdjustStep);
     pref.getUInt32(ccMinCharge,initMinChargeCurrent);
@@ -236,7 +235,6 @@ void setup()
   bool canInitOK = Lcd.Data.CANInit.getValue();
   
   Inverter.SetChargeVoltage((u_int16_t) pref.getUInt32(ccChargeVolt, initBattChargeVoltage));
-  Inverter.SetFullVoltage((u_int16_t) pref.getUInt32(ccFullVoltage, initBattFullVoltage));
   Inverter.SetOverVoltage((u_int16_t) pref.getUInt32(ccOverVoltage, initBattOverVoltage));
   Inverter.SetChargeStepAdjust(pref.getUInt16(ccAdjustStep,initAdjustStep));
   Inverter.MinChargeCurrent(pref.getUInt32(ccMinCharge,initMinChargeCurrent));
@@ -254,7 +252,21 @@ void setup()
   Inverter.SetSlowChargeSOCLimit(2, pref.getUInt8(ccSlowSOCCharge2, initSlowSOCCharge2));
   Inverter.AutoCharge(pref.getBool(ccAutoAdjustCharge, true));
   Inverter.SmartInterval(pref.getUInt8(ccSmartInterval,initSmartInterval));
-  
+
+  // CC-CV Charging Parameters
+  Inverter.SetTailCurrentmA(pref.getUInt32(ccTailCurrent, initTailCurrentmA));
+  Inverter.SetTailCurrentDuration(pref.getUInt16(ccTailDuration, initTailCurrentDuration));
+  Inverter.SetMaxAbsorptionTime(pref.getUInt16(ccMaxAbsTime, initMaxAbsorptionTime));
+  Inverter.SetRechargeSOC(pref.getUInt8(ccRechargeSOC, initRechargeSOC));
+  Inverter.SetRechargeVoltageOffset(pref.getUInt16(ccRechargeVOff, initRechargeVoltageOffset));
+
+  Inverter.TempProtectionEnabled(pref.getBool(ccTempProtect, false));
+  Inverter.SetChargeHighTemp(pref.getInt16(ccChgHighTemp, 45));
+  Inverter.SetChargeLowTemp(pref.getInt16(ccChgLowTemp, 0));
+  Inverter.SetDischargeHighTemp(pref.getInt16(ccDisHighTemp, 50));
+  Inverter.SetDischargeLowTemp(pref.getInt16(ccDisLowTemp, -20));
+  Inverter.ShowTempOnDashboard(pref.getBool(ccShowTemp, false));
+
   if(pref.getBool(ccCANBusEnabled,true) && canInitOK) {
     Inverter.StartRunTask();
     WS_LOG_I("CAN Bus task started");

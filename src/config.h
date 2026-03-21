@@ -24,7 +24,6 @@
 #define SYSLOG 1
 
 #define initBattChargeVoltage 0       // Battery Charge Voltage sent to inverter
-#define initBattFullVoltage 0             // Battery Full Voltage - keep SOC from 100% until this value.
 #define initBattOverVoltage 0             // Battery Over Voltage - stop charging if Batt Volts hits this.
 #define initBattDischargeVoltage 0    // Battery discharge voltage, not currently used
 #define initBattChargeCurrent 0           // in mA, 
@@ -40,6 +39,14 @@
 #define initSmartInterval 0               // Default Interval for Smart Adjust
 #define initMinChargeCurrent 0            // Minimum supported charging current, Inverter dependant.
 #define initMinDischargeCurrent 0         // Minimum supported discharging current
+
+// CC-CV Charging Defaults
+#define initTailCurrentmA 500             // 500mA (0.5A) tail current threshold
+#define initTailCurrentDuration 60        // 60 seconds sustained below tail current
+#define initMaxAbsorptionTime 120         // 120 minutes max absorption phase
+#define initRechargeSOC 90                // Restart charging below 90% SOC
+#define initRechargeVoltageOffset 200     // 200mV (0.2V) drop to restart charging
+
 #define initCAN16Mhz false                // This is the default MCP2515 8mhz Crystal speed, use 16mhz if true
 // To use strict PYLONTECH Protocol enable below
 //#define USE_PYLONTECH

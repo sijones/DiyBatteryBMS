@@ -48,12 +48,17 @@ bool _chargeEnabled = true;
 bool _dischargeEnabled = true;
 bool _dataChanged = false;
 bool _useAutoCharge = true;
-bool _enableAutoCharge = false;
 
 uint8_t _canSendDelay = 10;
 
-int ChargingState = Bulk;
-int PrevChargingState = Bulk;
+// CC-CV Charge Phase State Machine
+enum ChargePhase { PHASE_BULK, PHASE_ABSORPTION, PHASE_COMPLETE };
+ChargePhase _chargePhase = PHASE_BULK;
+time_t _absorptionStartTime = 0;
+time_t _tailCurrentStartTime = 0;
+bool _tailCurrentSustained = false;
+uint32_t _chargeAdjust = 0;
+bool _socOverrideLogged = false;
 
 enum Charging {
   bmsForceCharge = 8,
@@ -74,35 +79,46 @@ bool _initialBattData = false;
 
     // Used to tell the inverter battery data
 volatile uint8_t _battSOC = 0;
-volatile uint8_t _battSOH = 100; // State of health, not useful so defaulted to 100% 
+volatile uint8_t _battSOH = 100;
 volatile uint16_t _battVoltage = 0;
 volatile int32_t _battCurrentmA = 0;
 volatile int16_t _battTemp = 10;
-volatile uint32_t _battCapacity = 0; // Only used for limiting current at high SOC.
+volatile uint32_t _battCapacity = 0;
 
-// Additional VE.Direct parameters
-volatile int32_t _battPower = 0;       // Power in watts (can be negative for discharge)
-volatile int32_t _timeToGo = -1;       // Time to go in minutes (-1 = unknown)
-volatile bool _alarmActive = false;    // Alarm state
-String _alarmReason = "";             // Alarm reason string
-String _pidString = "";               // Product ID (e.g., "0x203")
-String _fwVersion = "";               // Firmware version
-String _serialNumber = "";            // Serial number
-String _modelString = "";             // Model name (e.g., "BMV-700")
+volatile int32_t _battPower = 0;
+volatile int32_t _timeToGo = -1;
+volatile bool _alarmActive = false;
+String _alarmReason = "";
+String _pidString = "";
+String _fwVersion = "";
+String _serialNumber = "";
+String _modelString = "";
 
     // Used to tell the inverter battery limits
 volatile uint16_t _chargeVoltage = 0;
 volatile uint32_t _dischargeVoltage = 0; 
-volatile uint16_t _fullVoltage = 0;
 volatile uint16_t _overVoltage = 0;
   // Dynamically set limits for charge/discharge
 uint16_t _adjustStep = 2000;
 volatile uint32_t _chargeCurrentmA = 0;
 volatile uint32_t _dischargeCurrentmA = 0;
-volatile uint32_t _chargeAdjust = 0;
-uint32_t _dischargeAdjust = 0;
 uint32_t _minChargeCurrent = 4000;
+
+// CC-CV Charging Parameters
+uint32_t _tailCurrentmA = 500;
+uint16_t _tailCurrentDuration = 60;
+uint16_t _maxAbsorptionTime = 120;
+uint8_t  _rechargeSOC = 90;
+uint16_t _rechargeVoltageOffset = 200;
 uint32_t _minDischargeCurrent = 20000;
+
+// Temperature protection
+int16_t _chargeHighTemp = 45;
+int16_t _chargeLowTemp = 0;
+int16_t _dischargeHighTemp = 50;
+int16_t _dischargeLowTemp = -20;
+bool _tempProtectionEnabled = false;
+bool _showTempOnDashboard = false;
 
   // Max Current Limits for Inverter.
 uint32_t _maxChargeCurrentmA = 0;
@@ -142,8 +158,6 @@ uint32_t LoopTimer; // store current time
 // Normally around 5 seconds is ok, but for Pylontech protocol it's around every second.
 uint16_t _CanBusSendInterval = 1000; 
 
-// How long between change of charge current before making another change in seconds.
-time_t _lastChangeInterval;
 uint8_t SMARTINTERVAL = 2;
 
 // Task Handle
@@ -164,11 +178,21 @@ public:
   bool CanBusAvailable = false;
   bool CanBusDataOK = false;
 
-  enum ChargingStates {
-    Bulk,
-    Level1,
-    Level2
-  };
+  // CC-CV Phase accessors
+  ChargePhase GetChargePhase() { return _chargePhase; }
+  const char* GetChargePhaseName();
+
+  // CC-CV Parameter accessors
+  uint32_t GetTailCurrentmA() { return _tailCurrentmA; }
+  void SetTailCurrentmA(uint32_t value) { _tailCurrentmA = value; }
+  uint16_t GetTailCurrentDuration() { return _tailCurrentDuration; }
+  void SetTailCurrentDuration(uint16_t value) { _tailCurrentDuration = value; }
+  uint16_t GetMaxAbsorptionTime() { return _maxAbsorptionTime; }
+  void SetMaxAbsorptionTime(uint16_t value) { _maxAbsorptionTime = value; }
+  uint8_t GetRechargeSOC() { return _rechargeSOC; }
+  void SetRechargeSOC(uint8_t value) { _rechargeSOC = value; }
+  uint16_t GetRechargeVoltageOffset() { return _rechargeVoltageOffset; }
+  void SetRechargeVoltageOffset(uint16_t value) { _rechargeVoltageOffset = value; }
 
   enum Command
   {
@@ -199,14 +223,12 @@ public:
   void SetDischargeCurrent(uint32_t CurrentmA);
   void SetMaxChargeCurrent(uint32_t CurrentmA) {_initialChargeCurrent = true; _maxChargeCurrentmA = CurrentmA;}
   void SetMaxDischargeCurrent(uint32_t CurrentmA) {_initialDischargeCurrent = true; _maxDischargeCurrentmA = CurrentmA;}
-  void SetFullVoltage(uint16_t Voltage) { _fullVoltage = Voltage; }
   void SetOverVoltage(uint16_t Voltage) { _overVoltage = Voltage; }
   uint32_t GetChargeCurrent() {return _chargeCurrentmA; }
   void SetDischargeVoltage(uint32_t Voltage);
   void SetBattCapacity(uint32_t BattCapacity){_battCapacity = BattCapacity;} 
   uint32_t GetBatteryCapacity() { return _battCapacity; }
   uint32_t GetDischargeVoltage() { return _dischargeVoltage; }
-  uint16_t GetFullVoltage() { return _fullVoltage; }
   uint16_t GetOverVoltage() { return _overVoltage; }
 
   uint8_t SmartInterval() { return SMARTINTERVAL; }
@@ -219,7 +241,7 @@ public:
   bool AutoCharge(){return _useAutoCharge;}
   void AutoCharge(bool Value) {_useAutoCharge = Value;}
 
-  uint32_t GetChargeAdjust() { return _chargeAdjust;}
+  uint32_t GetChargeAdjust() { return _chargeAdjust; }
   void     SetChargeStepAdjust(uint16_t Value) {_adjustStep = Value;}
   uint32_t MinChargeCurrent() { return _minChargeCurrent;}
   void     MinChargeCurrent(uint32_t Value) { _minChargeCurrent = Value;}
@@ -285,5 +307,19 @@ public:
   void SerialNumber(String sn){_serialNumber = sn;}
   String ModelString(){return _modelString;}
   void ModelString(String model){_modelString = model;}
+
+  // Temperature protection accessors
+  int16_t GetChargeHighTemp() { return _chargeHighTemp; }
+  void SetChargeHighTemp(int16_t v) { _chargeHighTemp = v; }
+  int16_t GetChargeLowTemp() { return _chargeLowTemp; }
+  void SetChargeLowTemp(int16_t v) { _chargeLowTemp = v; }
+  int16_t GetDischargeHighTemp() { return _dischargeHighTemp; }
+  void SetDischargeHighTemp(int16_t v) { _dischargeHighTemp = v; }
+  int16_t GetDischargeLowTemp() { return _dischargeLowTemp; }
+  void SetDischargeLowTemp(int16_t v) { _dischargeLowTemp = v; }
+  bool TempProtectionEnabled() { return _tempProtectionEnabled; }
+  void TempProtectionEnabled(bool v) { _tempProtectionEnabled = v; }
+  bool ShowTempOnDashboard() { return _showTempOnDashboard; }
+  void ShowTempOnDashboard(bool v) { _showTempOnDashboard = v; }
 
 }; // End of Class
