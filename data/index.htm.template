@@ -3,6 +3,7 @@
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DIY Battery BMS</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='8' width='22' height='18' rx='2' fill='%23667eea' stroke='%23444' stroke-width='1.5'/%3E%3Crect x='26' y='13' width='3' height='8' rx='1' fill='%23444'/%3E%3Crect x='7' y='11' width='5' height='12' rx='1' fill='%2356d67b'/%3E%3Crect x='13' y='11' width='5' height='12' rx='1' fill='%2356d67b'/%3E%3Crect x='19' y='14' width='5' height='9' rx='1' fill='%2356d67b' opacity='0.5'/%3E%3C/svg%3E">
   <style>
     * {
       margin: 0;
@@ -109,6 +110,14 @@
     .form-row.full {
       grid-template-columns: 1fr;
     }
+
+    .form-row.col3 {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+
+    .form-row.col4 {
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+    }
     
     .stat-box {
       background: #f8f8f8;
@@ -140,8 +149,12 @@
       transform: translateY(-1px);
     }
 
+    .stat-box.stat-charge { border-left-color: #4caf50; }
+    .stat-box.stat-discharge { border-left-color: #ff9800; }
+    .stat-box.stat-status { border-left-color: #2196f3; }
+
     .stat-label {
-      font-size: 20px;
+      font-size: 14px;
       color: #666;
       margin-bottom: 8px;
     }
@@ -343,7 +356,7 @@
       margin-bottom: 8px;
       font-weight: 500;
       color: #333;
-      font-size: 22px;
+      font-size: 14px;
     }
     
     input[type="text"],
@@ -566,9 +579,51 @@
       box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
     }
     
+    /* Clickable toggle stat boxes */
+    .stat-box.clickable {
+      border: 2px dashed #ccc;
+      border-left: 4px solid #667eea;
+    }
+    .stat-box.clickable .stat-label::after {
+      content: ' (tap to toggle)';
+      font-size: 11px;
+      color: #999;
+    }
+
+    /* Destructive button */
+    .btn-danger {
+      background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
+    }
+    .btn-danger:hover {
+      box-shadow: 0 10px 20px rgba(229, 57, 53, 0.3);
+    }
+
+    /* Connection status indicator */
+    .conn-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: rgba(255,255,255,0.7);
+      margin-top: 6px;
+    }
+    .conn-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #f44336;
+      transition: background 0.3s;
+    }
+    .conn-dot.connected { background: #4caf50; }
+
     @media (max-width: 768px) {
-      .form-row {
+      .form-row, .form-row.col3, .form-row.col4 {
         grid-template-columns: 1fr;
+      }
+      .tab-button {
+        min-width: 0;
+        padding: 12px 8px;
+        font-size: 11px;
       }
     }
   </style>
@@ -578,6 +633,7 @@
     <div class="header">
       <h1>DIY Battery BMS</h1>
       <p>System Control & Configuration</p>
+      <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">Disconnected</span></div>
     </div>
     
     <div class="tabs">
@@ -617,35 +673,58 @@
           </div>
         </div>
 
-        <div class="form-row">
-          <div class="stat-box">
+        <div class="form-row col3">
+          <div class="stat-box stat-status">
             <div class="stat-label">Battery Voltage</div>
             <div class="stat-value"><label id="battvoltage">0</label>V</div>
           </div>
-          <div class="stat-box">
+          <div class="stat-box stat-status">
             <div class="stat-label">Battery Current</div>
             <div class="stat-value"><label id="battcurrent">0</label>A</div>
           </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Power</div>
+            <div class="stat-value"><label id="battpower">0</label>W</div>
+          </div>
         </div>
 
-        <div class="form-row">
-          <div class="stat-box">
+        <div class="form-row col3">
+          <div class="stat-box stat-status">
+            <div class="stat-label">Time to Go</div>
+            <div class="stat-value"><label id="timetogo">--</label></div>
+          </div>
+          <div class="stat-box stat-charge">
+            <div class="stat-label">Charge Phase</div>
+            <div class="stat-value" id="chargephaseStatus" style="font-size: 16px; color: #667eea;">--</div>
+          </div>
+          <div class="stat-box stat-charge">
+            <div class="stat-label">Absorption Adjust</div>
+            <div class="stat-value"><label id="chargeadjust">0</label>mA</div>
+          </div>
+        </div>
+
+        <div id="tempRow" class="form-row" style="display:none;">
+          <div class="stat-box stat-status">
+            <div class="stat-label">Battery Temperature</div>
+            <div class="stat-value"><label id="batttemp">--</label>&deg;C</div>
+          </div>
+        </div>
+
+        <div class="form-row col4">
+          <div class="stat-box stat-charge">
             <div class="stat-label">Charge Limit</div>
             <div class="stat-value"><label id="chargecurrent">0</label>A</div>
           </div>
-          <div class="stat-box">
+          <div class="stat-box stat-discharge">
             <div class="stat-label">Discharge Limit</div>
             <div class="stat-value"><label id="dischargecurrent">0</label>A</div>
           </div>
-        </div>
-
-        <div class="form-row">
-          <div class="stat-box clickable" onclick="toggleChargeEnable()">
-            <div class="stat-label">Charge Enabled</div>
+          <div class="stat-box stat-charge clickable" onclick="toggleChargeEnable()">
+            <div class="stat-label">Charge</div>
             <div class="stat-value" id="chargeenabledStatus" style="font-size: 16px; color: #f44336;">OFF</div>
           </div>
-          <div class="stat-box clickable" onclick="toggleDischargeEnable()">
-            <div class="stat-label">Discharge Enabled</div>
+          <div class="stat-box stat-discharge clickable" onclick="toggleDischargeEnable()">
+            <div class="stat-label">Discharge</div>
             <div class="stat-value" id="dischargeenabledStatus" style="font-size: 16px; color: #f44336;">OFF</div>
           </div>
         </div>
@@ -662,22 +741,18 @@
         <div class="form-row">
           <div class="form-group">
             <label for="chargevoltage">Charge Voltage (mV):</label>
-            <input type="number" id="chargevoltage" onchange="EnqueueUpdate('chargevoltage')" onkeypress="HandleEnter(event, 'chargevoltage')">
+            <input type="number" id="chargevoltage" min="0" max="65000" step="100" onchange="EnqueueUpdate('chargevoltage')" onkeypress="HandleEnter(event, 'chargevoltage')">
           </div>
           <div class="form-group">
             <label for="dischargevoltage">Discharge Voltage (mV):</label>
-            <input type="number" id="dischargevoltage" onchange="EnqueueUpdate('dischargevoltage')" onkeypress="HandleEnter(event, 'dischargevoltage')">
+            <input type="number" id="dischargevoltage" min="0" max="65000" step="100" onchange="EnqueueUpdate('dischargevoltage')" onkeypress="HandleEnter(event, 'dischargevoltage')">
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
-            <label for="fullvoltage">Battery Full Voltage (mV):</label>
-            <input type="number" id="fullvoltage" onchange="EnqueueUpdate('fullvoltage')" onkeypress="HandleEnter(event, 'fullvoltage')">
-          </div>
-          <div class="form-group">
             <label for="overvoltage">Battery Over Voltage (mV):</label>
-            <input type="number" id="overvoltage" onchange="EnqueueUpdate('overvoltage')" onkeypress="HandleEnter(event, 'overvoltage')">
+            <input type="number" id="overvoltage" min="0" max="65000" step="100" onchange="EnqueueUpdate('overvoltage')" onkeypress="HandleEnter(event, 'overvoltage')">
           </div>
         </div>
         
@@ -685,29 +760,29 @@
         <div class="form-row">
           <div class="form-group">
             <label for="maxchargecurrent">Max Charge (mA):</label>
-            <input type="number" id="maxchargecurrent" onchange="EnqueueUpdate('maxchargecurrent')" onkeypress="HandleEnter(event, 'maxchargecurrent')">
+            <input type="number" id="maxchargecurrent" min="0" max="500000" step="1000" onchange="EnqueueUpdate('maxchargecurrent')" onkeypress="HandleEnter(event, 'maxchargecurrent')">
           </div>
           <div class="form-group">
             <label for="maxdischargecurrent">Max Discharge (mA):</label>
-            <input type="number" id="maxdischargecurrent" onchange="EnqueueUpdate('maxdischargecurrent')" onkeypress="HandleEnter(event, 'maxdischargecurrent')">
+            <input type="number" id="maxdischargecurrent" min="0" max="500000" step="1000" onchange="EnqueueUpdate('maxdischargecurrent')" onkeypress="HandleEnter(event, 'maxdischargecurrent')">
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
             <label for="adjuststep">Charge Adjust Step (mA):</label>
-            <input type="number" id="adjuststep" onchange="EnqueueUpdate('adjuststep')" onkeypress="HandleEnter(event, 'adjuststep')">
+            <input type="number" id="adjuststep" min="0" max="100000" step="100" onchange="EnqueueUpdate('adjuststep')" onkeypress="HandleEnter(event, 'adjuststep')">
           </div>
           <div class="form-group">
             <label for="minchargecurr">Min Charge (mA):</label>
-            <input type="number" id="minchargecurr" onchange="EnqueueUpdate('minchargecurr')" onkeypress="HandleEnter(event, 'minchargecurr')">
+            <input type="number" id="minchargecurr" min="0" max="100000" step="100" onchange="EnqueueUpdate('minchargecurr')" onkeypress="HandleEnter(event, 'minchargecurr')">
           </div>
         </div>
         
         <div class="form-row full">
           <div class="form-group">
             <label for="batterycapacity">Battery Capacity (mA):</label>
-            <input type="number" id="batterycapacity" onchange="EnqueueUpdate('batterycapacity')" onkeypress="HandleEnter(event, 'batterycapacity')">
+            <input type="number" id="batterycapacity" min="0" max="9999000" step="1000" onchange="EnqueueUpdate('batterycapacity')" onkeypress="HandleEnter(event, 'batterycapacity')">
           </div>
         </div>
         
@@ -715,11 +790,11 @@
         <div class="form-row">
           <div class="form-group">
             <label for="lowsoclimit">Low SOC (Stop Discharge):</label>
-            <input type="number" id="lowsoclimit" onchange="EnqueueUpdate('lowsoclimit')" onkeypress="HandleEnter(event, 'lowsoclimit')">
+            <input type="number" id="lowsoclimit" min="0" max="100" onchange="EnqueueUpdate('lowsoclimit')" onkeypress="HandleEnter(event, 'lowsoclimit')">
           </div>
           <div class="form-group">
             <label for="highsoclimit">High SOC (Stop Charge):</label>
-            <input type="number" id="highsoclimit" onchange="EnqueueUpdate('highsoclimit')" onkeypress="HandleEnter(event, 'highsoclimit')">
+            <input type="number" id="highsoclimit" min="0" max="100" onchange="EnqueueUpdate('highsoclimit')" onkeypress="HandleEnter(event, 'highsoclimit')">
           </div>
         </div>
         
@@ -745,7 +820,71 @@
             <input type="number" id="slowchargesoc2div" onchange="EnqueueUpdate('slowchargesoc2div')" onkeypress="HandleEnter(event, 'slowchargesoc2div')">
           </div>
         </div>
-        
+
+        <div class="section-title">CC-CV Charging Configuration</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="tailcurrent">Tail Current (A):</label>
+            <input type="number" id="tailcurrent" min="0" max="100" step="0.1" onchange="EnqueueUpdate('tailcurrent')" onkeypress="HandleEnter(event, 'tailcurrent')">
+          </div>
+          <div class="form-group">
+            <label for="tailduration">Tail Duration (seconds):</label>
+            <input type="number" id="tailduration" min="0" max="3600" onchange="EnqueueUpdate('tailduration')" onkeypress="HandleEnter(event, 'tailduration')">
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="maxabsorptiontime">Max Absorption Time (min):</label>
+            <input type="number" id="maxabsorptiontime" min="0" max="1440" onchange="EnqueueUpdate('maxabsorptiontime')" onkeypress="HandleEnter(event, 'maxabsorptiontime')">
+          </div>
+          <div class="form-group">
+            <label for="rechargesoc">Recharge SOC (%):</label>
+            <input type="number" id="rechargesoc" min="0" max="100" onchange="EnqueueUpdate('rechargesoc')" onkeypress="HandleEnter(event, 'rechargesoc')">
+          </div>
+        </div>
+
+        <div class="form-row full">
+          <div class="form-group">
+            <label for="rechargevoltageoffset">Recharge Voltage Offset (V):</label>
+            <input type="number" id="rechargevoltageoffset" min="0" max="10" step="0.1" onchange="EnqueueUpdate('rechargevoltageoffset')" onkeypress="HandleEnter(event, 'rechargevoltageoffset')">
+          </div>
+        </div>
+
+        <div class="section-title">Temperature Protection</div>
+        <div class="form-row">
+          <div class="checkbox-row">
+            <input type="checkbox" id="tempprotection" onchange="SendJSONUpdate('tempprotection'); toggleTempConfig();">
+            <label for="tempprotection">Temperature Protection Enabled</label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="showtempdashboard" onchange="SendJSONUpdate('showtempdashboard')">
+            <label for="showtempdashboard">Show Temperature on Dashboard</label>
+          </div>
+        </div>
+        <div id="tempConfigFields" style="display:none;">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="chargehightemp">Charge High Temp Cutoff (&deg;C):</label>
+              <input type="number" id="chargehightemp" min="-20" max="60" onchange="EnqueueUpdate('chargehightemp')" onkeypress="HandleEnter(event, 'chargehightemp')">
+            </div>
+            <div class="form-group">
+              <label for="chargelowtemp">Charge Low Temp Cutoff (&deg;C):</label>
+              <input type="number" id="chargelowtemp" min="-40" max="45" onchange="EnqueueUpdate('chargelowtemp')" onkeypress="HandleEnter(event, 'chargelowtemp')">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="dischargehightemp">Discharge High Temp Cutoff (&deg;C):</label>
+              <input type="number" id="dischargehightemp" min="-20" max="70" onchange="EnqueueUpdate('dischargehightemp')" onkeypress="HandleEnter(event, 'dischargehightemp')">
+            </div>
+            <div class="form-group">
+              <label for="dischargelowtemp">Discharge Low Temp Cutoff (&deg;C):</label>
+              <input type="number" id="dischargelowtemp" min="-40" max="45" onchange="EnqueueUpdate('dischargelowtemp')" onkeypress="HandleEnter(event, 'dischargelowtemp')">
+            </div>
+          </div>
+        </div>
+
         <div class="section-title">Advanced Settings</div>
         <div class="form-row">
           <div class="checkbox-row">
@@ -760,7 +899,7 @@
         
         <div class="button-group">
           <button onclick="saveAll()">Save to EEPROM</button>
-          <button onclick="eraseAll()">Factory Reset</button>
+          <button class="btn-danger" onclick="eraseAll()">Factory Reset</button>
           <button onclick="rebootBMS()">Reboot & Apply</button>
         </div>
       </div>
@@ -819,8 +958,8 @@
         </div>
         
         <div class="button-group">
-          <button onclick="eraseAll()">Factory Reset</button>
-          <button onclick="erasekeepwifi()">Factory Reset Keeping WiFi</button>
+          <button class="btn-danger" onclick="eraseAll()">Factory Reset</button>
+          <button class="btn-danger" onclick="erasekeepwifi()">Factory Reset Keeping WiFi</button>
           <button onclick="rebootBMS()">Reboot & Apply</button>
         </div>
       </div>
@@ -929,20 +1068,49 @@
       <div id="firmware" class="tab-pane">
         <div class="section-title">Firmware Updates</div>
         <div class="form-group">
-          <form id="firmwareForm" action="update?name=firmware" enctype="multipart/form-data" method="POST" onsubmit="return handleFirmwareUpdate(event)">
-            <label>Firmware:</label>
-            <input type="file" accept=".bin,.bin.gz" name="firmware" id="firmwareFile" style="margin-bottom: 10px;" required>
-            <button type="submit" id="firmwareBtn">Update Firmware</button>
-          </form>
+          <label>Firmware:</label>
+          <input type="file" accept=".bin,.bin.gz" id="firmwareFile" style="margin-bottom: 10px;">
+          <button id="firmwareBtn" onclick="uploadFirmware()">Update Firmware</button>
+          <div id="fwProgress" style="display:none; margin-top:10px;">
+            <div style="background:#e0e0e0; border-radius:4px; overflow:hidden; height:24px;">
+              <div id="fwProgressBar" style="background:linear-gradient(135deg,#667eea,#764ba2); height:100%; width:0%; transition:width 0.3s; text-align:center; color:#fff; font-size:12px; line-height:24px;">0%</div>
+            </div>
+          </div>
         </div>
-        
-   <!-- <div class="form-group" style="margin-top: 20px;">
-          <form id="filesystemForm" action="update?name=filesystem" enctype="multipart/form-data" method="POST" onsubmit="return handleFilesystemUpdate(event)">
-            <label>FileSystem:</label>
-            <input type="file" accept=".bin,.bin.gz" name="filesystem" id="filesystemFile" style="margin-bottom: 10px;" required>
-            <button type="submit" id="filesystemBtn">Update FileSystem</button>
-          </form>
-        </div> -->
+
+        <div class="section-title">Victron Smart Shunt</div>
+        <div class="form-row">
+          <div class="stat-box stat-status">
+            <div class="stat-label">Model</div>
+            <div class="stat-value" id="devModel" style="font-size: 14px;">--</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Firmware</div>
+            <div class="stat-value" id="devFW" style="font-size: 14px;">--</div>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="stat-box stat-status">
+            <div class="stat-label">Serial Number</div>
+            <div class="stat-value" id="devSerial" style="font-size: 14px;">--</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Product ID</div>
+            <div class="stat-value" id="devPID" style="font-size: 14px;">--</div>
+          </div>
+        </div>
+
+        <div class="section-title">ESP32 Diagnostics</div>
+        <div class="form-row">
+          <div class="stat-box stat-status">
+            <div class="stat-label">Heap (Free / Total)</div>
+            <div class="stat-value" id="heapInfo" style="font-size: 14px;">--</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">CAN Failures (Total)</div>
+            <div class="stat-value" id="canFailInfo" style="font-size: 14px;">0</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -953,6 +1121,8 @@
     var gateway = `ws://${window.location.hostname}/ws`; 
     var websocket;
     const PIN_FIELDS = ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin','canbuscspin','fanpin','onewirepin'];
+    // Fields displayed in human units (A/V) but stored internally in mA/mV - multiply by 1000 on send
+    const UNIT_CONVERT_FIELDS = { 'tailcurrent': 1000, 'rechargevoltageoffset': 1000 };
     
     // Toggle password visibility
     function togglePassword(fieldId) {
@@ -1001,6 +1171,15 @@
       }
     }
 
+    function SendJSONUpdate(fieldId) {
+      SendQueuedUpdate(fieldId);
+    }
+
+    function toggleTempConfig() {
+      var el = document.getElementById('tempConfigFields');
+      if(el) el.style.display = document.getElementById('tempprotection').checked ? '' : 'none';
+    }
+
     function initWebSocket() {
       console.log('Trying to open a WebSocket connection...');
       websocket = new WebSocket(gateway);
@@ -1010,8 +1189,16 @@
       websocket.onerror = onError;
     }
 
+    function setConnStatus(connected) {
+      var dot = document.getElementById('connDot');
+      var txt = document.getElementById('connText');
+      if (connected) { dot.classList.add('connected'); txt.textContent = 'Connected'; }
+      else { dot.classList.remove('connected'); txt.textContent = 'Disconnected'; }
+    }
+
     function onOpen(event) {
       console.log('WebSocket connection opened');
+      setConnStatus(true);
     }
 
     function onError(event) {
@@ -1020,6 +1207,7 @@
 
     function onClose(event) {
       console.log('WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
+      setConnStatus(false);
       setTimeout(initWebSocket, 2000);
     }
 
@@ -1037,7 +1225,6 @@
 
       if(obj.hasOwnProperty('BMS') && obj.BMS) {
         if(obj.hasOwnProperty('chargevoltage')) { document.getElementById('chargevoltage').value=obj.chargevoltage; AckUpdate('chargevoltage'); }
-        if(obj.hasOwnProperty('fullvoltage')) { document.getElementById('fullvoltage').value=obj.fullvoltage; AckUpdate('fullvoltage'); }
         if(obj.hasOwnProperty('minchargecurr')) { document.getElementById('minchargecurr').value=obj.minchargecurr; AckUpdate('minchargecurr'); }
         if(obj.hasOwnProperty('adjuststep')) { document.getElementById('adjuststep').value=obj.adjuststep; AckUpdate('adjuststep'); }
         if(obj.hasOwnProperty('smartinterval')) { document.getElementById('smartinterval').value=obj.smartinterval; AckUpdate('smartinterval'); }
@@ -1119,6 +1306,37 @@
           }
         }
 
+        if(obj.hasOwnProperty('battpower')) {
+          var powerElem = document.getElementById('battpower');
+          if(powerElem) powerElem.innerHTML = Math.abs(obj.battpower);
+        }
+
+        if(obj.hasOwnProperty('timetogo')) {
+          var ttgElem = document.getElementById('timetogo');
+          if(ttgElem) {
+            var ttg = obj.timetogo;
+            if(ttg < 0) { ttgElem.innerHTML = '--'; }
+            else if(ttg >= 1440) { ttgElem.innerHTML = (ttg / 1440).toFixed(1) + 'd'; }
+            else if(ttg >= 60) { ttgElem.innerHTML = Math.floor(ttg/60) + 'h ' + (ttg%60) + 'm'; }
+            else { ttgElem.innerHTML = ttg + 'm'; }
+          }
+        }
+
+        if(obj.hasOwnProperty('batttemp')) {
+          var tempElem = document.getElementById('batttemp');
+          if(tempElem) tempElem.innerHTML = obj.batttemp;
+        }
+
+        if(obj.hasOwnProperty('showtempdashboard')) {
+          var tempRow = document.getElementById('tempRow');
+          if(tempRow) tempRow.style.display = obj.showtempdashboard ? '' : 'none';
+        }
+
+        if(obj.hasOwnProperty('chargeadjust')) {
+          var adjElem = document.getElementById('chargeadjust');
+          if(adjElem) adjElem.innerHTML = obj.chargeadjust;
+        }
+
         if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').innerHTML=(obj.chargecurrent*0.001).toFixed(0);
         if(obj.hasOwnProperty('dischargecurrent')) document.getElementById('dischargecurrent').innerHTML=(obj.dischargecurrent*0.001).toFixed(0);
 
@@ -1134,6 +1352,17 @@
           let dischargeStatus = document.getElementById('dischargeenabledStatus');
           dischargeStatus.innerHTML = obj.dischargeenabled ? 'ON' : 'OFF';
           dischargeStatus.style.color = obj.dischargeenabled ? '#4caf50' : '#f44336';
+        }
+
+        if(obj.hasOwnProperty('chargephase')) {
+          let phaseElem = document.getElementById('chargephaseStatus');
+          if(phaseElem) {
+            phaseElem.innerHTML = obj.chargephase;
+            if(obj.chargephase === 'Bulk') phaseElem.style.color = '#4caf50';
+            else if(obj.chargephase === 'Absorption') phaseElem.style.color = '#ff9800';
+            else if(obj.chargephase === 'Complete') phaseElem.style.color = '#2196f3';
+            else phaseElem.style.color = '#667eea';
+          }
         }
 
         // Update last update timestamp
@@ -1180,9 +1409,34 @@
       if(obj.hasOwnProperty('slowchargesoc2')) { document.getElementById('slowchargesoc2').value=obj.slowchargesoc2; AckUpdate('slowchargesoc2'); }
       if(obj.hasOwnProperty('slowchargesoc1div')) { document.getElementById('slowchargesoc1div').value=obj.slowchargesoc1div; AckUpdate('slowchargesoc1div'); }
       if(obj.hasOwnProperty('slowchargesoc2div')) { document.getElementById('slowchargesoc2div').value=obj.slowchargesoc2div; AckUpdate('slowchargesoc2div'); }
+      if(obj.hasOwnProperty('tailcurrent')) { document.getElementById('tailcurrent').value=(obj.tailcurrent*0.001).toFixed(1); AckUpdate('tailcurrent'); }
+      if(obj.hasOwnProperty('tailduration')) { document.getElementById('tailduration').value=obj.tailduration; AckUpdate('tailduration'); }
+      if(obj.hasOwnProperty('maxabsorptiontime')) { document.getElementById('maxabsorptiontime').value=obj.maxabsorptiontime; AckUpdate('maxabsorptiontime'); }
+      if(obj.hasOwnProperty('rechargesoc')) { document.getElementById('rechargesoc').value=obj.rechargesoc; AckUpdate('rechargesoc'); }
+      if(obj.hasOwnProperty('rechargevoltageoffset')) { document.getElementById('rechargevoltageoffset').value=(obj.rechargevoltageoffset*0.001).toFixed(1); AckUpdate('rechargevoltageoffset'); }
+      if(obj.hasOwnProperty('tempprotection')) { document.getElementById('tempprotection').checked=obj.tempprotection; toggleTempConfig(); }
+      if(obj.hasOwnProperty('showtempdashboard')) document.getElementById('showtempdashboard').checked=obj.showtempdashboard;
+      if(obj.hasOwnProperty('chargehightemp')) { document.getElementById('chargehightemp').value=obj.chargehightemp; AckUpdate('chargehightemp'); }
+      if(obj.hasOwnProperty('chargelowtemp')) { document.getElementById('chargelowtemp').value=obj.chargelowtemp; AckUpdate('chargelowtemp'); }
+      if(obj.hasOwnProperty('dischargehightemp')) { document.getElementById('dischargehightemp').value=obj.dischargehightemp; AckUpdate('dischargehightemp'); }
+      if(obj.hasOwnProperty('dischargelowtemp')) { document.getElementById('dischargelowtemp').value=obj.dischargelowtemp; AckUpdate('dischargelowtemp'); }
+
       if(obj.hasOwnProperty('lcdenabled')) document.getElementById('lcdenabled').checked=obj.lcdenabled;
       if(obj.hasOwnProperty('ntpserver')) { document.getElementById('ntpserver').value=obj.ntpserver; AckUpdate('ntpserver'); }
       {{FAN_PIN_HANDLER}}
+
+      if(obj.hasOwnProperty('modelstring')) { var e=document.getElementById('devModel'); if(e) e.innerHTML=obj.modelstring || '--'; }
+      if(obj.hasOwnProperty('fwversion')) { var e=document.getElementById('devFW'); if(e) e.innerHTML=obj.fwversion || '--'; }
+      if(obj.hasOwnProperty('serialnumber')) { var e=document.getElementById('devSerial'); if(e) e.innerHTML=obj.serialnumber || '--'; }
+      if(obj.hasOwnProperty('pidstring')) { var e=document.getElementById('devPID'); if(e) e.innerHTML=obj.pidstring || '--'; }
+      if(obj.hasOwnProperty('freeheap') && obj.hasOwnProperty('totalheap')) {
+        var e=document.getElementById('heapInfo');
+        if(e) e.innerHTML=(obj.freeheap/1024).toFixed(0) + 'KB / ' + (obj.totalheap/1024).toFixed(0) + 'KB';
+      }
+      if(obj.hasOwnProperty('cantotalfails')) {
+        var e=document.getElementById('canFailInfo');
+        if(e) e.innerHTML=obj.cantotalfails;
+      }
 
       // Handle WiFi scan results from WebSocket
       if(obj.hasOwnProperty('wifinetworks')) {
@@ -1270,76 +1524,101 @@
     }
 
     function showFeedback(message) {
-      let feedback = document.getElementById('updateFeedback');
-      if (!feedback) {
-        feedback = document.createElement('div');
-        feedback.id = 'updateFeedback';
-        feedback.style.cssText = 'position: fixed; top: 20px; right: 20px; padding: 15px 20px; background: #2196F3; color: white; border-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); z-index: 10000;';
-        document.body.appendChild(feedback);
-      }
-      feedback.innerHTML = message;
-      feedback.style.display = 'block';
-      setTimeout(() => feedback.style.display = 'none', 2500);
+      showToast(message, 'pending', 2500);
     }
 
-    function handleFirmwareUpdate(event) {
-      const fileInput = document.getElementById('firmwareFile');
-      const file = fileInput.files[0];
-      
-      if (!file) {
-        showFeedback('Please select a firmware file');
-        return false;
-      }
-      
+    function uploadFirmware() {
+      var fileInput = document.getElementById('firmwareFile');
+      var file = fileInput.files[0];
+      if (!file) { showToast('Please select a firmware file', 'error'); return; }
       if (!file.name.endsWith('.bin') && !file.name.endsWith('.bin.gz')) {
-        showFeedback('Invalid file type. Please use .bin or .bin.gz');
-        return false;
+        showToast('Invalid file type. Use .bin or .bin.gz', 'error'); return;
       }
-      
-      if (file.size > 4194304) { // 4MB limit
-        showFeedback('Firmware file too large (max 4MB)');
-        return false;
-      }
-      
-      const btn = document.getElementById('firmwareBtn');
+      if (file.size > 4194304) { showToast('File too large (max 4MB)', 'error'); return; }
+
+      var btn = document.getElementById('firmwareBtn');
       btn.disabled = true;
       btn.style.opacity = '0.5';
-      btn.style.cursor = 'not-allowed';
-      
-      showFeedback('Uploading firmware... This may take 1-2 minutes. Do not close browser.');
-      console.log('Firmware update started - ' + file.name);
-      
-      return true; // Allow form submission
+      var progressDiv = document.getElementById('fwProgress');
+      var progressBar = document.getElementById('fwProgressBar');
+      progressDiv.style.display = 'block';
+
+      var formData = new FormData();
+      formData.append('firmware', file);
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', 'update?name=firmware', true);
+
+      xhr.upload.onprogress = function(e) {
+        if (e.lengthComputable) {
+          var pct = Math.round((e.loaded / e.total) * 100);
+          progressBar.style.width = pct + '%';
+          progressBar.textContent = pct + '%';
+        }
+      };
+
+      xhr.onload = function() {
+        if (xhr.status === 200 && xhr.responseText.indexOf('Success') !== -1) {
+          progressBar.style.width = '100%';
+          progressBar.textContent = 'Flashed! Waiting for reboot...';
+          progressBar.style.background = '#4caf50';
+          showToast('Update successful! Waiting for device to reconnect...', 'success', 60000);
+          waitForReconnect(60);
+        } else {
+          progressBar.style.background = '#f44336';
+          progressBar.textContent = 'Failed';
+          showToast('Update failed: ' + xhr.responseText, 'error', 5000);
+          btn.disabled = false;
+          btn.style.opacity = '1';
+        }
+      };
+
+      xhr.onerror = function() {
+        progressBar.style.background = '#f44336';
+        progressBar.textContent = 'Error';
+        showToast('Upload failed - connection error', 'error', 5000);
+        btn.disabled = false;
+        btn.style.opacity = '1';
+      };
+
+      xhr.ontimeout = function() {
+        progressBar.style.background = '#f44336';
+        progressBar.textContent = 'Timeout';
+        showToast('Upload timed out', 'error', 5000);
+        btn.disabled = false;
+        btn.style.opacity = '1';
+      };
+
+      xhr.timeout = 120000; // 2 minutes
+      showToast('Uploading firmware...', 'pending', 60000);
+      xhr.send(formData);
     }
 
-    function handleFilesystemUpdate(event) {
-      const fileInput = document.getElementById('filesystemFile');
-      const file = fileInput.files[0];
-      
-      if (!file) {
-        showFeedback('Please select a filesystem file');
-        return false;
-      }
-      
-      if (!file.name.endsWith('.bin') && !file.name.endsWith('.bin.gz')) {
-        showFeedback('Invalid file type. Please use .bin or .bin.gz');
-        return false;
-      }
-      
-      if (file.size > 4194304) { // 4MB limit for filesystem
-        showFeedback('Filesystem file too large (max 4MB)');
-        return false;
-      }
-      
-      const btn = document.getElementById('filesystemBtn');
-      btn.disabled = true;
-      btn.style.opacity = '0.5';
-      btn.style.cursor = 'not-allowed';
-      
-      showFeedback('Uploading filesystem... Please wait. Do not close browser.');
-      console.log('Filesystem update started - ' + file.name);
-      
-      return true; // Allow form submission
+    function waitForReconnect(maxSeconds) {
+      var progressBar = document.getElementById('fwProgressBar');
+      var elapsed = 0;
+      var interval = setInterval(function() {
+        elapsed++;
+        var remaining = maxSeconds - elapsed;
+        if (progressBar) progressBar.textContent = 'Reconnecting... ' + remaining + 's';
+        // Try to reach the device
+        fetch('/', { method: 'HEAD', cache: 'no-store' }).then(function(r) {
+          if (r.ok) {
+            clearInterval(interval);
+            if (progressBar) progressBar.textContent = 'Reconnected!';
+            showToast('Device is back online!', 'success', 3000);
+            setTimeout(function() { location.reload(); }, 1500);
+          }
+        }).catch(function() {}); // ignore errors, keep waiting
+        if (elapsed >= maxSeconds) {
+          clearInterval(interval);
+          if (progressBar) { progressBar.textContent = 'Timeout - try refreshing manually'; progressBar.style.background = '#ff9800'; }
+          showToast('Device did not reconnect within ' + maxSeconds + 's', 'error', 5000);
+          var btn = document.getElementById('firmwareBtn');
+          btn.disabled = false;
+          btn.style.opacity = '1';
+        }
+      }, 1000);
     }
 
     function showToast(message, status = 'success', duration = 1800) {
@@ -1440,8 +1719,9 @@
             }
           }
 
-          const numericValue = Number(trimmed);
+          let numericValue = Number(trimmed);
           if (!Number.isNaN(numericValue)) {
+            if (UNIT_CONVERT_FIELDS[fieldId]) numericValue = Math.round(numericValue * UNIT_CONVERT_FIELDS[fieldId]);
             payload = { [fieldId]: numericValue };
           } else {
             payload = { [fieldId]: trimmed };
