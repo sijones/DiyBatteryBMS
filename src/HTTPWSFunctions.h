@@ -7,6 +7,8 @@
 #include "embedded_html.h"
 #include "GPIOForbidden.h"
 
+volatile bool otaInProgress = false;
+
 // Log buffer for web UI
 #define LOG_BUFFER_SIZE 100
 struct LogEntry {
@@ -114,7 +116,6 @@ String generateDatatoJSON(bool All)
 {
   JsonDocument doc;
 
-  //StaticJsonDocument<750> doc;
   // If ALL is true generate a json with all data
   if (All){
     doc["BMS"] = All;
@@ -152,7 +153,6 @@ String generateDatatoJSON(bool All)
     doc["mqttclientid"] = wifiManager.GetMQTTClientID();
     doc["mqttport"] = wifiManager.GetMQTTPort();
     doc["mqtttopic"] = wifiManager.GetMQTTTopic();
-    doc["mqttparameter"] = wifiManager.GetMQTTParameter();
     doc["mqttserverip"] = wifiManager.GetMQTTServerIP();
     doc["velooptime"] = VE_LOOP_TIME;
     doc["slowchargesoc1"] = Inverter.GetSlowChargeSOCLimit(1);
@@ -221,6 +221,7 @@ String generateDatatoJSON(bool All)
 }
 
 void notifyWSClients(bool sendalldata = true) {
+  if(otaInProgress) return;
   if(ws.count()>0 && ws.availableForWriteAll())
     ws.textAll(generateDatatoJSON(sendalldata));
 }
@@ -477,100 +478,21 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         notifyWSClients(); }
       
-      if (!doc["canbuscspin"].isNull()) {
-        uint8_t value = (uint8_t) doc["canbuscspin"];
-        if (value == 0) {
-          log_w("Ignoring canbuscspin value 0");
-          handled = true;
-        } else if (IsForbiddenPin(value)) {
-          wsclient->printf("{\"ERROR\" : \"canbuscspin %u is forbidden\"}", value);
-          handled = true;
-        } else {
-          pref.putUInt8(ccCanCSPin, value);
-          handled = true;
-          notifyWSClients();
+      #define HANDLE_PIN(field, prefKey) \
+        if (!doc[field].isNull()) { \
+          uint8_t _pv = (uint8_t) doc[field]; \
+          handled = true; \
+          if (_pv == 0) { log_w("Ignoring %s value 0", field); } \
+          else if (IsForbiddenPin(_pv)) { wsclient->printf("{\"ERROR\" : \"%s %u is forbidden\"}", field, _pv); } \
+          else { pref.putUInt8(prefKey, _pv); notifyWSClients(); } \
         }
-      }
-
-      if (!doc["victronrxpin"].isNull()) {
-        uint8_t value = (uint8_t) doc["victronrxpin"];
-        if (value == 0) {
-          log_w("Ignoring victronrxpin value 0");
-          handled = true;
-        } else if (IsForbiddenPin(value)) {
-          wsclient->printf("{\"ERROR\" : \"victronrxpin %u is forbidden\"}", value);
-          WS_LOG_W("victronrxpin %u is forbidden", value);
-          handled = true;
-        } else {
-          pref.putUInt8(ccVictronRX, value);
-          handled = true;
-          notifyWSClients();
-        }
-      }
-
-      if (!doc["victrontxpin"].isNull()) {
-        uint8_t value = (uint8_t) doc["victrontxpin"];
-        if (value == 0) {
-          log_w("Ignoring victrontxpin value 0");
-          handled = true;
-        } else if (IsForbiddenPin(value)) {
-          wsclient->printf("{\"ERROR\" : \"victrontxpin %u is forbidden\"}", value);
-          WS_LOG_W("victrontxpin %u is forbidden", value);
-          handled = true;
-        } else {
-          pref.putUInt8(ccVictronTX, value);
-          handled = true;
-          notifyWSClients();
-        }
-      }
-
-      if (!doc["can_rx_pin"].isNull()) {
-        uint8_t value = (uint8_t) doc["can_rx_pin"];
-        if (value == 0) {
-          log_w("Ignoring can_rx_pin value 0");
-          handled = true;
-        } else if (IsForbiddenPin(value)) {
-          wsclient->printf("{\"ERROR\" : \"can_rx_pin %u is forbidden\"}", value);
-          WS_LOG_W("can_rx_pin %u is forbidden", value);
-          handled = true;
-        } else {
-          pref.putUInt8(ccCAN_RX_PIN, value);
-          handled = true;
-          notifyWSClients();
-        }
-      }
-
-      if (!doc["can_tx_pin"].isNull()) {
-        uint8_t value = (uint8_t) doc["can_tx_pin"];
-        if (value == 0) {
-          log_w("Ignoring can_tx_pin value 0");
-          handled = true;
-        } else if (IsForbiddenPin(value)) {
-          wsclient->printf("{\"ERROR\" : \"can_tx_pin %u is forbidden\"}", value);
-          WS_LOG_W("can_tx_pin %u is forbidden", value);
-          handled = true;
-        } else {
-          pref.putUInt8(ccCAN_TX_PIN, value);
-          handled = true;
-          notifyWSClients();
-        }
-      }
-
-      if (!doc["can_en_pin"].isNull()) {
-        uint8_t value = (uint8_t) doc["can_en_pin"];
-        if (value == 0) {
-          log_w("Ignoring can_en_pin value 0");
-          handled = true;
-        } else if (IsForbiddenPin(value)) {
-          wsclient->printf("{\"ERROR\" : \"can_en_pin %u is forbidden\"}", value);
-          WS_LOG_W("can_en_pin %u is forbidden", value);
-          handled = true;
-        } else {
-          pref.putUInt8(ccCAN_EN_PIN, value);
-          handled = true;
-          notifyWSClients();
-        }
-      }
+      HANDLE_PIN("canbuscspin", ccCanCSPin)
+      HANDLE_PIN("victronrxpin", ccVictronRX)
+      HANDLE_PIN("victrontxpin", ccVictronTX)
+      HANDLE_PIN("can_rx_pin", ccCAN_RX_PIN)
+      HANDLE_PIN("can_tx_pin", ccCAN_TX_PIN)
+      HANDLE_PIN("can_en_pin", ccCAN_EN_PIN)
+      #undef HANDLE_PIN
 
       if (!doc["wifissid"].isNull()) {
         String value = doc["wifissid"];
@@ -604,12 +526,6 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         String value = doc["mqtttopic"];
         handled = true;
         wifiManager.SetMQTTTopic(value);
-        notifyWSClients();}
-
-      if (!doc["mqttparameter"].isNull()) {
-        String value = doc["mqttparameter"];
-        handled = true;
-        wifiManager.SetMQTTParameter(value);
         notifyWSClients();}
 
       if (!doc["mqttclientid"].isNull()) {
@@ -965,10 +881,13 @@ void StartWebServices()
     }
     //you can force abort the update like this if you need to:
     //result = UpdateResult::UPDATE_ABORT;        
+    otaInProgress = true;
+    ws.closeAll();
     Serial.println("Update started : " + String(type));
   };
   updateServer.onUpdateEnd = [](const UpdateType type, int &result)
   {
+    otaInProgress = false;
     Serial.println("Update finished : " + String(type) + " result: " + String(result));
   };
 

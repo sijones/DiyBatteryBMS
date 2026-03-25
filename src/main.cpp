@@ -377,24 +377,23 @@ void loop()
       Lcd.Data.VEData.setValue(true);
     log_d("Data Available to Process");
     VEDataProcess();
-    if (wifiManager.isWiFiConnected())
-    {
-      sendVE2MQTT();
-      ws.cleanupClients();
-      notifyWSClients(false);
-    }
   }
 
 // Time out for data arrival
   if ((abs(t - last_vedirect) > 2) && Lcd.Data.VEData._currentValue)
       Lcd.Data.VEData.setValue(false);
 
-  // Send MQTT Data every 15 seconds or if the inverter data has changed
-  if ((((millis() - SendCanBusMQTTUpdates) > 15000) || Inverter.DataChanged()) && Lcd.Data.VEData.getValue() == true)
+  if (((millis() - SendCanBusMQTTUpdates) > ((uint32_t)VE_LOOP_TIME * 1000) || Inverter.DataChanged())
+      && Lcd.Data.VEData.getValue() == true)
   {
-    log_d("Send MQTT Param Update");
     SendCanBusMQTTUpdates = millis();
-    sendUpdateMQTTData();
+    if (wifiManager.isWiFiConnected())
+    {
+      sendVE2MQTT();
+      sendUpdateMQTTData();
+      ws.cleanupClients();
+      notifyWSClients(false);
+    }
   }
 
   if (abs(t - last_lcd_refresh) >= VE_LCD_REFRESH)

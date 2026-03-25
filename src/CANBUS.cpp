@@ -37,7 +37,6 @@ bool CANBUS::SendToDriver(uint32_t CMD,uint8_t Length,uint8_t *Data) {
   }
 #else
   byte sndStat;
-  //sndStat = CAN->sendMsgBuf(0x35E, 0, 8, MSG_PYLON);
   sndStat = CAN->sendMsgBuf(CMD, Length, Data);
   if (sndStat == CAN_OK)
     return true;
@@ -382,13 +381,16 @@ bool CANBUS::SendAllUpdates()
         _tailCurrentSustained = false;
         _tailCurrentStartTime = 0;
         _chargeAdjust = 0;
+        _lastAdjustTime = t;
         WS_LOG_I("CC-CV: BULK -> ABSORPTION (V=%d, target=%d)", _battVoltage, chargeVCentiV);
       }
       break;
 
     case PHASE_ABSORPTION:
     {
-      if (_useAutoCharge && _adjustStep > 0) {
+      if (_useAutoCharge && _adjustStep > 0
+          && (t - _lastAdjustTime) >= SMARTINTERVAL) {
+        _lastAdjustTime = t;
         if (_battVoltage >= chargeVCentiV) {
           if (_chargeAdjust + _adjustStep < baseChargeCurrent &&
               baseChargeCurrent - (_chargeAdjust + _adjustStep) >= _minChargeCurrent) {
@@ -570,6 +572,15 @@ bool CANBUS::DataChanged(){
 
 bool CANBUS::SendCANData(){
 
+  auto sendCAN = [&](uint32_t id, uint8_t len, uint8_t* data) {
+    if (!SendToDriver(id, len, data)) {
+      _failedCanSendCount++;
+      _failedCanSendTotal++;
+      WS_LOG_W("CAN TX fail: 0x%03X", id);
+    }
+    vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
+  };
+
   if (!Initialised() || !Configured()) {
     return false;
   }
@@ -580,40 +591,19 @@ bool CANBUS::SendCANData(){
   u_int16_t _tempMaxDisChargeCurr = (_maxDischargeCurrentmA * 0.01);
   int16_t _tempBattTemp = (_battTemp * 10);
 
-  byte sndStat;
   _failedCanSendCount=0;
 
-  // Send PYLON String
-  //if(_enablePYLONTECH) {
-  sndStat = SendToDriver(0x35E, 8, MSG_PYLON);
-  if (!sndStat){
-    _failedCanSendCount++;
-    _failedCanSendTotal++;
-  }   
-  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
+  sendCAN(0x35E, 8, MSG_PYLON);
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-  // 0x35C – C0 00 – Battery charge request flags - means allow charge and discharge
   CAN_MSG[0] = 0xC0;
   CAN_MSG[1] = 0x00;
   if(_enableRequestFlags) {
-    //CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagForceCharge,_forceCharge);
     CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagRequestFullCharge,_forceCharge);
     CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
     CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
-  } 
-
-  //if (_forceCharge) CAN_MSG[0] |= bmsForceCharge;
-  //if (_chargeEnabled && _ManualAllowCharge) CAN_MSG[0] |= bmsChargeEnable;
-  //if (_dischargeEnabled && _ManualAllowDischarge) CAN_MSG[0] |= bmsDischargeEnable;
-  
-  sndStat = SendToDriver(0x35C, 2, CAN_MSG);
-  if (!sndStat){
-    _failedCanSendCount++;
-    _failedCanSendTotal++;
-  } 
-
-  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
+  }
+  sendCAN(0x35C, 2, CAN_MSG);
 
     // Current measured values of the BMS battery voltage, battery current, battery temperature
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
@@ -624,13 +614,7 @@ bool CANBUS::SendCANData(){
   CAN_MSG[4] = lowByte(_tempBattTemp);
   CAN_MSG[5] = highByte(_tempBattTemp);
 
-  sndStat = SendToDriver(0x356, 6, CAN_MSG);
-
-  if (!sndStat){
-    _failedCanSendCount++;
-    _failedCanSendTotal++;
-  } 
-  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
+  sendCAN(0x356, 6, CAN_MSG);
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
 
@@ -650,13 +634,7 @@ bool CANBUS::SendCANData(){
   CAN_MSG[2] = lowByte(_battSOH);
   CAN_MSG[3] = highByte(_battSOH);
 
-  sndStat = SendToDriver(0x355, 4, CAN_MSG);
-  if (!sndStat){
-    _failedCanSendCount++;
-    _failedCanSendTotal++;
-  } 
-
-  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
+  sendCAN(0x355, 4, CAN_MSG);
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
 
@@ -684,14 +662,7 @@ bool CANBUS::SendCANData(){
   CAN_MSG[6] = lowByte(_tempDisCharVolt);          // Currently not used by SOLIS
   CAN_MSG[7] = highByte(_tempDisCharVolt);         // Currently not used by SOLIS
 
-  sndStat = SendToDriver(0x351, 8, CAN_MSG);
-
-  if (!sndStat){
-    _failedCanSendCount++;
-    _failedCanSendTotal++;
-  } 
-  
-  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
+  sendCAN(0x351, 8, CAN_MSG);
 
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
 
@@ -704,18 +675,10 @@ bool CANBUS::SendCANData(){
   CAN_MSG[6] = 0x4E;
   CAN_MSG[7] = 0x00;
 
-  sndStat = SendToDriver(0x359, 8, CAN_MSG);
-  if (!sndStat){
-    _failedCanSendCount++;
-    _failedCanSendTotal++;
-  } 
-  //delay(_canSendDelay); 
+  sendCAN(0x359, 8, CAN_MSG);
 
-log_i("CAN send cycle complete - Current failures: %d, Total failures: %d", _failedCanSendCount, _failedCanSendTotal);
 if(_failedCanSendCount > 0)
-{
   WS_LOG_E("Failed to Send CAN Packets: %i",_failedCanSendCount);
-}
 if (CanBusFailed()) 
     CanBusDataOK = false;
   else

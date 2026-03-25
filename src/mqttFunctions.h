@@ -24,7 +24,6 @@ String sPass;
 String sServer;
 String sSubscribe;
 String sTopic;
-String sTopicData;
 String sClientid;
 uint16_t iPort = 1883; // Default MQTT Port
 
@@ -109,362 +108,203 @@ bool mqttPublish(const char* topic, const char* payload, bool retain)
   return true;
 }
 
+static char _mqTopicBuf[64];
+
 bool sendUpdateMQTTData()
 {
-   if (mqttClient.connected())
-   {
-    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/SOCTrickEnable").c_str(), (Inverter.EnableSOCTrick() == true) ? "ON" : "OFF",true);
-    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/RequestFlagsEnable").c_str(), (Inverter.EnableRequestFlags() == true) ? "ON" : "OFF",true);
-    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/ForceCharge").c_str(), (Inverter.ForceCharge() == true) ? "ON" : "OFF" , true);  
-    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/DischargeEnable").c_str(), (Inverter.DischargeEnable() == true && Inverter.ManualAllowDischarge()) ? "ON" : "OFF" , true); 
-    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/ChargeEnable").c_str(), (Inverter.ChargeEnable() == true && Inverter.ManualAllowCharge()) ? "ON" : "OFF" , true);
-    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/SmartCharge").c_str(), (Inverter.AutoCharge() == true) ? "ON" : "OFF" , true);
-    return true;
-  } 
-  else  
-  {
+  if (otaInProgress) return false;
+  if (!mqttClient.connected()) {
     log_e("MQTT not connected, cannot send update data.");
     return false;
   }
+  const char* t = sTopic.c_str();
+  auto pub = [&](const char* suffix, const char* val) {
+    snprintf(_mqTopicBuf, sizeof(_mqTopicBuf), "%s/Param/%s", t, suffix);
+    mqttPublish(_mqTopicBuf, val, true);
+  };
+  pub("SOCTrickEnable", Inverter.EnableSOCTrick() ? "ON" : "OFF");
+  pub("RequestFlagsEnable", Inverter.EnableRequestFlags() ? "ON" : "OFF");
+  pub("ForceCharge", Inverter.ForceCharge() ? "ON" : "OFF");
+  pub("DischargeEnable", (Inverter.DischargeEnable() && Inverter.ManualAllowDischarge()) ? "ON" : "OFF");
+  pub("ChargeEnable", (Inverter.ChargeEnable() && Inverter.ManualAllowCharge()) ? "ON" : "OFF");
+  pub("SmartCharge", Inverter.AutoCharge() ? "ON" : "OFF");
+  return true;
 }
 
-//
-// Send VE data from passive mode to MQTT
-//
 bool sendVE2MQTT() {
-  /*
-  for (int i = 0; i < veHandle.FrameLength(); i++) {
-    String key = veHandle.veName[i];
-    if (key.length() == 0)
-      break; // stop is no key is here.
-    String value = veHandle.veValue[i];
-    String topic = wifiManager.GetMQTTTopic() + "/" + key;
-    if (mqttClient.connected()) {
-      topic.replace("#", ""); // # in a topic is a no go for MQTT
-      value.replace("\r\n", "");
-      if (mqttPublish(topic.c_str(), value.c_str(),true)) {
-        log_i("MQTT message sent succesfully: %s: \"%s\"", topic.c_str(), value.c_str());
-        } else {
-        log_e("Sending MQTT message failed: %s: %s", topic.c_str(), value.c_str());
-        }
-    } 
-  } */
-  // Publish Json with more details in.
-  mqttPublish((sTopic + "/Data").c_str(),generateDatatoJSON(false).c_str(),false);
-  // Send Voltage
-  sprintf (buffer, "%u", Inverter.BattVoltage());
-  mqttPublish((sTopic + "/V").c_str(),buffer,false);
-  // Send Current
-  sprintf (buffer, "%i", Inverter.BattCurrentmA());
-  mqttPublish((sTopic + "/I").c_str(),buffer,false);
-  // Send SOC
-  sprintf (buffer, "%i", Inverter.BattSOC());
-  mqttPublish((sTopic + "/SOC").c_str(),buffer,false);
-  // Send Power (signed, can be negative for discharge)
-  sprintf (buffer, "%ld", Inverter.BattPower());
-  mqttPublish((sTopic + "/P").c_str(),buffer,false);
-  // Send Temperature
-  sprintf (buffer, "%d", Inverter.BattTemp());
-  mqttPublish((sTopic + "/T").c_str(),buffer,false);
-  // Send Time to Go
-  sprintf (buffer, "%ld", Inverter.TimeToGo());
-  mqttPublish((sTopic + "/TTG").c_str(),buffer,false);
-  // Send Alarm Status
-  mqttPublish((sTopic + "/Alarm").c_str(), Inverter.AlarmActive() ? "ON" : "OFF", false);
-  // Send Alarm Reason
-  mqttPublish((sTopic + "/AR").c_str(), Inverter.AlarmReason().c_str(), false);
-  // Send Charge Phase
-  mqttPublish((sTopic + "/Param/ChargePhase").c_str(), Inverter.GetChargePhaseName(), false);
+  if (otaInProgress) return false;
+  const char* t = sTopic.c_str();
+  auto pub = [&](const char* suffix, const char* val) {
+    snprintf(_mqTopicBuf, sizeof(_mqTopicBuf), "%s/%s", t, suffix);
+    mqttPublish(_mqTopicBuf, val, false);
+  };
+
+  snprintf(_mqTopicBuf, sizeof(_mqTopicBuf), "%s/Data", t);
+  mqttPublish(_mqTopicBuf, generateDatatoJSON(false).c_str(), false);
+
+  sprintf(buffer, "%u", Inverter.BattVoltage());   pub("V", buffer);
+  sprintf(buffer, "%i", Inverter.BattCurrentmA());  pub("I", buffer);
+  sprintf(buffer, "%i", Inverter.BattSOC());         pub("SOC", buffer);
+  sprintf(buffer, "%ld", Inverter.BattPower());      pub("P", buffer);
+  sprintf(buffer, "%d", Inverter.BattTemp());        pub("T", buffer);
+  sprintf(buffer, "%ld", Inverter.TimeToGo());       pub("TTG", buffer);
+  pub("Alarm", Inverter.AlarmActive() ? "ON" : "OFF");
+  pub("AR", Inverter.AlarmReason().c_str());
+  snprintf(_mqTopicBuf, sizeof(_mqTopicBuf), "%s/Param/ChargePhase", t);
+  mqttPublish(_mqTopicBuf, Inverter.GetChargePhaseName(), false);
 
   return true;
 }
 
-// Publish Home Assistant MQTT Discovery messages
+// HA Discovery helpers — build JSON with snprintf to avoid String heap churn
+static char _haBuf[512];
+static char _haTopicBuf[128];
+
+void _haPublish(const char* type, const char* id, const char* payload,
+                const char* baseTopic, const char* nodeId) {
+  snprintf(_haTopicBuf, sizeof(_haTopicBuf), "%s/%s/%s_%s/config", baseTopic, type, nodeId, id);
+  mqttPublish(_haTopicBuf, payload, true);
+  yield();
+}
+
+void haSensor(const char* name, const char* id, const char* valueTpl, const char* extra,
+              const char* baseTopic, const char* nodeId, const char* stateTopic, const char* deviceJson) {
+  snprintf(_haBuf, sizeof(_haBuf),
+    "{\"name\":\"%s\",\"unique_id\":\"%s_%s\","
+    "\"state_topic\":\"%s\","
+    "\"value_template\":\"%s\"%s%s}",
+    name, nodeId, id, stateTopic, valueTpl, extra, deviceJson);
+  _haPublish("sensor", id, _haBuf, baseTopic, nodeId);
+}
+
+void haBinary(const char* name, const char* id, const char* jsonField, const char* extra,
+              const char* baseTopic, const char* nodeId, const char* stateTopic, const char* deviceJson) {
+  snprintf(_haBuf, sizeof(_haBuf),
+    "{\"name\":\"%s\",\"unique_id\":\"%s_%s\","
+    "\"state_topic\":\"%s\","
+    "\"value_template\":\"{%% if value_json.%s %%}ON{%% else %%}OFF{%% endif %%}\","
+    "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"%s%s}",
+    name, nodeId, id, stateTopic, jsonField, extra, deviceJson);
+  _haPublish("binary_sensor", id, _haBuf, baseTopic, nodeId);
+}
+
+void haSwitch(const char* name, const char* id, const char* paramName,
+              const char* baseTopic, const char* nodeId, const char* sTopic, const char* deviceJson) {
+  snprintf(_haBuf, sizeof(_haBuf),
+    "{\"name\":\"%s\",\"unique_id\":\"%s_%s\","
+    "\"state_topic\":\"%s/Param/%s\","
+    "\"command_topic\":\"%s/set/%s\","
+    "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"%s}",
+    name, nodeId, id, sTopic, paramName, sTopic, paramName, deviceJson);
+  _haPublish("switch", id, _haBuf, baseTopic, nodeId);
+}
+
+void haNumber(const char* name, const char* id, const char* valueTpl, const char* cmdSuffix,
+              const char* extra, const char* baseTopic, const char* nodeId,
+              const char* stateTopic, const char* sTopic, const char* deviceJson) {
+  snprintf(_haBuf, sizeof(_haBuf),
+    "{\"name\":\"%s\",\"unique_id\":\"%s_%s\","
+    "\"state_topic\":\"%s\","
+    "\"value_template\":\"%s\","
+    "\"command_topic\":\"%s/set/%s\"%s%s}",
+    name, nodeId, id, stateTopic, valueTpl, sTopic, cmdSuffix, extra, deviceJson);
+  _haPublish("number", id, _haBuf, baseTopic, nodeId);
+}
+
 void publishHADiscovery() {
   if (!haDiscoveryEnabled || !mqttClient.connected()) return;
-  
+
   String deviceId = WiFi.macAddress();
   deviceId.replace(":", "");
-  String baseTopic = "homeassistant";
-  String nodeId = "diybatterybms_" + deviceId;
-  
-  // Device info (shared across all entities)
-  String deviceJson = String(",\"device\":{\"identifiers\":[\"diybatterybms_") + deviceId + 
-                      String("\"],\"name\":\"DIY Battery BMS\",\"model\":\"ESP32 BMS\",\"manufacturer\":\"https://github.com/sijones/DiyBatteryBMS\"}");
-  
+  String nodeIdStr = "diybatterybms_" + deviceId;
+  const char* base = "homeassistant";
+  const char* node = nodeIdStr.c_str();
+  String dataTopicStr = sTopic + "/Data";
+  const char* dataTopic = dataTopicStr.c_str();
+  const char* st = sTopic.c_str();
+
+  char deviceJson[192];
+  snprintf(deviceJson, sizeof(deviceJson),
+    ",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"DIY Battery BMS\","
+    "\"model\":\"ESP32 BMS\",\"manufacturer\":\"https://github.com/sijones/DiyBatteryBMS\"}",
+    node);
+
   log_i("Publishing Home Assistant Discovery configs...");
   WS_LOG_I("Publishing Home Assistant Discovery configs...");
-  
-  // Battery SOC Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_soc/config").c_str(),
-    (String("{\"name\":\"Battery SOC\",\"unique_id\":\"") + nodeId + "_soc\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.battsoc }}\"," +
-     "\"unit_of_measurement\":\"%\",\"device_class\":\"battery\",\"state_class\":\"measurement\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Battery Voltage Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_voltage/config").c_str(),
-    (String("{\"name\":\"Battery Voltage\",\"unique_id\":\"") + nodeId + "_voltage\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-    "\"value_template\":\"{{ value_json.battvoltage | multiply(0.01) | round(1) }}\"," +
-     "\"unit_of_measurement\":\"V\",\"device_class\":\"voltage\",\"state_class\":\"measurement\"," +
-     "\"suggested_display_precision\":1" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Battery Current Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_current/config").c_str(),
-    (String("{\"name\":\"Battery Current\",\"unique_id\":\"") + nodeId + "_current\"," +
-    "\"state_topic\":\"" + sTopic + "/Data\"," +
-    "\"value_template\":\"{{ value_json.battcurrent | multiply(0.1) | round(1) }}\"," +
-    "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"," +
-    "\"suggested_display_precision\":1" +
-     deviceJson + "}").c_str(), true);
-  yield();
 
-  // Battery Temperature Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_temperature/config").c_str(),
-    (String("{\"name\":\"Battery Temperature\",\"unique_id\":\"") + nodeId + "_temperature\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.batttemp }}\"," +
-     "\"unit_of_measurement\":\"°C\",\"device_class\":\"temperature\",\"state_class\":\"measurement\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Charge Current Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_chargecurrent/config").c_str(),
-    (String("{\"name\":\"Charge Current Limit\",\"unique_id\":\"") + nodeId + "_chargecurrent\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.chargecurrent | multiply(0.001) | round(1) }}\"," +
-     "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Discharge Current Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_dischargecurrent/config").c_str(),
-    (String("{\"name\":\"Discharge Current Limit\",\"unique_id\":\"") + nodeId + "_dischargecurrent\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.dischargecurrent | multiply(0.001) | round(1) }}\"," +
-     "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"" +
-     "\"suggested_display_precision\":1" +
-     deviceJson + "}").c_str(), true);
-  yield();
+  // Sensors
+  haSensor("Battery SOC", "soc", "{{ value_json.battsoc }}",
+    ",\"unit_of_measurement\":\"%\",\"device_class\":\"battery\",\"state_class\":\"measurement\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Battery Voltage", "voltage", "{{ value_json.battvoltage | multiply(0.01) | round(1) }}",
+    ",\"unit_of_measurement\":\"V\",\"device_class\":\"voltage\",\"state_class\":\"measurement\",\"suggested_display_precision\":1",
+    base, node, dataTopic, deviceJson);
+  haSensor("Battery Current", "current", "{{ value_json.battcurrent | multiply(0.1) | round(1) }}",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":1",
+    base, node, dataTopic, deviceJson);
+  haSensor("Battery Temperature", "temperature", "{{ value_json.batttemp }}",
+    ",\"unit_of_measurement\":\"°C\",\"device_class\":\"temperature\",\"state_class\":\"measurement\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Charge Current Limit", "chargecurrent", "{{ value_json.chargecurrent | multiply(0.001) | round(1) }}",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Discharge Current Limit", "dischargecurrent", "{{ value_json.dischargecurrent | multiply(0.001) | round(1) }}",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":1",
+    base, node, dataTopic, deviceJson);
+  haSensor("Charge Adjust", "chargeadjust", "{{ value_json.chargeadjust | multiply(0.001) | round(1) }}",
+    ",\"state_class\":\"measurement\",\"suggested_display_precision\":1",
+    base, node, dataTopic, deviceJson);
+  haSensor("Charge Phase", "chargephase", "{{ value_json.chargephase }}",
+    ",\"icon\":\"mdi:battery-charging\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Battery Power", "power", "{{ value_json.battpower }}",
+    ",\"unit_of_measurement\":\"W\",\"device_class\":\"power\",\"state_class\":\"measurement\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Time To Go", "timetogo", "{{ value_json.timetogo }}",
+    ",\"unit_of_measurement\":\"min\",\"device_class\":\"duration\",\"state_class\":\"measurement\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Free Heap", "freeheap", "{{ value_json.freeheap }}",
+    ",\"unit_of_measurement\":\"B\",\"entity_category\":\"diagnostic\",\"state_class\":\"measurement\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("VE.Direct Alarm Reason", "vealarmmessage", "{{ value_json.alarmreason }}",
+    ",\"entity_category\":\"diagnostic\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Device Model", "devicemodel", "{{ value_json.modelstring }}",
+    ",\"entity_category\":\"diagnostic\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Device Firmware", "devicefirmware", "{{ value_json.fwversion }}",
+    ",\"entity_category\":\"diagnostic\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Device Serial Number", "deviceserialnumber", "{{ value_json.serialnumber }}",
+    ",\"entity_category\":\"diagnostic\"",
+    base, node, dataTopic, deviceJson);
 
-  // Discharge Current Number (runtime-set via MQTT, non-persistent)
-  mqttPublish((baseTopic + "/number/" + nodeId + "_dischargecurrent/config").c_str(),
-    (String("{\"name\":\"Discharge Current\",\"unique_id\":\"") + nodeId + "_dischargecurrent", +
-     "\",\n\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.dischargecurrent | multiply(0.001) | round(1) }}\"," +
-     "\"command_topic\":\"" + sTopic + "/set/DischargeCurrent\"," +
-     "\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"," +
-     "\"suggested_display_precision\":1" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Charge Adjust Sensor (deprecated)
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_chargeadjust/config").c_str(),
-    (String("{\"name\":\"Charge Adjust\",\"unique_id\":\"") + nodeId + "_chargeadjust\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.chargeadjust | multiply(0.001) | round(1) }}\"," +
-     "\"state_class\":\"measurement\"," +
-     "\"suggested_display_precision\":1" +
-     deviceJson + "}").c_str(), true);
-  yield();
+  // Binary sensors
+  haBinary("Charge Enabled Status", "chargeenabled", "chargeenabled", "", base, node, dataTopic, deviceJson);
+  haBinary("Discharge Enabled Status", "dischargeenabled", "dischargeenabled", "", base, node, dataTopic, deviceJson);
+  haBinary("Force Charge Status", "forcecharge", "forcecharge", "", base, node, dataTopic, deviceJson);
+  haBinary("Smart Charge Status", "smartcharge", "autocharge", "", base, node, dataTopic, deviceJson);
+  haBinary("VE.Direct Alarm", "vealarm", "alarmactive", ",\"entity_category\":\"diagnostic\"", base, node, dataTopic, deviceJson);
 
-  // Charge Phase Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_chargephase/config").c_str(),
-    (String("{\"name\":\"Charge Phase\",\"unique_id\":\"") + nodeId + "_chargephase\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.chargephase }}\"," +
-     "\"icon\":\"mdi:battery-charging\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Free Heap Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_freeheap/config").c_str(),
-    (String("{\"name\":\"Free Heap\",\"unique_id\":\"") + nodeId + "_freeheap\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.freeheap }}\"," +
-     "\"unit_of_measurement\":\"B\",\"entity_category\":\"diagnostic\",\"state_class\":\"measurement\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Charge Enable Binary Sensor
-  mqttPublish((baseTopic + "/binary_sensor/" + nodeId + "_chargeenabled/config").c_str(),
-    (String("{\"name\":\"Charge Enabled Status\",\"unique_id\":\"") + nodeId + "_chargeenabled\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{% if value_json.chargeenabled %}ON{% else %}OFF{% endif %}\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Discharge Enable Binary Sensor
-  mqttPublish((baseTopic + "/binary_sensor/" + nodeId + "_dischargeenabled/config").c_str(),
-    (String("{\"name\":\"Discharge Enabled Status\",\"unique_id\":\"") + nodeId + "_dischargeenabled\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{% if value_json.dischargeenabled %}ON{% else %}OFF{% endif %}\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Force Charge Binary Sensor
-  mqttPublish((baseTopic + "/binary_sensor/" + nodeId + "_forcecharge/config").c_str(),
-    (String("{\"name\":\"Force Charge Status\",\"unique_id\":\"") + nodeId + "_forcecharge\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{% if value_json.forcecharge %}ON{% else %}OFF{% endif %}\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Smart Charge Binary Sensor
-  mqttPublish((baseTopic + "/binary_sensor/" + nodeId + "_smartcharge/config").c_str(),
-    (String("{\"name\":\"Smart Charge Status\",\"unique_id\":\"") + nodeId + "_smartcharge\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{% if value_json.autocharge %}ON{% else %}OFF{% endif %}\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Charge Enable Switch
-  mqttPublish((baseTopic + "/switch/" + nodeId + "_charge/config").c_str(),
-    (String("{\"name\":\"Charge Enable\",\"unique_id\":\"") + nodeId + "_charge\"," +
-     "\"state_topic\":\"" + sTopic + "/Param/ChargeEnable\"," +
-     "\"command_topic\":\"" + sTopic + "/set/ChargeEnable\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Discharge Enable Switch
-  mqttPublish((baseTopic + "/switch/" + nodeId + "_discharge/config").c_str(),
-    (String("{\"name\":\"Discharge Enable\",\"unique_id\":\"") + nodeId + "_discharge\"," +
-     "\"state_topic\":\"" + sTopic + "/Param/DischargeEnable\"," +
-     "\"command_topic\":\"" + sTopic + "/set/DischargeEnable\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Force Charge Switch
-  mqttPublish((baseTopic + "/switch/" + nodeId + "_forcecharge/config").c_str(),
-    (String("{\"name\":\"Force Charge\",\"unique_id\":\"") + nodeId + "_forcecharge\"," +
-     "\"state_topic\":\"" + sTopic + "/Param/ForceCharge\"," +
-     "\"command_topic\":\"" + sTopic + "/set/ForceCharge\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // SOC Trick Enable Switch
-  mqttPublish((baseTopic + "/switch/" + nodeId + "_soctrick/config").c_str(),
-    (String("{\"name\":\"SOC Trick Enable\",\"unique_id\":\"") + nodeId + "_soctrick\"," +
-     "\"state_topic\":\"" + sTopic + "/Param/SOCTrickEnable\"," +
-     "\"command_topic\":\"" + sTopic + "/set/SOCTrickEnable\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Request Flags Enable Switch
-  mqttPublish((baseTopic + "/switch/" + nodeId + "_requestflags/config").c_str(),
-    (String("{\"name\":\"Request Flags Enable\",\"unique_id\":\"") + nodeId + "_requestflags\"," +
-     "\"state_topic\":\"" + sTopic + "/Param/RequestFlagsEnable\"," +
-     "\"command_topic\":\"" + sTopic + "/set/RequestFlagsEnable\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Smart Charge Switch
-  mqttPublish((baseTopic + "/switch/" + nodeId + "_smartcharge/config").c_str(),
-    (String("{\"name\":\"Smart Charge\",\"unique_id\":\"") + nodeId + "_smartcharge\"," +
-     "\"state_topic\":\"" + sTopic + "/Param/SmartCharge\"," +
-     "\"command_topic\":\"" + sTopic + "/set/SmartCharge\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Charge Voltage Number Control
-  mqttPublish((baseTopic + "/number/" + nodeId + "_chargevoltage/config").c_str(),
-    (String("{\"name\":\"Charge Voltage\",\"unique_id\":\"") + nodeId + "_chargevoltage\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ (value_json.chargevoltage * 0.001) | round(1) }}\"," +
-     "\"command_topic\":\"" + sTopic + "/set/ChargeVoltage\"," +
-     "\"unit_of_measurement\":\"V\",\"device_class\":\"voltage\"," +
-     "\"min\":4.0,\"max\":58.0,\"step\":0.1" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
-  // Charge Current Number Control
-  mqttPublish((baseTopic + "/number/" + nodeId + "_chargecurrent/config").c_str(),
-    (String("{\"name\":\"Charge Current\",\"unique_id\":\"") + nodeId + "_chargecurrent\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ (value_json.chargecurrent * 0.001) | round(1) }}\"," +
-     "\"command_topic\":\"" + sTopic + "/set/ChargeCurrent\"," +
-     "\"unit_of_measurement\":\"A\",\"device_class\":\"current\"," +
-     "\"min\":0.0,\"max\":100.0,\"step\":0.1" +
-     deviceJson + "}").c_str(), true);
-  yield();
+  // Switches
+  haSwitch("Charge Enable", "charge", "ChargeEnable", base, node, st, deviceJson);
+  haSwitch("Discharge Enable", "discharge", "DischargeEnable", base, node, st, deviceJson);
+  haSwitch("Force Charge", "forcecharge", "ForceCharge", base, node, st, deviceJson);
+  haSwitch("SOC Trick Enable", "soctrick", "SOCTrickEnable", base, node, st, deviceJson);
+  haSwitch("Request Flags Enable", "requestflags", "RequestFlagsEnable", base, node, st, deviceJson);
+  haSwitch("Smart Charge", "smartcharge", "SmartCharge", base, node, st, deviceJson);
 
-  // Battery Power Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_power/config").c_str(),
-    (String("{\"name\":\"Battery Power\",\"unique_id\":\"") + nodeId + "_power\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.battpower }}\"," +
-     "\"unit_of_measurement\":\"W\",\"device_class\":\"power\",\"state_class\":\"measurement\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
+  // Number controls
+  haNumber("Charge Voltage", "chargevoltage", "{{ (value_json.chargevoltage * 0.001) | round(1) }}", "ChargeVoltage",
+    ",\"unit_of_measurement\":\"V\",\"device_class\":\"voltage\",\"min\":4.0,\"max\":58.0,\"step\":0.1",
+    base, node, dataTopic, st, deviceJson);
+  haNumber("Charge Current", "chargecurrent", "{{ (value_json.chargecurrent * 0.001) | round(1) }}", "ChargeCurrent",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"min\":0.0,\"max\":100.0,\"step\":0.1",
+    base, node, dataTopic, st, deviceJson);
+  haNumber("Discharge Current", "dischargecurrent", "{{ value_json.dischargecurrent | multiply(0.001) | round(1) }}", "DischargeCurrent",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":1",
+    base, node, dataTopic, st, deviceJson);
 
-  // Time To Go Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_timetogo/config").c_str(),
-    (String("{\"name\":\"Time To Go\",\"unique_id\":\"") + nodeId + "_timetogo\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.timetogo }}\"," +
-     "\"unit_of_measurement\":\"min\",\"device_class\":\"duration\",\"state_class\":\"measurement\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-
-  // VE.Direct Alarm Binary Sensor
-  mqttPublish((baseTopic + "/binary_sensor/" + nodeId + "_vealarm/config").c_str(),
-    (String("{\"name\":\"VE.Direct Alarm\",\"unique_id\":\"") + nodeId + "_vealarm\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{% if value_json.alarmactive %}ON{% else %}OFF{% endif %}\"," +
-     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"," +
-     "\"entity_category\":\"diagnostic\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-
-  // VE.Direct Alarm Reason Sensor
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_vealarmmessage/config").c_str(),
-    (String("{\"name\":\"VE.Direct Alarm Reason\",\"unique_id\":\"") + nodeId + "_vealarmmessage\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.alarmreason }}\"," +
-     "\"entity_category\":\"diagnostic\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-
-  // Device Info Sensors
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_devicemodel/config").c_str(),
-    (String("{\"name\":\"Device Model\",\"unique_id\":\"") + nodeId + "_devicemodel\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.modelstring }}\"," +
-     "\"entity_category\":\"diagnostic\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_devicefirmware/config").c_str(),
-    (String("{\"name\":\"Device Firmware\",\"unique_id\":\"") + nodeId + "_devicefirmware\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.fwversion }}\"," +
-     "\"entity_category\":\"diagnostic\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-
-  mqttPublish((baseTopic + "/sensor/" + nodeId + "_deviceserialnumber/config").c_str(),
-    (String("{\"name\":\"Device Serial Number\",\"unique_id\":\"") + nodeId + "_deviceserialnumber\"," +
-     "\"state_topic\":\"" + sTopic + "/Data\"," +
-     "\"value_template\":\"{{ value_json.serialnumber }}\"," +
-     "\"entity_category\":\"diagnostic\"" +
-     deviceJson + "}").c_str(), true);
-  yield();
-  
   log_i("Home Assistant Discovery published successfully.");
   WS_LOG_I("Home Assistant Discovery published successfully.");
 }
@@ -674,7 +514,6 @@ void mqttsetup() {
     sUser = String(wifiManager.GetMQTTUser().c_str());
     sPass = String(wifiManager.GetMQTTPass().c_str());
     sTopic = String(wifiManager.GetMQTTTopic().c_str());
-    sTopicData = String((wifiManager.GetMQTTTopic() + wifiManager.GetMQTTParameter()).c_str());
     sClientid = String(wifiManager.GetMQTTClientID().c_str());
     iPort = wifiManager.GetMQTTPort();
     taskEXIT_CRITICAL(&MqttMutex);

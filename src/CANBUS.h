@@ -58,6 +58,7 @@ time_t _absorptionStartTime = 0;
 time_t _tailCurrentStartTime = 0;
 bool _tailCurrentSustained = false;
 uint32_t _chargeAdjust = 0;
+time_t _lastAdjustTime = 0;
 bool _socOverrideLogged = false;
 
 enum Charging {
