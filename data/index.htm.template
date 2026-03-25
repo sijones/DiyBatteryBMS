@@ -626,6 +626,34 @@
         font-size: 11px;
       }
     }
+
+    /* Tooltips */
+    .tip {
+      position: relative;
+      cursor: help;
+      border-bottom: 1px dotted #999;
+    }
+    .tip::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: 100%;
+      left: 0;
+      background: #333;
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 400;
+      white-space: normal;
+      width: 240px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+      z-index: 100;
+    }
+    .tip:hover::after {
+      opacity: 1;
+    }
   </style>
 </head>
 <body>
@@ -699,7 +727,7 @@
           </div>
           <div class="stat-box stat-charge">
             <div class="stat-label">Absorption Adjust</div>
-            <div class="stat-value"><label id="chargeadjust">0</label>mA</div>
+            <div class="stat-value"><label id="chargeadjust">0</label>A</div>
           </div>
         </div>
 
@@ -740,18 +768,18 @@
         <div class="section-title">Voltage Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="chargevoltage">Charge Voltage (mV):</label>
+            <label for="chargevoltage"><span class="tip" data-tip="Target voltage the inverter will charge to. Sent to inverter via CAN as the maximum battery voltage.">Charge Voltage (mV):</span></label>
             <input type="number" id="chargevoltage" min="0" max="65000" step="100" onchange="EnqueueUpdate('chargevoltage')" onkeypress="HandleEnter(event, 'chargevoltage')">
           </div>
           <div class="form-group">
-            <label for="dischargevoltage">Discharge Voltage (mV):</label>
+            <label for="dischargevoltage"><span class="tip" data-tip="Minimum voltage before discharge is disabled to protect the battery.">Discharge Voltage (mV):</span></label>
             <input type="number" id="dischargevoltage" min="0" max="65000" step="100" onchange="EnqueueUpdate('dischargevoltage')" onkeypress="HandleEnter(event, 'dischargevoltage')">
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
-            <label for="overvoltage">Battery Over Voltage (mV):</label>
+            <label for="overvoltage"><span class="tip" data-tip="Hard safety cutoff. Charging is immediately disabled if battery voltage reaches this level.">Battery Over Voltage (mV):</span></label>
             <input type="number" id="overvoltage" min="0" max="65000" step="100" onchange="EnqueueUpdate('overvoltage')" onkeypress="HandleEnter(event, 'overvoltage')">
           </div>
         </div>
@@ -759,29 +787,29 @@
         <div class="section-title">Current Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="maxchargecurrent">Max Charge (mA):</label>
+            <label for="maxchargecurrent"><span class="tip" data-tip="Maximum charge current sent to the inverter during bulk charging.">Max Charge (mA):</span></label>
             <input type="number" id="maxchargecurrent" min="0" max="500000" step="1000" onchange="EnqueueUpdate('maxchargecurrent')" onkeypress="HandleEnter(event, 'maxchargecurrent')">
           </div>
           <div class="form-group">
-            <label for="maxdischargecurrent">Max Discharge (mA):</label>
+            <label for="maxdischargecurrent"><span class="tip" data-tip="Maximum discharge current allowed. Sent to the inverter as the discharge limit.">Max Discharge (mA):</span></label>
             <input type="number" id="maxdischargecurrent" min="0" max="500000" step="1000" onchange="EnqueueUpdate('maxdischargecurrent')" onkeypress="HandleEnter(event, 'maxdischargecurrent')">
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
-            <label for="adjuststep">Charge Adjust Step (mA):</label>
+            <label for="adjuststep"><span class="tip" data-tip="Amount to increase or decrease the charge current each step during absorption phase to hold voltage steady.">Charge Adjust Step (mA):</span></label>
             <input type="number" id="adjuststep" min="0" max="100000" step="100" onchange="EnqueueUpdate('adjuststep')" onkeypress="HandleEnter(event, 'adjuststep')">
           </div>
           <div class="form-group">
-            <label for="minchargecurr">Min Charge (mA):</label>
+            <label for="minchargecurr"><span class="tip" data-tip="Lowest charge current allowed during absorption. The adjust step won't reduce below this value.">Min Charge (mA):</span></label>
             <input type="number" id="minchargecurr" min="0" max="100000" step="100" onchange="EnqueueUpdate('minchargecurr')" onkeypress="HandleEnter(event, 'minchargecurr')">
           </div>
         </div>
         
         <div class="form-row full">
           <div class="form-group">
-            <label for="batterycapacity">Battery Capacity (mA):</label>
+            <label for="batterycapacity"><span class="tip" data-tip="Total battery capacity. Used to calculate slow charge current limits (capacity / divider).">Battery Capacity (mA):</span></label>
             <input type="number" id="batterycapacity" min="0" max="9999000" step="1000" onchange="EnqueueUpdate('batterycapacity')" onkeypress="HandleEnter(event, 'batterycapacity')">
           </div>
         </div>
@@ -789,11 +817,11 @@
         <div class="section-title">SOC Limits</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="lowsoclimit">Low SOC (Stop Discharge):</label>
+            <label for="lowsoclimit"><span class="tip" data-tip="Discharge is disabled when SOC drops to or below this percentage. Set 0 to disable.">Low SOC (Stop Discharge):</span></label>
             <input type="number" id="lowsoclimit" min="0" max="100" onchange="EnqueueUpdate('lowsoclimit')" onkeypress="HandleEnter(event, 'lowsoclimit')">
           </div>
           <div class="form-group">
-            <label for="highsoclimit">High SOC (Stop Charge):</label>
+            <label for="highsoclimit"><span class="tip" data-tip="Charging is disabled when SOC reaches this percentage. Set 100 to disable.">High SOC (Stop Charge):</span></label>
             <input type="number" id="highsoclimit" min="0" max="100" onchange="EnqueueUpdate('highsoclimit')" onkeypress="HandleEnter(event, 'highsoclimit')">
           </div>
         </div>
@@ -801,22 +829,22 @@
         <div class="section-title">Slow Charge Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="slowchargesoc1">Slow Charge SOC 1:</label>
+            <label for="slowchargesoc1"><span class="tip" data-tip="When SOC reaches this %, charge current is reduced to capacity / divider 1.">Slow Charge SOC 1:</span></label>
             <input type="number" id="slowchargesoc1" onchange="EnqueueUpdate('slowchargesoc1')" onkeypress="HandleEnter(event, 'slowchargesoc1')">
           </div>
           <div class="form-group">
-            <label for="slowchargesoc1div">Slow Charge 1 (divider):</label>
+            <label for="slowchargesoc1div"><span class="tip" data-tip="Capacity divider for slow charge 1. Charge current = capacity / this value. E.g. 100Ah / 2 = C/2 (50A).">Slow Charge 1 (divider):</span></label>
             <input type="number" id="slowchargesoc1div" onchange="EnqueueUpdate('slowchargesoc1div')" onkeypress="HandleEnter(event, 'slowchargesoc1div')">
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
-            <label for="slowchargesoc2">Slow Charge SOC 2:</label>
+            <label for="slowchargesoc2"><span class="tip" data-tip="Second slow charge threshold. When SOC reaches this %, charge current is reduced further using divider 2.">Slow Charge SOC 2:</span></label>
             <input type="number" id="slowchargesoc2" onchange="EnqueueUpdate('slowchargesoc2')" onkeypress="HandleEnter(event, 'slowchargesoc2')">
           </div>
           <div class="form-group">
-            <label for="slowchargesoc2div">Slow Charge 2 (divider):</label>
+            <label for="slowchargesoc2div"><span class="tip" data-tip="Capacity divider for slow charge 2. Charge current = capacity / this value.">Slow Charge 2 (divider):</span></label>
             <input type="number" id="slowchargesoc2div" onchange="EnqueueUpdate('slowchargesoc2div')" onkeypress="HandleEnter(event, 'slowchargesoc2div')">
           </div>
         </div>
@@ -824,29 +852,29 @@
         <div class="section-title">CC-CV Charging Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="tailcurrent">Tail Current (A):</label>
+            <label for="tailcurrent"><span class="tip" data-tip="During absorption, when charge current drops below this for the tail duration, the battery is considered full.">Tail Current (A):</span></label>
             <input type="number" id="tailcurrent" min="0" max="100" step="0.1" onchange="EnqueueUpdate('tailcurrent')" onkeypress="HandleEnter(event, 'tailcurrent')">
           </div>
           <div class="form-group">
-            <label for="tailduration">Tail Duration (seconds):</label>
+            <label for="tailduration"><span class="tip" data-tip="How long current must stay below the tail threshold before absorption is considered complete.">Tail Duration (seconds):</span></label>
             <input type="number" id="tailduration" min="0" max="3600" onchange="EnqueueUpdate('tailduration')" onkeypress="HandleEnter(event, 'tailduration')">
           </div>
         </div>
 
         <div class="form-row">
           <div class="form-group">
-            <label for="maxabsorptiontime">Max Absorption Time (min):</label>
+            <label for="maxabsorptiontime"><span class="tip" data-tip="Safety timeout. Absorption phase ends after this many minutes even if tail current hasn't been reached.">Max Absorption Time (min):</span></label>
             <input type="number" id="maxabsorptiontime" min="0" max="1440" onchange="EnqueueUpdate('maxabsorptiontime')" onkeypress="HandleEnter(event, 'maxabsorptiontime')">
           </div>
           <div class="form-group">
-            <label for="rechargesoc">Recharge SOC (%):</label>
+            <label for="rechargesoc"><span class="tip" data-tip="After charge completes, a new bulk charge cycle starts when SOC drops below this percentage.">Recharge SOC (%):</span></label>
             <input type="number" id="rechargesoc" min="0" max="100" onchange="EnqueueUpdate('rechargesoc')" onkeypress="HandleEnter(event, 'rechargesoc')">
           </div>
         </div>
 
         <div class="form-row full">
           <div class="form-group">
-            <label for="rechargevoltageoffset">Recharge Voltage Offset (V):</label>
+            <label for="rechargevoltageoffset"><span class="tip" data-tip="Voltage drop from target that triggers a new bulk charge cycle. Also used to detect significant voltage drops during absorption.">Recharge Voltage Offset (V):</span></label>
             <input type="number" id="rechargevoltageoffset" min="0" max="10" step="0.1" onchange="EnqueueUpdate('rechargevoltageoffset')" onkeypress="HandleEnter(event, 'rechargevoltageoffset')">
           </div>
         </div>
@@ -855,7 +883,7 @@
         <div class="form-row">
           <div class="checkbox-row">
             <input type="checkbox" id="tempprotection" onchange="SendJSONUpdate('tempprotection'); toggleTempConfig();">
-            <label for="tempprotection">Temperature Protection Enabled</label>
+            <label for="tempprotection"><span class="tip" data-tip="Enable temperature-based charge and discharge cutoffs using the shunt temperature sensor.">Temperature Protection Enabled</span></label>
           </div>
           <div class="checkbox-row">
             <input type="checkbox" id="showtempdashboard" onchange="SendJSONUpdate('showtempdashboard')">
@@ -865,21 +893,21 @@
         <div id="tempConfigFields" style="display:none;">
           <div class="form-row">
             <div class="form-group">
-              <label for="chargehightemp">Charge High Temp Cutoff (&deg;C):</label>
+              <label for="chargehightemp"><span class="tip" data-tip="Charging is disabled above this temperature.">Charge High Temp Cutoff (&deg;C):</span></label>
               <input type="number" id="chargehightemp" min="-20" max="60" onchange="EnqueueUpdate('chargehightemp')" onkeypress="HandleEnter(event, 'chargehightemp')">
             </div>
             <div class="form-group">
-              <label for="chargelowtemp">Charge Low Temp Cutoff (&deg;C):</label>
+              <label for="chargelowtemp"><span class="tip" data-tip="Charging is disabled below this temperature. Important for lithium batteries which should not charge below 0°C.">Charge Low Temp Cutoff (&deg;C):</span></label>
               <input type="number" id="chargelowtemp" min="-40" max="45" onchange="EnqueueUpdate('chargelowtemp')" onkeypress="HandleEnter(event, 'chargelowtemp')">
             </div>
           </div>
           <div class="form-row">
             <div class="form-group">
-              <label for="dischargehightemp">Discharge High Temp Cutoff (&deg;C):</label>
+              <label for="dischargehightemp"><span class="tip" data-tip="Discharging is disabled above this temperature.">Discharge High Temp Cutoff (&deg;C):</span></label>
               <input type="number" id="dischargehightemp" min="-20" max="70" onchange="EnqueueUpdate('dischargehightemp')" onkeypress="HandleEnter(event, 'dischargehightemp')">
             </div>
             <div class="form-group">
-              <label for="dischargelowtemp">Discharge Low Temp Cutoff (&deg;C):</label>
+              <label for="dischargelowtemp"><span class="tip" data-tip="Discharging is disabled below this temperature.">Discharge Low Temp Cutoff (&deg;C):</span></label>
               <input type="number" id="dischargelowtemp" min="-40" max="45" onchange="EnqueueUpdate('dischargelowtemp')" onkeypress="HandleEnter(event, 'dischargelowtemp')">
             </div>
           </div>
@@ -889,10 +917,10 @@
         <div class="form-row">
           <div class="checkbox-row">
             <input type="checkbox" id="autocharge" onchange="SendJSONUpdate('autocharge')">
-            <label for="autocharge">Smart Adjust Enabled</label>
+            <label for="autocharge"><span class="tip" data-tip="Enable active current management during absorption phase. Steps charge current up/down to hold voltage at target.">Smart Adjust Enabled</span></label>
           </div>
           <div class="form-group">
-            <label for="smartinterval">Smart Interval (seconds):</label>
+            <label for="smartinterval"><span class="tip" data-tip="Seconds between each charge current adjustment during absorption. Higher = slower, smoother adjustments.">Smart Interval (seconds):</span></label>
             <input type="number" id="smartinterval" onchange="EnqueueUpdate('smartinterval')" onkeypress="HandleEnter(event, 'smartinterval')">
           </div>
         </div>
@@ -909,17 +937,17 @@
         <div class="section-title">CAN Bus Configuration</div>
         <div class="checkbox-row">
           <input type="checkbox" id="canbusenabled" onchange="SendJSONUpdate('canbusenabled')">
-          <label for="canbusenabled">CAN Bus Enabled</label>
+          <label for="canbusenabled"><span class="tip" data-tip="Enable CAN bus communication with the inverter. Disable if no inverter is connected.">CAN Bus Enabled</span></label>
         </div>
         
         <div class="section-title">Victron Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="victronrxpin">Victron RX Pin:</label>
+            <label for="victronrxpin"><span class="tip" data-tip="GPIO pin connected to the Victron shunt TX line (VE.Direct data in).">Victron RX Pin:</span></label>
             <input type="number" id="victronrxpin" onchange="EnqueueUpdate('victronrxpin')" onkeypress="HandleEnter(event, 'victronrxpin')">
           </div>
           <div class="form-group">
-            <label for="victrontxpin">Victron TX Pin:</label>
+            <label for="victrontxpin"><span class="tip" data-tip="GPIO pin connected to the Victron shunt RX line. Not currently used (passive listen only).">Victron TX Pin:</span></label>
             <input type="number" id="victrontxpin" onchange="EnqueueUpdate('victrontxpin')" onkeypress="HandleEnter(event, 'victrontxpin')">
           </div>
         </div>
@@ -934,12 +962,12 @@
         <div class="section-title">Protocol Settings</div>
         <div class="checkbox-row">
           <input type="checkbox" id="soctrickenabled" onchange="SendJSONUpdate('soctrickenabled')">
-          <label for="soctrickenabled">SOC Trick Enable (1/10 SOC for Force Charge)</label>
+          <label for="soctrickenabled"><span class="tip" data-tip="When force charge is active, reports SOC as 1/10 actual value to the inverter. Makes the inverter charge harder.">SOC Trick Enable (1/10 SOC for Force Charge)</span></label>
         </div>
         
         <div class="checkbox-row">
           <input type="checkbox" id="requestflagsenabled" onchange="SendJSONUpdate('requestflagsenabled')">
-          <label for="requestflagsenabled">Request Flags Enable (0x308 Status)</label>
+          <label for="requestflagsenabled"><span class="tip" data-tip="Send charge/discharge enable and force charge flags in the 0x35C CAN message. Required for some inverters.">Request Flags Enable (0x35C Status)</span></label>
         </div>
         
         <div class="section-title">Other Settings</div>
@@ -948,12 +976,12 @@
         </div>
         <div class="checkbox-row">
           <input type="checkbox" id="lcdenabled" onchange="SendJSONUpdate('lcdenabled')">
-          <label for="lcdenabled">LCD Enabled</label>
+          <label for="lcdenabled"><span class="tip" data-tip="Enable the I2C LCD display for showing battery status on the device.">LCD Enabled</span></label>
         </div>
         
         <div class="section-title">Network Configuration</div>
         <div class="form-group">
-          <label for="ntpserver">NTP Server:</label>
+          <label for="ntpserver"><span class="tip" data-tip="Time server for clock sync. Used for log timestamps. Leave blank to use default.">NTP Server:</span></label>
           <input type="textbox" id="ntpserver" onchange="EnqueueUpdate('ntpserver')" onkeypress="HandleEnter(event, 'ntpserver')">
         </div>
         
@@ -984,7 +1012,7 @@
         </div>
         
         <div class="form-group">
-          <label for="wifihostname">mDNS Hostname:</label>
+          <label for="wifihostname"><span class="tip" data-tip="Local network name for this device. Access the web UI at http://hostname.local">mDNS Hostname:</span></label>
           <input type="textbox" id="wifihostname" onkeypress="HandleEnter(event, 'SaveWifiConfig')">
         </div>
         
@@ -1005,19 +1033,15 @@
         </div>
         
         <div class="form-group">
-          <label for="mqttclientid">MQTT Client ID:</label>
+          <label for="mqttclientid"><span class="tip" data-tip="Unique client name for this device on the MQTT broker. Must be different from other devices.">MQTT Client ID:</span></label>
           <input type="textbox" id="mqttclientid" onchange="EnqueueUpdate('mqttclientid')" onkeypress="HandleEnter(event, 'mqttclientid')">
         </div>
         
         <div class="section-title">MQTT Topic Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="mqtttopic">MQTT Topic:</label>
+            <label for="mqtttopic"><span class="tip" data-tip="Base MQTT topic for publishing data. E.g. 'diybms' publishes to diybms/V, diybms/SOC, etc.">MQTT Topic:</span></label>
             <input type="textbox" id="mqtttopic" onchange="EnqueueUpdate('mqtttopic')" onkeypress="HandleEnter(event, 'mqtttopic')">
-          </div>
-          <div class="form-group">
-            <label for="mqttparameter">MQTT Parameter:</label>
-            <input type="textbox" id="mqttparameter" onchange="EnqueueUpdate('mqttparameter')" onkeypress="HandleEnter(event, 'mqttparameter')">
           </div>
         </div>
         
@@ -1038,7 +1062,7 @@
         
         <div class="section-title">Update Interval</div>
         <div class="form-group">
-          <label for="velooptime">WiFi and MQTT Refresh Rate (seconds):</label>
+          <label for="velooptime"><span class="tip" data-tip="How often battery data is published to MQTT and the web UI is refreshed.">WiFi and MQTT Refresh Rate (seconds):</span></label>
           <input type="number" id="velooptime" onchange="EnqueueUpdate('velooptime')" onkeypress="HandleEnter(event, 'velooptime')">
         </div>
         
@@ -1224,19 +1248,12 @@
       // console.log(event.data);
 
       if(obj.hasOwnProperty('BMS') && obj.BMS) {
-        if(obj.hasOwnProperty('chargevoltage')) { document.getElementById('chargevoltage').value=obj.chargevoltage; AckUpdate('chargevoltage'); }
-        if(obj.hasOwnProperty('minchargecurr')) { document.getElementById('minchargecurr').value=obj.minchargecurr; AckUpdate('minchargecurr'); }
-        if(obj.hasOwnProperty('adjuststep')) { document.getElementById('adjuststep').value=obj.adjuststep; AckUpdate('adjuststep'); }
-        if(obj.hasOwnProperty('smartinterval')) { document.getElementById('smartinterval').value=obj.smartinterval; AckUpdate('smartinterval'); }
-        if(obj.hasOwnProperty('overvoltage')) { document.getElementById('overvoltage').value=obj.overvoltage; AckUpdate('overvoltage'); }
-        if(obj.hasOwnProperty('dischargevoltage')) { document.getElementById('dischargevoltage').value=obj.dischargevoltage; AckUpdate('dischargevoltage'); }
-        if(obj.hasOwnProperty('maxchargecurrent')) { document.getElementById('maxchargecurrent').value=obj.maxchargecurrent; AckUpdate('maxchargecurrent'); }
-        if(obj.hasOwnProperty('maxdischargecurrent')) { document.getElementById('maxdischargecurrent').value=obj.maxdischargecurrent; AckUpdate('maxdischargecurrent'); }
-        if(obj.hasOwnProperty('batterycapacity')) { document.getElementById('batterycapacity').value=obj.batterycapacity; AckUpdate('batterycapacity'); }
-        if(obj.hasOwnProperty('lowsoclimit')) { document.getElementById('lowsoclimit').value=obj.lowsoclimit; AckUpdate('lowsoclimit'); }
-        if(obj.hasOwnProperty('highsoclimit')) { document.getElementById('highsoclimit').value=obj.highsoclimit; AckUpdate('highsoclimit'); }
-        if(obj.hasOwnProperty('velooptime')) { document.getElementById('velooptime').value=obj.velooptime; AckUpdate('velooptime'); }
-        if(obj.hasOwnProperty('canbusenabled')) document.getElementById('canbusenabled').checked=obj.canbusenabled;
+        ['chargevoltage','minchargecurr','adjuststep','smartinterval','overvoltage',
+         'dischargevoltage','maxchargecurrent','maxdischargecurrent','batterycapacity',
+         'lowsoclimit','highsoclimit','velooptime'].forEach(function(f) {
+          if(obj[f] !== undefined) { document.getElementById(f).value=obj[f]; AckUpdate(f); }
+        });
+        if(obj.canbusenabled !== undefined) document.getElementById('canbusenabled').checked=obj.canbusenabled;
       }
 
       if(obj.hasOwnProperty('RealTime') && obj.RealTime) {
@@ -1286,20 +1303,22 @@
             batteryWave.className = 'battery-wave';
             flowText.className = 'flow-text';
 
-            if(current > 0.5) {
-              // Charging
+            if(obj.forcecharge) {
+              batteryWave.classList.add('active', 'charging');
+              flowText.classList.add('charging');
+              flowText.innerHTML = '&#9889; Force Charging';
+              flowText.style.color = '#f44336';
+            } else if(current > 0.5) {
               batteryWave.classList.add('active', 'charging');
               flowText.classList.add('charging');
               flowText.innerHTML = '&#9650; Charging';
               flowText.style.color = '#4caf50';
             } else if(current < -0.5) {
-              // Discharging
               batteryWave.classList.add('active', 'discharging');
               flowText.classList.add('discharging');
               flowText.innerHTML = '&#9660; Discharging';
               flowText.style.color = '#ff9800';
             } else {
-              // Idle
               flowText.innerHTML = 'Idle';
               flowText.style.color = '#667eea';
             }
@@ -1334,7 +1353,7 @@
 
         if(obj.hasOwnProperty('chargeadjust')) {
           var adjElem = document.getElementById('chargeadjust');
-          if(adjElem) adjElem.innerHTML = obj.chargeadjust;
+          if(adjElem) adjElem.innerHTML = (obj.chargeadjust * 0.001).toFixed(1);
         }
 
         if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').innerHTML=(obj.chargecurrent*0.001).toFixed(0);
@@ -1373,9 +1392,9 @@
         }
       }
 
-      if(obj.hasOwnProperty('soctrickenabled')) document.getElementById('soctrickenabled').checked=obj.soctrickenabled;
-      if(obj.hasOwnProperty('requestflagsenabled')) document.getElementById('requestflagsenabled').checked=obj.requestflagsenabled;
-      if(obj.hasOwnProperty('autocharge')) document.getElementById('autocharge').checked=obj.autocharge;
+      ['soctrickenabled','requestflagsenabled','autocharge'].forEach(function(f) {
+        if(obj[f] !== undefined) document.getElementById(f).checked=obj[f];
+      });
       if(obj.hasOwnProperty('wifissid')) { 
         // Save the SSID as the current saved network
         savedWifiSSID = obj.wifissid;
@@ -1393,42 +1412,24 @@
         }
         AckUpdate('wifissid');
       }
-      if(obj.hasOwnProperty('wifipass')) { document.getElementById('wifipass').value=obj.wifipass; AckUpdate('wifipass'); }
-      if(obj.hasOwnProperty('wifihostname')) { document.getElementById('wifihostname').value=obj.wifihostname; AckUpdate('wifihostname'); }
-      if(obj.hasOwnProperty('victronrxpin')) { document.getElementById('victronrxpin').value=obj.victronrxpin; AckUpdate('victronrxpin'); }
-      if(obj.hasOwnProperty('victrontxpin')) { document.getElementById('victrontxpin').value=obj.victrontxpin; AckUpdate('victrontxpin'); }
+      ['wifipass','wifihostname','victronrxpin','victrontxpin',
+       'mqttport','mqttserverip','mqttclientid','mqtttopic','mqttuser','mqttpass',
+       'slowchargesoc1','slowchargesoc2','slowchargesoc1div','slowchargesoc2div',
+       'tailduration','maxabsorptiontime','rechargesoc',
+       'chargehightemp','chargelowtemp','dischargehightemp','dischargelowtemp',
+       'ntpserver'].forEach(function(f) {
+        if(obj[f] !== undefined) { document.getElementById(f).value=obj[f]; AckUpdate(f); }
+      });
       {{CAN_FIELD_HANDLERS}}
-      if(obj.hasOwnProperty('mqttport')) { document.getElementById('mqttport').value=obj.mqttport; AckUpdate('mqttport'); }
-      if(obj.hasOwnProperty('mqttserverip')) { document.getElementById('mqttserverip').value=obj.mqttserverip; AckUpdate('mqttserverip'); }
-      if(obj.hasOwnProperty('mqttclientid')) { document.getElementById('mqttclientid').value=obj.mqttclientid; AckUpdate('mqttclientid'); }
-      if(obj.hasOwnProperty('mqtttopic')) { document.getElementById('mqtttopic').value=obj.mqtttopic; AckUpdate('mqtttopic'); }
-      if(obj.hasOwnProperty('mqttparameter')) { document.getElementById('mqttparameter').value=obj.mqttparameter; AckUpdate('mqttparameter'); }
-      if(obj.hasOwnProperty('mqttuser')) { document.getElementById('mqttuser').value=obj.mqttuser; AckUpdate('mqttuser'); }
-      if(obj.hasOwnProperty('mqttpass')) { document.getElementById('mqttpass').value=obj.mqttpass; AckUpdate('mqttpass'); }
-      if(obj.hasOwnProperty('slowchargesoc1')) { document.getElementById('slowchargesoc1').value=obj.slowchargesoc1; AckUpdate('slowchargesoc1'); }
-      if(obj.hasOwnProperty('slowchargesoc2')) { document.getElementById('slowchargesoc2').value=obj.slowchargesoc2; AckUpdate('slowchargesoc2'); }
-      if(obj.hasOwnProperty('slowchargesoc1div')) { document.getElementById('slowchargesoc1div').value=obj.slowchargesoc1div; AckUpdate('slowchargesoc1div'); }
-      if(obj.hasOwnProperty('slowchargesoc2div')) { document.getElementById('slowchargesoc2div').value=obj.slowchargesoc2div; AckUpdate('slowchargesoc2div'); }
-      if(obj.hasOwnProperty('tailcurrent')) { document.getElementById('tailcurrent').value=(obj.tailcurrent*0.001).toFixed(1); AckUpdate('tailcurrent'); }
-      if(obj.hasOwnProperty('tailduration')) { document.getElementById('tailduration').value=obj.tailduration; AckUpdate('tailduration'); }
-      if(obj.hasOwnProperty('maxabsorptiontime')) { document.getElementById('maxabsorptiontime').value=obj.maxabsorptiontime; AckUpdate('maxabsorptiontime'); }
-      if(obj.hasOwnProperty('rechargesoc')) { document.getElementById('rechargesoc').value=obj.rechargesoc; AckUpdate('rechargesoc'); }
-      if(obj.hasOwnProperty('rechargevoltageoffset')) { document.getElementById('rechargevoltageoffset').value=(obj.rechargevoltageoffset*0.001).toFixed(1); AckUpdate('rechargevoltageoffset'); }
-      if(obj.hasOwnProperty('tempprotection')) { document.getElementById('tempprotection').checked=obj.tempprotection; toggleTempConfig(); }
-      if(obj.hasOwnProperty('showtempdashboard')) document.getElementById('showtempdashboard').checked=obj.showtempdashboard;
-      if(obj.hasOwnProperty('chargehightemp')) { document.getElementById('chargehightemp').value=obj.chargehightemp; AckUpdate('chargehightemp'); }
-      if(obj.hasOwnProperty('chargelowtemp')) { document.getElementById('chargelowtemp').value=obj.chargelowtemp; AckUpdate('chargelowtemp'); }
-      if(obj.hasOwnProperty('dischargehightemp')) { document.getElementById('dischargehightemp').value=obj.dischargehightemp; AckUpdate('dischargehightemp'); }
-      if(obj.hasOwnProperty('dischargelowtemp')) { document.getElementById('dischargelowtemp').value=obj.dischargelowtemp; AckUpdate('dischargelowtemp'); }
-
-      if(obj.hasOwnProperty('lcdenabled')) document.getElementById('lcdenabled').checked=obj.lcdenabled;
-      if(obj.hasOwnProperty('ntpserver')) { document.getElementById('ntpserver').value=obj.ntpserver; AckUpdate('ntpserver'); }
+      if(obj.tailcurrent !== undefined) { document.getElementById('tailcurrent').value=(obj.tailcurrent*0.001).toFixed(1); AckUpdate('tailcurrent'); }
+      if(obj.rechargevoltageoffset !== undefined) { document.getElementById('rechargevoltageoffset').value=(obj.rechargevoltageoffset*0.001).toFixed(1); AckUpdate('rechargevoltageoffset'); }
+      if(obj.tempprotection !== undefined) { document.getElementById('tempprotection').checked=obj.tempprotection; toggleTempConfig(); }
+      if(obj.showtempdashboard !== undefined) document.getElementById('showtempdashboard').checked=obj.showtempdashboard;
+      if(obj.lcdenabled !== undefined) document.getElementById('lcdenabled').checked=obj.lcdenabled;
       {{FAN_PIN_HANDLER}}
 
-      if(obj.hasOwnProperty('modelstring')) { var e=document.getElementById('devModel'); if(e) e.innerHTML=obj.modelstring || '--'; }
-      if(obj.hasOwnProperty('fwversion')) { var e=document.getElementById('devFW'); if(e) e.innerHTML=obj.fwversion || '--'; }
-      if(obj.hasOwnProperty('serialnumber')) { var e=document.getElementById('devSerial'); if(e) e.innerHTML=obj.serialnumber || '--'; }
-      if(obj.hasOwnProperty('pidstring')) { var e=document.getElementById('devPID'); if(e) e.innerHTML=obj.pidstring || '--'; }
+      var devFields = {modelstring:'devModel',fwversion:'devFW',serialnumber:'devSerial',pidstring:'devPID'};
+      for(var k in devFields) { if(obj[k] !== undefined) { var e=document.getElementById(devFields[k]); if(e) e.innerHTML=obj[k]||'--'; } }
       if(obj.hasOwnProperty('freeheap') && obj.hasOwnProperty('totalheap')) {
         var e=document.getElementById('heapInfo');
         if(e) e.innerHTML=(obj.freeheap/1024).toFixed(0) + 'KB / ' + (obj.totalheap/1024).toFixed(0) + 'KB';
