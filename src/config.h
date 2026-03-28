@@ -23,6 +23,20 @@
 */
 #define SYSLOG 1
 
+#define FW_VERSION "2.7.2"
+
+#if defined(ESPCAN_C3)
+  #define FW_BUILD "ESP32-C3 TWAI"
+#elif defined(ESPCAN_S3)
+  #define FW_BUILD "ESP32-S3 TWAI"
+#elif defined(ESPCAN)
+  #define FW_BUILD "ESP32 TWAI"
+#elif defined(BMS_S3)
+  #define FW_BUILD "ESP32-S3 MCP2515"
+#else
+  #define FW_BUILD "ESP32 MCP2515"
+#endif
+
 #define initBattChargeVoltage 0       // Battery Charge Voltage sent to inverter
 #define initBattOverVoltage 0             // Battery Over Voltage - stop charging if Batt Volts hits this.
 #define initBattDischargeVoltage 0    // Battery discharge voltage, not currently used
