@@ -134,7 +134,7 @@ def generate_embedded_html(source, target, env):
         fan_handler = ''
         if not hide_fan:
             fan_field = '''<div class="form-group">
-                <label for="fanpin">FAN Pin:</label>
+                <label for="fanpin"><span class="tip" data-tip="GPIO pin for PWM fan output. Set to 0 to disable.">FAN Pin:</span></label>
                 <input type="number" id="fanpin" onchange="EnqueueUpdate('fanpin')" onkeypress="HandleEnter(event, 'fanpin')">
               </div>'''
             fan_handler = '''if(obj.hasOwnProperty('fanpin')) document.getElementById('fanpin').value=obj.fanpin;

@@ -31,7 +31,7 @@
     .header {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
-      padding: 30px;
+      padding: 20px;
       text-align: center;
     }
     
@@ -79,7 +79,7 @@
     }
     
     .content {
-      padding: 30px;
+      padding: 20px 25px;
     }
     
     .tab-pane {
@@ -97,14 +97,14 @@
     }
     
     .form-group {
-      margin-bottom: 20px;
+      margin-bottom: 12px;
     }
     
     .form-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 20px;
+      gap: 14px;
+      margin-bottom: 14px;
     }
     
     .form-row.full {
@@ -122,13 +122,13 @@
     .stat-box {
       background: #f8f8f8;
       border-radius: 8px;
-      padding: 20px 15px;
+      padding: 14px 12px;
       text-align: center;
-      margin-bottom: 15px;
+      margin-bottom: 8px;
       position: relative;
       border-left: 4px solid #667eea;
       transition: transform 0.2s ease, box-shadow 0.2s ease;
-      min-height: 100px;
+      min-height: 70px;
     }
 
     .stat-box:hover {
@@ -154,13 +154,13 @@
     .stat-box.stat-status { border-left-color: #2196f3; }
 
     .stat-label {
-      font-size: 14px;
+      font-size: 13px;
       color: #666;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
     }
 
     .stat-value {
-      font-size: 20px;
+      font-size: 18px;
       color: #667eea;
       font-weight: 700;
       line-height: 1.2;
@@ -353,10 +353,10 @@
     
     label {
       display: block;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
       font-weight: 500;
       color: #333;
-      font-size: 14px;
+      font-size: 13px;
     }
     
     input[type="text"],
@@ -366,10 +366,10 @@
     input[type="file"],
     select {
       width: 100%;
-      padding: 10px 12px;
+      padding: 8px 10px;
       border: 1px solid #ddd;
       border-radius: 6px;
-      font-size: 14px;
+      font-size: 13px;
       transition: border-color 0.3s;
     }
     
@@ -475,12 +475,12 @@
     .toast.error { background: #dc3545; }
     
     .section-title {
-      font-size: 16px;
+      font-size: 15px;
       font-weight: 600;
       color: #667eea;
-      margin-top: 25px;
-      margin-bottom: 15px;
-      padding-bottom: 10px;
+      margin-top: 18px;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
       border-bottom: 2px solid #f0f0f0;
     }
     
@@ -533,7 +533,7 @@
     .button-group {
       display: flex;
       gap: 10px;
-      margin-top: 20px;
+      margin-top: 14px;
       flex-wrap: wrap;
     }
     
@@ -546,7 +546,7 @@
       display: flex;
       align-items: center;
       gap: 10px;
-      margin-bottom: 15px;
+      margin-bottom: 10px;
     }
     
     .checkbox-row label {
@@ -617,13 +617,52 @@
     .conn-dot.connected { background: #4caf50; }
 
     @media (max-width: 768px) {
+      body {
+        padding: 8px;
+      }
+      .header {
+        padding: 14px;
+      }
+      .header h1 {
+        font-size: 22px;
+      }
+      .content {
+        padding: 12px;
+      }
       .form-row, .form-row.col3, .form-row.col4 {
         grid-template-columns: 1fr;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .form-row.col4 {
+        grid-template-columns: 1fr 1fr;
       }
       .tab-button {
         min-width: 0;
-        padding: 12px 8px;
+        padding: 10px 6px;
         font-size: 11px;
+      }
+      .stat-box {
+        padding: 10px 8px;
+        min-height: 60px;
+      }
+      .battery-container {
+        width: 160px;
+        height: 70px;
+      }
+      .battery-percentage {
+        font-size: 28px;
+        line-height: 70px;
+      }
+      .battery-tip {
+        width: 8px;
+        height: 28px;
+      }
+      .button-group {
+        flex-direction: column;
+      }
+      .button-group button {
+        min-width: unset;
       }
     }
 
@@ -731,10 +770,18 @@
           </div>
         </div>
 
-        <div id="tempRow" class="form-row" style="display:none;">
+        <div id="tempRow" class="form-row col3" style="display:none;">
           <div class="stat-box stat-status">
             <div class="stat-label">Battery Temperature</div>
             <div class="stat-value"><label id="batttemp">--</label>&deg;C</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Inverter Temperature</div>
+            <div class="stat-value"><label id="mqttinvertertemp">--</label>&deg;C</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Fan PWM</div>
+            <div class="stat-value"><label id="fanpwm">0</label>%</div>
           </div>
         </div>
 
@@ -827,24 +874,21 @@
         </div>
         
         <div class="section-title">Slow Charge Configuration</div>
-        <div class="form-row">
+        <div class="form-row col4">
           <div class="form-group">
             <label for="slowchargesoc1"><span class="tip" data-tip="When SOC reaches this %, charge current is reduced to capacity / divider 1.">Slow Charge SOC 1:</span></label>
             <input type="number" id="slowchargesoc1" onchange="EnqueueUpdate('slowchargesoc1')" onkeypress="HandleEnter(event, 'slowchargesoc1')">
           </div>
           <div class="form-group">
-            <label for="slowchargesoc1div"><span class="tip" data-tip="Capacity divider for slow charge 1. Charge current = capacity / this value. E.g. 100Ah / 2 = C/2 (50A).">Slow Charge 1 (divider):</span></label>
+            <label for="slowchargesoc1div"><span class="tip" data-tip="Capacity divider for slow charge 1. Charge current = capacity / this value. E.g. 100Ah / 2 = C/2 (50A).">Divider 1:</span></label>
             <input type="number" id="slowchargesoc1div" onchange="EnqueueUpdate('slowchargesoc1div')" onkeypress="HandleEnter(event, 'slowchargesoc1div')">
           </div>
-        </div>
-        
-        <div class="form-row">
           <div class="form-group">
             <label for="slowchargesoc2"><span class="tip" data-tip="Second slow charge threshold. When SOC reaches this %, charge current is reduced further using divider 2.">Slow Charge SOC 2:</span></label>
             <input type="number" id="slowchargesoc2" onchange="EnqueueUpdate('slowchargesoc2')" onkeypress="HandleEnter(event, 'slowchargesoc2')">
           </div>
           <div class="form-group">
-            <label for="slowchargesoc2div"><span class="tip" data-tip="Capacity divider for slow charge 2. Charge current = capacity / this value.">Slow Charge 2 (divider):</span></label>
+            <label for="slowchargesoc2div"><span class="tip" data-tip="Capacity divider for slow charge 2. Charge current = capacity / this value.">Divider 2:</span></label>
             <input type="number" id="slowchargesoc2div" onchange="EnqueueUpdate('slowchargesoc2div')" onkeypress="HandleEnter(event, 'slowchargesoc2div')">
           </div>
         </div>
@@ -861,7 +905,7 @@
           </div>
         </div>
 
-        <div class="form-row">
+        <div class="form-row col3">
           <div class="form-group">
             <label for="maxabsorptiontime"><span class="tip" data-tip="Safety timeout. Absorption phase ends after this many minutes even if tail current hasn't been reached.">Max Absorption Time (min):</span></label>
             <input type="number" id="maxabsorptiontime" min="0" max="1440" onchange="EnqueueUpdate('maxabsorptiontime')" onkeypress="HandleEnter(event, 'maxabsorptiontime')">
@@ -870,11 +914,8 @@
             <label for="rechargesoc"><span class="tip" data-tip="After charge completes, a new bulk charge cycle starts when SOC drops below this percentage.">Recharge SOC (%):</span></label>
             <input type="number" id="rechargesoc" min="0" max="100" onchange="EnqueueUpdate('rechargesoc')" onkeypress="HandleEnter(event, 'rechargesoc')">
           </div>
-        </div>
-
-        <div class="form-row full">
           <div class="form-group">
-            <label for="rechargevoltageoffset"><span class="tip" data-tip="Voltage drop from target that triggers a new bulk charge cycle. Also used to detect significant voltage drops during absorption.">Recharge Voltage Offset (V):</span></label>
+            <label for="rechargevoltageoffset"><span class="tip" data-tip="Voltage drop from target that triggers a new bulk charge cycle. Also used to detect significant voltage drops during absorption.">Recharge V Offset (V):</span></label>
             <input type="number" id="rechargevoltageoffset" min="0" max="10" step="0.1" onchange="EnqueueUpdate('rechargevoltageoffset')" onkeypress="HandleEnter(event, 'rechargevoltageoffset')">
           </div>
         </div>
@@ -893,21 +934,32 @@
         <div id="tempConfigFields" style="display:none;">
           <div class="form-row">
             <div class="form-group">
-              <label for="chargehightemp"><span class="tip" data-tip="Charging is disabled above this temperature.">Charge High Temp Cutoff (&deg;C):</span></label>
+              <label for="batttempsrc"><span class="tip" data-tip="Select where battery temperature data comes from. VE.Direct uses the shunt sensor, MQTT subscribes to an external topic.">Battery Temp Source:</span></label>
+              <select id="batttempsrc" onchange="SendJSONUpdate('batttempsrc'); toggleMqttTempTopics();">
+                <option value="0">VE.Direct</option>
+                <option value="1">MQTT</option>
+              </select>
+            </div>
+            <div class="form-group" id="mqttBattTopicGroup" style="display:none;">
+              <label for="mqttbatttopic"><span class="tip" data-tip="External MQTT topic to subscribe to for battery temperature (e.g. solar_assistant/battery_1/temperature/state).">MQTT Battery Temp Topic:</span></label>
+              <input type="text" id="mqttbatttopic" onchange="EnqueueUpdate('mqttbatttopic')" onkeypress="HandleEnter(event, 'mqttbatttopic')">
+            </div>
+          </div>
+          <div class="form-row col4">
+            <div class="form-group">
+              <label for="chargehightemp"><span class="tip" data-tip="Charging is disabled above this temperature.">Chg High (&deg;C):</span></label>
               <input type="number" id="chargehightemp" min="-20" max="60" onchange="EnqueueUpdate('chargehightemp')" onkeypress="HandleEnter(event, 'chargehightemp')">
             </div>
             <div class="form-group">
-              <label for="chargelowtemp"><span class="tip" data-tip="Charging is disabled below this temperature. Important for lithium batteries which should not charge below 0°C.">Charge Low Temp Cutoff (&deg;C):</span></label>
+              <label for="chargelowtemp"><span class="tip" data-tip="Charging is disabled below this temperature. Important for lithium batteries which should not charge below 0°C.">Chg Low (&deg;C):</span></label>
               <input type="number" id="chargelowtemp" min="-40" max="45" onchange="EnqueueUpdate('chargelowtemp')" onkeypress="HandleEnter(event, 'chargelowtemp')">
             </div>
-          </div>
-          <div class="form-row">
             <div class="form-group">
-              <label for="dischargehightemp"><span class="tip" data-tip="Discharging is disabled above this temperature.">Discharge High Temp Cutoff (&deg;C):</span></label>
+              <label for="dischargehightemp"><span class="tip" data-tip="Discharging is disabled above this temperature.">Dchg High (&deg;C):</span></label>
               <input type="number" id="dischargehightemp" min="-20" max="70" onchange="EnqueueUpdate('dischargehightemp')" onkeypress="HandleEnter(event, 'dischargehightemp')">
             </div>
             <div class="form-group">
-              <label for="dischargelowtemp"><span class="tip" data-tip="Discharging is disabled below this temperature.">Discharge Low Temp Cutoff (&deg;C):</span></label>
+              <label for="dischargelowtemp"><span class="tip" data-tip="Discharging is disabled below this temperature.">Dchg Low (&deg;C):</span></label>
               <input type="number" id="dischargelowtemp" min="-40" max="45" onchange="EnqueueUpdate('dischargelowtemp')" onkeypress="HandleEnter(event, 'dischargelowtemp')">
             </div>
           </div>
@@ -939,7 +991,10 @@
           <input type="checkbox" id="canbusenabled" onchange="SendJSONUpdate('canbusenabled')">
           <label for="canbusenabled"><span class="tip" data-tip="Enable CAN bus communication with the inverter. Disable if no inverter is connected.">CAN Bus Enabled</span></label>
         </div>
-        
+        <div class="form-row">
+          {{CAN_CONFIG_FIELDS}}
+        </div>
+
         <div class="section-title">Victron Configuration</div>
         <div class="form-row">
           <div class="form-group">
@@ -952,28 +1007,53 @@
           </div>
         </div>
         
-        <!-- BEGIN_CAN_CONFIG -->
-        <div class="section-title">{{CAN_CONFIG_TITLE}}</div>
+        <div class="section-title">Inverter Tricks</div>
         <div class="form-row">
-          {{CAN_CONFIG_FIELDS}}
+          <div class="checkbox-row">
+            <input type="checkbox" id="soctrickenabled" onchange="SendJSONUpdate('soctrickenabled')">
+            <label for="soctrickenabled"><span class="tip" data-tip="When force charge is active, reports SOC as 1/10 actual value to the inverter. Makes the inverter charge harder.">SOC Trick Enable (1/10 SOC)</span></label>
+          </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="requestflagsenabled" onchange="SendJSONUpdate('requestflagsenabled')">
+            <label for="requestflagsenabled"><span class="tip" data-tip="Send charge/discharge enable and force charge flags in the 0x35C CAN message. Required for some inverters.">Request Flags (0x35C Status)</span></label>
+          </div>
         </div>
-        <!-- END_CAN_CONFIG -->
-        
-        <div class="section-title">Protocol Settings</div>
-        <div class="checkbox-row">
-          <input type="checkbox" id="soctrickenabled" onchange="SendJSONUpdate('soctrickenabled')">
-          <label for="soctrickenabled"><span class="tip" data-tip="When force charge is active, reports SOC as 1/10 actual value to the inverter. Makes the inverter charge harder.">SOC Trick Enable (1/10 SOC for Force Charge)</span></label>
+        <div class="form-row">
+          <div class="checkbox-row">
+            <input type="checkbox" id="never100soc" onchange="SendJSONUpdate('never100soc')">
+            <label for="never100soc"><span class="tip" data-tip="Some inverters shut down solar export when 100% SOC is received. Enable this to always send 99% max over CAN bus. Internal SOC tracking and charge control still uses the real value.">Never Send 100% SOC</span></label>
+          </div>
         </div>
         
-        <div class="checkbox-row">
-          <input type="checkbox" id="requestflagsenabled" onchange="SendJSONUpdate('requestflagsenabled')">
-          <label for="requestflagsenabled"><span class="tip" data-tip="Send charge/discharge enable and force charge flags in the 0x35C CAN message. Required for some inverters.">Request Flags Enable (0x35C Status)</span></label>
-        </div>
-        
-        <div class="section-title">Other Settings</div>
+        <div class="section-title">Fan Control</div>
         <div class="form-row">
           {{FAN_PIN_FIELD}}
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="fantempsrc"><span class="tip" data-tip="Select fan control mode. Disabled uses current-based control. MQTT Inverter Temp uses linear temperature control from an external MQTT topic.">Fan Temp Source:</span></label>
+            <select id="fantempsrc" onchange="SendJSONUpdate('fantempsrc'); toggleMqttTempTopics();">
+              <option value="0">Disabled</option>
+              <option value="1">MQTT Inverter Temp</option>
+            </select>
+          </div>
+          <div class="form-group" id="mqttInvTopicGroup" style="display:none;">
+            <label for="mqttinvtopic"><span class="tip" data-tip="External MQTT topic to subscribe to for inverter temperature (e.g. solar_assistant/inverter_1/device_temperature/state).">MQTT Inverter Temp Topic:</span></label>
+            <input type="text" id="mqttinvtopic" onchange="EnqueueUpdate('mqttinvtopic')" onkeypress="HandleEnter(event, 'mqttinvtopic')">
+          </div>
+        </div>
+        <div class="form-row" id="fanTempSettingsGroup" style="display:none;">
+          <div class="form-group">
+            <label for="fanofftemp"><span class="tip" data-tip="Temperature below which the fan turns off completely.">Fan Off Temperature (&deg;C):</span></label>
+            <input type="number" id="fanofftemp" min="0" max="80" onchange="EnqueueUpdate('fanofftemp')" onkeypress="HandleEnter(event, 'fanofftemp')">
+          </div>
+          <div class="form-group">
+            <label for="fanfulltemp"><span class="tip" data-tip="Temperature at which the fan runs at full speed. Linear ramp between off and full.">Fan Full Speed Temperature (&deg;C):</span></label>
+            <input type="number" id="fanfulltemp" min="0" max="80" onchange="EnqueueUpdate('fanfulltemp')" onkeypress="HandleEnter(event, 'fanfulltemp')">
+          </div>
+        </div>
+
+        <div class="section-title">Other Settings</div>
         <div class="checkbox-row">
           <input type="checkbox" id="lcdenabled" onchange="SendJSONUpdate('lcdenabled')">
           <label for="lcdenabled"><span class="tip" data-tip="Enable the I2C LCD display for showing battery status on the device.">LCD Enabled</span></label>
@@ -1003,17 +1083,18 @@
           </div>
         </div>
         
-        <div class="form-group">
-          <label for="wifipass">WiFi Password:</label>
-          <div class="password-wrapper">
-            <input type="password" id="wifipass" onkeypress="HandleEnter(event, 'SaveWifiConfig')">
-            <button type="button" class="password-toggle" onclick="togglePassword('wifipass')">Show</button>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="wifipass">WiFi Password:</label>
+            <div class="password-wrapper">
+              <input type="password" id="wifipass" onkeypress="HandleEnter(event, 'SaveWifiConfig')">
+              <button type="button" class="password-toggle" onclick="togglePassword('wifipass')">Show</button>
+            </div>
           </div>
-        </div>
-        
-        <div class="form-group">
-          <label for="wifihostname"><span class="tip" data-tip="Local network name for this device. Access the web UI at http://hostname.local">mDNS Hostname:</span></label>
-          <input type="textbox" id="wifihostname" onkeypress="HandleEnter(event, 'SaveWifiConfig')">
+          <div class="form-group">
+            <label for="wifihostname"><span class="tip" data-tip="Local network name for this device. Access the web UI at http://hostname.local">mDNS Hostname:</span></label>
+            <input type="textbox" id="wifihostname" onkeypress="HandleEnter(event, 'SaveWifiConfig')">
+          </div>
         </div>
         
         <div class="form-group">
@@ -1032,13 +1113,11 @@
           </div>
         </div>
         
-        <div class="form-group">
-          <label for="mqttclientid"><span class="tip" data-tip="Unique client name for this device on the MQTT broker. Must be different from other devices.">MQTT Client ID:</span></label>
-          <input type="textbox" id="mqttclientid" onchange="EnqueueUpdate('mqttclientid')" onkeypress="HandleEnter(event, 'mqttclientid')">
-        </div>
-        
-        <div class="section-title">MQTT Topic Configuration</div>
         <div class="form-row">
+          <div class="form-group">
+            <label for="mqttclientid"><span class="tip" data-tip="Unique client name for this device on the MQTT broker. Must be different from other devices.">MQTT Client ID:</span></label>
+            <input type="textbox" id="mqttclientid" onchange="EnqueueUpdate('mqttclientid')" onkeypress="HandleEnter(event, 'mqttclientid')">
+          </div>
           <div class="form-group">
             <label for="mqtttopic"><span class="tip" data-tip="Base MQTT topic for publishing data. E.g. 'diybms' publishes to diybms/V, diybms/SOC, etc.">MQTT Topic:</span></label>
             <input type="textbox" id="mqtttopic" onchange="EnqueueUpdate('mqtttopic')" onkeypress="HandleEnter(event, 'mqtttopic')">
@@ -1060,10 +1139,11 @@
           </div>
         </div>
         
-        <div class="section-title">Update Interval</div>
-        <div class="form-group">
-          <label for="velooptime"><span class="tip" data-tip="How often battery data is published to MQTT and the web UI is refreshed.">WiFi and MQTT Refresh Rate (seconds):</span></label>
-          <input type="number" id="velooptime" onchange="EnqueueUpdate('velooptime')" onkeypress="HandleEnter(event, 'velooptime')">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="velooptime"><span class="tip" data-tip="How often battery data is published to MQTT and the web UI is refreshed.">MQTT Refresh Rate (seconds):</span></label>
+            <input type="number" id="velooptime" onchange="EnqueueUpdate('velooptime')" onkeypress="HandleEnter(event, 'velooptime')">
+          </div>
         </div>
         
         <div class="button-group">
@@ -1090,7 +1170,17 @@
       
       <!-- Firmware Tab -->
       <div id="firmware" class="tab-pane">
-        <div class="section-title">Firmware Updates</div>
+        <div class="section-title">BMS Firmware</div>
+        <div class="form-row">
+          <div class="stat-box stat-status">
+            <div class="stat-label">Version</div>
+            <div class="stat-value" id="fwVersionBms" style="font-size: 14px;">--</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Build Target</div>
+            <div class="stat-value" id="fwBuild" style="font-size: 14px;">--</div>
+          </div>
+        </div>
         <div class="form-group">
           <label>Firmware:</label>
           <input type="file" accept=".bin,.bin.gz" id="firmwareFile" style="margin-bottom: 10px;">
@@ -1202,6 +1292,18 @@
     function toggleTempConfig() {
       var el = document.getElementById('tempConfigFields');
       if(el) el.style.display = document.getElementById('tempprotection').checked ? '' : 'none';
+      toggleMqttTempTopics();
+    }
+
+    function toggleMqttTempTopics() {
+      var battSrc = document.getElementById('batttempsrc');
+      var fanSrc = document.getElementById('fantempsrc');
+      var battGroup = document.getElementById('mqttBattTopicGroup');
+      var invGroup = document.getElementById('mqttInvTopicGroup');
+      var fanSettings = document.getElementById('fanTempSettingsGroup');
+      if(battGroup) battGroup.style.display = (battSrc && battSrc.value === '1') ? '' : 'none';
+      if(invGroup) invGroup.style.display = (fanSrc && fanSrc.value === '1') ? '' : 'none';
+      if(fanSettings) fanSettings.style.display = (fanSrc && fanSrc.value === '1') ? '' : 'none';
     }
 
     function initWebSocket() {
@@ -1253,7 +1355,7 @@
          'lowsoclimit','highsoclimit','velooptime'].forEach(function(f) {
           if(obj[f] !== undefined) { document.getElementById(f).value=obj[f]; AckUpdate(f); }
         });
-        if(obj.canbusenabled !== undefined) document.getElementById('canbusenabled').checked=obj.canbusenabled;
+        if(obj.canbusenabled !== undefined) { document.getElementById('canbusenabled').checked=obj.canbusenabled; AckUpdate('canbusenabled'); }
       }
 
       if(obj.hasOwnProperty('RealTime') && obj.RealTime) {
@@ -1345,6 +1447,14 @@
           var tempElem = document.getElementById('batttemp');
           if(tempElem) tempElem.innerHTML = obj.batttemp;
         }
+        if(obj.hasOwnProperty('mqttinvertertemp')) {
+          var e = document.getElementById('mqttinvertertemp');
+          if(e) e.innerHTML = obj.mqttinvertertemp == -127 ? '--' : obj.mqttinvertertemp;
+        }
+        if(obj.hasOwnProperty('fanpwm')) {
+          var e = document.getElementById('fanpwm');
+          if(e) e.innerHTML = obj.fanpwm;
+        }
 
         if(obj.hasOwnProperty('showtempdashboard')) {
           var tempRow = document.getElementById('tempRow');
@@ -1353,7 +1463,7 @@
 
         if(obj.hasOwnProperty('chargeadjust')) {
           var adjElem = document.getElementById('chargeadjust');
-          if(adjElem) adjElem.innerHTML = (obj.chargeadjust * 0.001).toFixed(1);
+          if(adjElem) adjElem.innerHTML = (obj.chargeadjust * 0.001).toFixed(0);
         }
 
         if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').innerHTML=(obj.chargecurrent*0.001).toFixed(0);
@@ -1392,8 +1502,8 @@
         }
       }
 
-      ['soctrickenabled','requestflagsenabled','autocharge'].forEach(function(f) {
-        if(obj[f] !== undefined) document.getElementById(f).checked=obj[f];
+      ['soctrickenabled','requestflagsenabled','never100soc','autocharge'].forEach(function(f) {
+        if(obj[f] !== undefined) { document.getElementById(f).checked=obj[f]; AckUpdate(f); }
       });
       if(obj.hasOwnProperty('wifissid')) { 
         // Save the SSID as the current saved network
@@ -1417,15 +1527,18 @@
        'slowchargesoc1','slowchargesoc2','slowchargesoc1div','slowchargesoc2div',
        'tailduration','maxabsorptiontime','rechargesoc',
        'chargehightemp','chargelowtemp','dischargehightemp','dischargelowtemp',
+       'mqttbatttopic','mqttinvtopic','fanofftemp','fanfulltemp',
        'ntpserver'].forEach(function(f) {
         if(obj[f] !== undefined) { document.getElementById(f).value=obj[f]; AckUpdate(f); }
       });
       {{CAN_FIELD_HANDLERS}}
       if(obj.tailcurrent !== undefined) { document.getElementById('tailcurrent').value=(obj.tailcurrent*0.001).toFixed(1); AckUpdate('tailcurrent'); }
       if(obj.rechargevoltageoffset !== undefined) { document.getElementById('rechargevoltageoffset').value=(obj.rechargevoltageoffset*0.001).toFixed(1); AckUpdate('rechargevoltageoffset'); }
-      if(obj.tempprotection !== undefined) { document.getElementById('tempprotection').checked=obj.tempprotection; toggleTempConfig(); }
-      if(obj.showtempdashboard !== undefined) document.getElementById('showtempdashboard').checked=obj.showtempdashboard;
-      if(obj.lcdenabled !== undefined) document.getElementById('lcdenabled').checked=obj.lcdenabled;
+      if(obj.tempprotection !== undefined) { document.getElementById('tempprotection').checked=obj.tempprotection; AckUpdate('tempprotection'); toggleTempConfig(); }
+      if(obj.showtempdashboard !== undefined) { document.getElementById('showtempdashboard').checked=obj.showtempdashboard; AckUpdate('showtempdashboard'); }
+      if(obj.batttempsrc !== undefined) { document.getElementById('batttempsrc').value=obj.batttempsrc; AckUpdate('batttempsrc'); toggleMqttTempTopics(); }
+      if(obj.fantempsrc !== undefined) { document.getElementById('fantempsrc').value=obj.fantempsrc; AckUpdate('fantempsrc'); toggleMqttTempTopics(); }
+      if(obj.lcdenabled !== undefined) { document.getElementById('lcdenabled').checked=obj.lcdenabled; AckUpdate('lcdenabled'); }
       {{FAN_PIN_HANDLER}}
 
       var devFields = {modelstring:'devModel',fwversion:'devFW',serialnumber:'devSerial',pidstring:'devPID'};
@@ -1437,6 +1550,14 @@
       if(obj.hasOwnProperty('cantotalfails')) {
         var e=document.getElementById('canFailInfo');
         if(e) e.innerHTML=obj.cantotalfails;
+      }
+      if(obj.hasOwnProperty('fwversion_bms')) {
+        var e=document.getElementById('fwVersionBms');
+        if(e) e.innerHTML=obj.fwversion_bms;
+      }
+      if(obj.hasOwnProperty('fwbuild')) {
+        var e=document.getElementById('fwBuild');
+        if(e) e.innerHTML=obj.fwbuild;
       }
 
       // Handle WiFi scan results from WebSocket
