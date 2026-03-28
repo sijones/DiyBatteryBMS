@@ -69,6 +69,15 @@ const char* const ccDisHighTemp = "DisHighTemp";
 const char* const ccDisLowTemp = "DisLowTemp";
 const char* const ccShowTemp = "ShowTemp";
 
+// MQTT Temperature Subscription & Fan Control
+const char* const ccBattTempSrc = "BattTempSrc";
+const char* const ccFanTempSrc = "FanTempSrc";
+const char* const ccMQTTBattTopic = "MQBattTopic";
+const char* const ccMQTTInvTopic = "MQInvTopic";
+const char* const ccNever100SOC = "Never100SOC";
+const char* const ccFanOffTemp = "FanOffTemp";
+const char* const ccFanFullTemp = "FanFullTemp";
+
 const char* const ccVELOOPTIME = "VE_LOOP_TIME";
 const char* const ccCANBusEnabled  = "CANEnabled";
 const char* const ccLcdEnabled = "lcdenabled";

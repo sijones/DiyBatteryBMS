@@ -622,7 +622,7 @@ bool CANBUS::SendCANData(){
     CAN_MSG[0] = lowByte(u_int8_t(_battSOC * 0.1));
     CAN_MSG[1] = highByte(u_int8_t(_battSOC * 0.1));
   }
-  else if(_battSOC >= 100 && _chargePhase != PHASE_COMPLETE) {
+  else if(_battSOC >= 100 && (_chargePhase != PHASE_COMPLETE || _never100SOC)) {
     CAN_MSG[0] = lowByte(99);
     CAN_MSG[1] = highByte(99);
   }

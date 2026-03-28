@@ -121,6 +121,20 @@ int16_t _dischargeLowTemp = -20;
 bool _tempProtectionEnabled = false;
 bool _showTempOnDashboard = false;
 
+bool _never100SOC = false;       // Never send 100% SOC over CAN
+
+// Temperature source selection
+uint8_t _battTempSource = 0;      // 0=VE.Direct, 1=MQTT
+uint8_t _fanTempSource = 0;       // 0=Disabled (current-based), 1=MQTT Inverter
+
+// MQTT-received temperatures
+volatile int16_t _mqttBattTemp = -127;      // -127 = no data yet
+volatile int16_t _mqttInverterTemp = -127;
+
+// Fan temperature control
+int16_t _fanOffTemp = 30;    // Fan off below this (C)
+int16_t _fanFullTemp = 50;   // Fan 100% at this (C)
+
   // Max Current Limits for Inverter.
 uint32_t _maxChargeCurrentmA = 0;
 uint32_t _maxDischargeCurrentmA = 0;
@@ -322,5 +336,27 @@ public:
   void TempProtectionEnabled(bool v) { _tempProtectionEnabled = v; }
   bool ShowTempOnDashboard() { return _showTempOnDashboard; }
   void ShowTempOnDashboard(bool v) { _showTempOnDashboard = v; }
+
+  bool Never100SOC() { return _never100SOC; }
+  void Never100SOC(bool v) { _never100SOC = v; }
+
+  // Temperature source selectors
+  uint8_t BattTempSource() { return _battTempSource; }
+  void BattTempSource(uint8_t v) { _battTempSource = v; }
+  uint8_t FanTempSource() { return _fanTempSource; }
+  void FanTempSource(uint8_t v) { _fanTempSource = v; }
+
+  // MQTT temperature accessors
+  int16_t MqttBattTemp() { return _mqttBattTemp; }
+  void MqttBattTemp(int16_t v) { _mqttBattTemp = v; }
+  int16_t MqttInverterTemp() { return _mqttInverterTemp; }
+  void MqttInverterTemp(int16_t v) { _mqttInverterTemp = v; }
+  bool HasMqttInverterTemp() { return _mqttInverterTemp != -127; }
+
+  // Fan temperature control accessors
+  int16_t GetFanOffTemp() { return _fanOffTemp; }
+  void SetFanOffTemp(int16_t v) { _fanOffTemp = v; }
+  int16_t GetFanFullTemp() { return _fanFullTemp; }
+  void SetFanFullTemp(int16_t v) { _fanFullTemp = v; }
 
 }; // End of Class

@@ -140,6 +140,13 @@ void setup()
     pref.putUInt8("VE_MQTT_REC", VE_MQTT_RECONNECT);
     pref.putUInt8(ccVELOOPTIME, VE_LOOP_TIME);
     pref.putString(ccNTPServer,"");
+    pref.putBool(ccNever100SOC, false);
+    pref.putUInt8(ccBattTempSrc, 0);
+    pref.putUInt8(ccFanTempSrc, 0);
+    pref.putString(ccMQTTBattTopic, "");
+    pref.putString(ccMQTTInvTopic, "");
+    pref.putInt16(ccFanOffTemp, 30);
+    pref.putInt16(ccFanFullTemp, 50);
     pref.putBool("EEPROMSetup", true);
   }
   else {
@@ -189,6 +196,9 @@ void setup()
     server.begin();
   }
 
+  // Load MQTT temp source settings before mqttsetup so onMqttConnect can subscribe
+  Inverter.BattTempSource(pref.getUInt8(ccBattTempSrc, 0));
+  Inverter.FanTempSource(pref.getUInt8(ccFanTempSrc, 0));
   mqttsetup();
 #ifdef ESPCAN
   {
@@ -246,6 +256,7 @@ void setup()
   Inverter.SetBattCapacity(pref.getUInt32(ccBattCapacity, initBattCapacity));
   Inverter.EnableSOCTrick(pref.getBool(ccSOCTrick, false));
   Inverter.EnableRequestFlags(pref.getBool(ccRequestFlags, false));
+  Inverter.Never100SOC(pref.getBool(ccNever100SOC, false));
   Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));
   Inverter.SetSlowChargeDivider(2,pref.getUInt8(ccSlowSOCDivider2,initSlowSOCDivider2));
   Inverter.SetSlowChargeSOCLimit(1, pref.getUInt8(ccSlowSOCCharge1, initSlowSOCCharge1));
@@ -266,6 +277,15 @@ void setup()
   Inverter.SetDischargeHighTemp(pref.getInt16(ccDisHighTemp, 50));
   Inverter.SetDischargeLowTemp(pref.getInt16(ccDisLowTemp, -20));
   Inverter.ShowTempOnDashboard(pref.getBool(ccShowTemp, false));
+
+  // MQTT temperature source & fan control settings (must be loaded before MQTT connects)
+  Inverter.BattTempSource(pref.getUInt8(ccBattTempSrc, 0));
+  Inverter.FanTempSource(pref.getUInt8(ccFanTempSrc, 0));
+  Inverter.SetFanOffTemp(pref.getInt16(ccFanOffTemp, 30));
+  Inverter.SetFanFullTemp(pref.getInt16(ccFanFullTemp, 50));
+  log_i("Temp sources: batt=%u fan=%u, FanOff=%d FanFull=%d",
+    Inverter.BattTempSource(), Inverter.FanTempSource(),
+    Inverter.GetFanOffTemp(), Inverter.GetFanFullTemp());
 
   if(pref.getBool(ccCANBusEnabled,true) && canInitOK) {
     Inverter.StartRunTask();
@@ -423,8 +443,20 @@ void loop()
     Lcd.Data.IPAddr.setValue(wifiManager.GetIPAddr());
     CheckAndChangeLCD();
     Lcd.UpdateScreenValues();
-    if(FAN_INIT){
-      FanUpdate((b * 0.1));
+    if(FAN_INIT) {
+      if (Inverter.FanTempSource() == 1 && Inverter.HasMqttInverterTemp()) {
+        // Temperature-based linear fan control from MQTT inverter temp
+        int16_t temp = Inverter.MqttInverterTemp();
+        int16_t offT = Inverter.GetFanOffTemp();
+        int16_t fullT = Inverter.GetFanFullTemp();
+        float duty = 0.0f;
+        if (temp >= fullT) duty = 100.0f;
+        else if (temp > offT) duty = ((float)(temp - offT) / (float)(fullT - offT)) * 100.0f;
+        FanUpdateTemp(duty);
+      } else {
+        // Fallback: current-based fan control
+        FanUpdate((b * 0.1));
+      }
     }
   }
 

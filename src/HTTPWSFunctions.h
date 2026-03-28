@@ -9,6 +9,11 @@
 
 volatile bool otaInProgress = false;
 
+// Forward declarations for MQTT temperature subscriptions (defined in mqttFunctions.h)
+extern String sMqttBattTopic;
+extern String sMqttInvTopic;
+void mqttResubscribeTemp();
+
 // Log buffer for web UI
 #define LOG_BUFFER_SIZE 100
 struct LogEntry {
@@ -31,8 +36,12 @@ void sendLogToWS(const char* message, const char* level) {
   if(ws.count() > 0 && ws.availableForWriteAll()) {
     String json = "{\"log\":\"";
     String msg = String(message).substring(0, 200);  // Limit message length
-    // Escape any quotes in the message to prevent JSON breaking
+    // Escape characters that break JSON strings
+    msg.replace("\\", "\\\\");
     msg.replace("\"", "'");
+    msg.replace("\n", "\\n");
+    msg.replace("\r", "\\r");
+    msg.replace("\t", "\\t");
     json += msg;
     json += "\",\"level\":\"";
     json += level;
@@ -145,6 +154,7 @@ String generateDatatoJSON(bool All)
     doc["pylontechenabled"] = Inverter.EnableRequestFlags(); // Legacy compatibility
     doc["soctrickenabled"] = Inverter.EnableSOCTrick();
     doc["requestflagsenabled"] = Inverter.EnableRequestFlags();
+    doc["never100soc"] = Inverter.Never100SOC();
     doc["wifissid"] = wifiManager.GetWifiSSID();
     doc["wifipass"] = wifiManager.GetWifiPass();
     doc["wifihostname"] = wifiManager.GetWifiHostName();
@@ -177,6 +187,12 @@ String generateDatatoJSON(bool All)
     doc["dischargehightemp"] = Inverter.GetDischargeHighTemp();
     doc["dischargelowtemp"] = Inverter.GetDischargeLowTemp();
     doc["showtempdashboard"] = Inverter.ShowTempOnDashboard();
+    doc["batttempsrc"] = Inverter.BattTempSource();
+    doc["fantempsrc"] = Inverter.FanTempSource();
+    doc["mqttbatttopic"] = pref.getString(ccMQTTBattTopic, "");
+    doc["mqttinvtopic"] = pref.getString(ccMQTTInvTopic, "");
+    doc["fanofftemp"] = Inverter.GetFanOffTemp();
+    doc["fanfulltemp"] = Inverter.GetFanFullTemp();
     #ifdef ESPCAN
     doc["can_tx_pin"] = pref.getUInt8(ccCAN_TX_PIN, 0);
     doc["can_rx_pin"] = pref.getUInt8(ccCAN_RX_PIN, 0);
@@ -211,6 +227,11 @@ String generateDatatoJSON(bool All)
   doc["chargephase"] = Inverter.GetChargePhaseName();
   doc["showtempdashboard"] = Inverter.ShowTempOnDashboard();
   doc["cantotalfails"] = Inverter.GetFailedTotalCount();
+  doc["mqttinvertertemp"] = Inverter.MqttInverterTemp();
+  doc["mqttbatttemp"] = Inverter.MqttBattTemp();
+  doc["fanpwm"] = FAN_PWM;
+  doc["fwversion_bms"] = FW_VERSION;
+  doc["fwbuild"] = FW_BUILD;
   doc["totalheap"] = ESP.getHeapSize();
   doc["freeheap"] = ESP.getFreeHeap();
   
@@ -594,6 +615,13 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         pref.putBool(ccRequestFlags, value);
         Inverter.EnableRequestFlags(value);
         notifyWSClients();}
+      if (!doc["never100soc"].isNull()) {
+        boolean value = doc["never100soc"];
+        handled = true;
+        pref.putBool(ccNever100SOC, value);
+        Inverter.Never100SOC(value);
+        WS_LOG_I("Never send 100%% SOC set to: %s", value ? "ON" : "OFF");
+        notifyWSClients();}
 
       if (!doc["velooptime"].isNull()) {
         uint8_t value = doc["velooptime"];
@@ -726,6 +754,52 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         bool value = doc["showtempdashboard"];
         pref.putBool(ccShowTemp, value);
         Inverter.ShowTempOnDashboard(value);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["batttempsrc"].isNull()) {
+        uint8_t value = doc["batttempsrc"];
+        pref.putUInt8(ccBattTempSrc, value);
+        Inverter.BattTempSource(value);
+        WS_LOG_I("Battery temp source set to: %s", value == 0 ? "VE.Direct" : "MQTT");
+        mqttResubscribeTemp();
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["fantempsrc"].isNull()) {
+        uint8_t value = doc["fantempsrc"];
+        pref.putUInt8(ccFanTempSrc, value);
+        Inverter.FanTempSource(value);
+        WS_LOG_I("Fan temp source set to: %s", value == 0 ? "Disabled" : "MQTT Inverter");
+        mqttResubscribeTemp();
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["mqttbatttopic"].isNull()) {
+        String value = doc["mqttbatttopic"].as<String>();
+        pref.putString(ccMQTTBattTopic, value);
+        sMqttBattTopic = value;
+        WS_LOG_I("MQTT battery temp topic set to: %s", value.c_str());
+        mqttResubscribeTemp();
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["mqttinvtopic"].isNull()) {
+        String value = doc["mqttinvtopic"].as<String>();
+        pref.putString(ccMQTTInvTopic, value);
+        sMqttInvTopic = value;
+        WS_LOG_I("MQTT inverter temp topic set to: %s", value.c_str());
+        mqttResubscribeTemp();
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["fanofftemp"].isNull()) {
+        int16_t value = doc["fanofftemp"];
+        pref.putInt16(ccFanOffTemp, value);
+        Inverter.SetFanOffTemp(value);
+        WS_LOG_I("Fan off temp set to: %d C", value);
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["fanfulltemp"].isNull()) {
+        int16_t value = doc["fanfulltemp"];
+        pref.putInt16(ccFanFullTemp, value);
+        Inverter.SetFanFullTemp(value);
+        WS_LOG_I("Fan full temp set to: %d C", value);
         handled = true;
         notifyWSClients(); }
 

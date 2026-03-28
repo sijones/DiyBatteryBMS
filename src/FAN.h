@@ -39,10 +39,30 @@ void FanUpdate(float Speed)
     }
 }
 
+// Temperature-based fan control: allows 0% (off) unlike FanUpdate which clamps to 30%
+void FanUpdateTemp(float dutyPercent)
+{
+    if(FAN_INIT) {
+        if(dutyPercent <= 0.0f) {
+            mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, 0.0f);
+            FAN_PWM = 0;
+        } else if(dutyPercent >= 100.0f) {
+            mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, 100.0f);
+            FAN_PWM = 100;
+        } else {
+            // Map to 30-100% range: most PWM fans stall below ~30%
+            float mapped = 30.0f + (dutyPercent * 0.7f);
+            mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, mapped);
+            FAN_PWM = (uint8_t)mapped;
+        }
+    }
+}
+
 #else
 // ESP32-C3 stub (no MCPWM support)
 uint8_t FAN_PWM = 0;
 bool FAN_INIT = false;
 void FanInit(uint8_t FAN_PIN) { log_w("FAN not supported on C3"); }
 void FanUpdate(float Speed) { /* No-op on C3 */ }
+void FanUpdateTemp(float dutyPercent) { /* No-op on C3 */ }
 #endif

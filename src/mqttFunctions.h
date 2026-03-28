@@ -23,6 +23,10 @@ String sUser;
 String sPass;
 String sServer;
 String sSubscribe;
+
+// MQTT temperature subscription topics (loaded from NVS)
+String sMqttBattTopic = "";
+String sMqttInvTopic = "";
 String sTopic;
 String sClientid;
 uint16_t iPort = 1883; // Default MQTT Port
@@ -150,6 +154,13 @@ bool sendVE2MQTT() {
   sprintf(buffer, "%ld", Inverter.TimeToGo());       pub("TTG", buffer);
   pub("Alarm", Inverter.AlarmActive() ? "ON" : "OFF");
   pub("AR", Inverter.AlarmReason().c_str());
+  if (Inverter.MqttInverterTemp() != -127) {
+    sprintf(buffer, "%d", Inverter.MqttInverterTemp()); pub("InverterTemp", buffer);
+  }
+  if (Inverter.MqttBattTemp() != -127) {
+    sprintf(buffer, "%d", Inverter.MqttBattTemp()); pub("MQTTBattTemp", buffer);
+  }
+  sprintf(buffer, "%u", FAN_PWM); pub("FanPWM", buffer);
   snprintf(_mqTopicBuf, sizeof(_mqTopicBuf), "%s/Param/ChargePhase", t);
   mqttPublish(_mqTopicBuf, Inverter.GetChargePhaseName(), false);
 
@@ -278,6 +289,12 @@ void publishHADiscovery() {
   haSensor("Device Serial Number", "deviceserialnumber", "{{ value_json.serialnumber }}",
     ",\"entity_category\":\"diagnostic\"",
     base, node, dataTopic, deviceJson);
+  haSensor("Inverter Temperature", "invertertemp", "{{ value_json.mqttinvertertemp if value_json.mqttinvertertemp != -127 else None }}",
+    ",\"unit_of_measurement\":\"°C\",\"device_class\":\"temperature\",\"state_class\":\"measurement\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Fan PWM", "fanpwm", "{{ value_json.fanpwm }}",
+    ",\"unit_of_measurement\":\"%\",\"icon\":\"mdi:fan\",\"state_class\":\"measurement\"",
+    base, node, dataTopic, deviceJson);
 
   // Binary sensors
   haBinary("Charge Enabled Status", "chargeenabled", "chargeenabled", "", base, node, dataTopic, deviceJson);
@@ -332,6 +349,22 @@ void connectToMqtt() {
     mqttClient.connect();
 }
 
+// Re-subscribe to external temperature topics (call after topic/source changes)
+void mqttResubscribeTemp() {
+    if (!mqttEnabled || !mqttClient.connected()) {
+        WS_LOG_W("MQTT not connected, temp subscriptions will apply on next connect");
+        return;
+    }
+    if (Inverter.BattTempSource() == 1 && sMqttBattTopic.length() > 0) {
+        mqttClient.subscribe(sMqttBattTopic.c_str(), 1);
+        WS_LOG_I("MQTT subscribed to battery temp: %s", sMqttBattTopic.c_str());
+    }
+    if (Inverter.FanTempSource() == 1 && sMqttInvTopic.length() > 0) {
+        mqttClient.subscribe(sMqttInvTopic.c_str(), 1);
+        WS_LOG_I("MQTT subscribed to inverter temp: %s", sMqttInvTopic.c_str());
+    }
+}
+
 void onMqttConnect(bool sessionPresent) {
   log_d("Connected to MQTT.");
   WS_LOG_I("MQTT connected to %s", wifiManager.GetMQTTServerIP().c_str());
@@ -340,6 +373,21 @@ void onMqttConnect(bool sessionPresent) {
   yield();
   mqttClient.subscribe((sTopic + "/set/#").c_str(), 2);
   yield();
+  // Subscribe to external MQTT temperature topics if configured
+  if (Inverter.BattTempSource() == 1 && sMqttBattTopic.length() > 0) {
+    mqttClient.subscribe(sMqttBattTopic.c_str(), 1);
+    WS_LOG_I("MQTT subscribed to battery temp: %s", sMqttBattTopic.c_str());
+    yield();
+  } else if (Inverter.BattTempSource() == 1) {
+    WS_LOG_W("Battery temp source is MQTT but no topic configured");
+  }
+  if (Inverter.FanTempSource() == 1 && sMqttInvTopic.length() > 0) {
+    mqttClient.subscribe(sMqttInvTopic.c_str(), 1);
+    WS_LOG_I("MQTT subscribed to inverter temp: %s", sMqttInvTopic.c_str());
+    yield();
+  } else if (Inverter.FanTempSource() == 1) {
+    WS_LOG_W("Fan temp source is MQTT but no topic configured");
+  }
   mqttPublish((sTopic + "/status").c_str(), "online", true);
   yield();
   
@@ -377,6 +425,7 @@ void onMqttDisconnect(bool sessionPresent) {
 
 void onMqttSubscribe(uint16_t msg_id) {
   log_d("Subscribe acknowledged. Msg ID: %d", msg_id);
+  WS_LOG_I("MQTT subscribe acknowledged (msg %u)", msg_id);
 }
 
 void onMqttUnsubscribe(uint16_t msg_id) {
@@ -391,10 +440,31 @@ void onMqttError(esp_mqtt_error_codes_t error) {
       }
 
 void onMqttMessage(char* topic, char* payload, int retain, int qos, bool dup) {
-   
+
 String _Topic = String(topic);
 String message = String(payload);
 log_i("MQTT Message: %s, Topic: %s", message.c_str(), _Topic.c_str());
+
+// Handle external MQTT temperature subscriptions
+if (sMqttBattTopic.length() > 0 && _Topic == sMqttBattTopic) {
+    int16_t temp = (int16_t)round(message.toFloat());
+    Inverter.MqttBattTemp(temp);
+    if (Inverter.BattTempSource() == 1) {
+        taskENTER_CRITICAL(&(Inverter.CANMutex));
+        Inverter.BattTemp(temp);
+        taskEXIT_CRITICAL(&(Inverter.CANMutex));
+    }
+    log_d("MQTT Battery Temp: %d C", temp);
+    WS_LOG_I("MQTT Battery Temp: %d C", temp);
+    return;
+}
+else if (sMqttInvTopic.length() > 0 && _Topic == sMqttInvTopic) {
+    int16_t temp = (int16_t)round(message.toFloat());
+    Inverter.MqttInverterTemp(temp);
+    log_d("MQTT Inverter Temp: %d C", temp);
+    WS_LOG_I("MQTT Inverter Temp: %d C", temp);
+    return;
+}
 
 if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
 
@@ -516,7 +586,11 @@ void mqttsetup() {
     sTopic = String(wifiManager.GetMQTTTopic().c_str());
     sClientid = String(wifiManager.GetMQTTClientID().c_str());
     iPort = wifiManager.GetMQTTPort();
+    // Load external MQTT temperature subscription topics
+    sMqttBattTopic = pref.getString(ccMQTTBattTopic, "");
+    sMqttInvTopic = pref.getString(ccMQTTInvTopic, "");
     taskEXIT_CRITICAL(&MqttMutex);
+    log_i("MQTT temp topics: batt='%s' inv='%s'", sMqttBattTopic.c_str(), sMqttInvTopic.c_str());
     if (sServer.length() == 0 || iPort < 1) {
       log_i("MQTT details not set, not connecting to MQTT.");
       mqttEnabled = false;

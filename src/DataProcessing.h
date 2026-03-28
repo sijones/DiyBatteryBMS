@@ -83,7 +83,7 @@ void VEDataProcess()
     else if (strcmp(key, "T") == 0)
     {
       log_i("Battery Temperature Update: %s°C", parsedValue);
-      if (dataValid) {
+      if (dataValid && Inverter.BattTempSource() == 0) {  // Only accept VE.Direct if selected
         taskENTER_CRITICAL(&(Inverter.CANMutex));
         Inverter.BattTemp((int16_t) round(parsedNum * 0.1));
         taskEXIT_CRITICAL(&(Inverter.CANMutex));
