@@ -448,21 +448,21 @@ log_i("MQTT Message: %s, Topic: %s", message.c_str(), _Topic.c_str());
 // Handle external MQTT temperature subscriptions
 if (sMqttBattTopic.length() > 0 && _Topic == sMqttBattTopic) {
     int16_t temp = (int16_t)round(message.toFloat());
+    int16_t prev = Inverter.MqttBattTemp();
     Inverter.MqttBattTemp(temp);
     if (Inverter.BattTempSource() == 1) {
         taskENTER_CRITICAL(&(Inverter.CANMutex));
         Inverter.BattTemp(temp);
         taskEXIT_CRITICAL(&(Inverter.CANMutex));
     }
-    log_d("MQTT Battery Temp: %d C", temp);
-    WS_LOG_I("MQTT Battery Temp: %d C", temp);
+    if (temp != prev) WS_LOG_I("MQTT Battery Temp: %d C", temp);
     return;
 }
 else if (sMqttInvTopic.length() > 0 && _Topic == sMqttInvTopic) {
     int16_t temp = (int16_t)round(message.toFloat());
+    int16_t prev = Inverter.MqttInverterTemp();
     Inverter.MqttInverterTemp(temp);
-    log_d("MQTT Inverter Temp: %d C", temp);
-    WS_LOG_I("MQTT Inverter Temp: %d C", temp);
+    if (temp != prev) WS_LOG_I("MQTT Inverter Temp: %d C", temp);
     return;
 }
 
