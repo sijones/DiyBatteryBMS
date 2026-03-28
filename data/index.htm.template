@@ -1170,7 +1170,7 @@
       
       <!-- Firmware Tab -->
       <div id="firmware" class="tab-pane">
-        <div class="section-title">BMS Firmware</div>
+        <div class="section-title">DIY BATTERY</div>
         <div class="form-row">
           <div class="stat-box stat-status">
             <div class="stat-label">Version</div>
