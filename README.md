@@ -17,7 +17,8 @@ The data is also sent over MQTT and allows commands to be sent back to control C
 This software supports:
 - ESP32 developer boards with MCP2515 CAN Bus adapter
 - ESP32 with built-in CAN controller
-- **NEW**: ESP32-S3 with built-in CAN controller (using TWAI driver)
+- ESP32-S3 with built-in CAN controller (using TWAI driver)
+- Lot's of different configurations of boards, just try the build that matches your config.
 
 If you don't use the Lilygo CAN485 board, you will need to add a CAN transceiver to your ESP32 or ESP32-S3 board.
 
@@ -26,8 +27,6 @@ See the WIKI for more detailed documentation.
 - See also: https://www.victronenergy.com/live/vedirect_protocol:faq
 
 With the help of the MQTT server you can integrate the monitoring data to virtually any Home Automation System. I use Home Assistant to automate off peak battery charging (using Force Charge) and can also enable and disable the charging and discharging.
-
-The device itself no longer requires internet as the NTP Servers are now configurable, the web browser accessing this device does need internet access as the framework for the web page is loaded from a Content Delivery Network.
 
 ## Features
 - Setup from a browser, flash to your ESP32 device then go to http://192.168.4.1 and connect it to your wifi, once connected go to http://diy-batterybms.local or it's IP address to configure all settings.
@@ -39,7 +38,7 @@ The device itself no longer requires internet as the NTP Servers are now configu
   - WiFi configuration requires explicit save (manual save button for SSID, password, and mDNS hostname)
 - Listen to VE.Direct messages and publish some of the information to a MQTT broker<br> The MQTT Topic is fully configurable.
 - Home Assistant MQTT Discovery - Automatically creates all sensors and switches in Home Assistant with no manual configuration required
-- Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates. See the home assistant file for the commands and config (optional - discovery creates these automatically).
+- Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates.
 - Supports single MQTT server
 - OTA (Over The Air Update)<br> use your browser and go to http://IPADDRESS/update and upload the lastest binary - please note the donation button does not donate to me.
 - LCD Screen Support (LCD 20x4 via I2C)
@@ -74,11 +73,9 @@ The device now supports **MQTT Discovery** which automatically creates all entit
 See the Wiki page
 
 ## Hardware Recommended
-esp32dev, esp32plus, lilygo CAN485, ESP32-S3 with built-in CAN (TWAI).
+esp32dev, esp32plus, lilygo CAN485, ESP32-S3 with built-in CAN (TWAI) or without using MCP2515.
 
 Please use the recommended hardware, as a personal project it's difficult to support other configurations.
-
-**NEW**: ESP32-S3 support with built-in CAN controller (TWAI) is now available.
 
 ## Recommended PIN Configuration
 
