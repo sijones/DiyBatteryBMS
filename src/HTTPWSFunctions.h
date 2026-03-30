@@ -193,6 +193,8 @@ String generateDatatoJSON(bool All)
     doc["mqttinvtopic"] = pref.getString(ccMQTTInvTopic, "");
     doc["fanofftemp"] = Inverter.GetFanOffTemp();
     doc["fanfulltemp"] = Inverter.GetFanFullTemp();
+    doc["fwversion_bms"] = FW_VERSION;
+    doc["fwbuild"] = FW_BUILD;
     #ifdef ESPCAN
     doc["can_tx_pin"] = pref.getUInt8(ccCAN_TX_PIN, 0);
     doc["can_rx_pin"] = pref.getUInt8(ccCAN_RX_PIN, 0);
@@ -230,8 +232,6 @@ String generateDatatoJSON(bool All)
   doc["mqttinvertertemp"] = Inverter.MqttInverterTemp();
   doc["mqttbatttemp"] = Inverter.MqttBattTemp();
   doc["fanpwm"] = FAN_PWM;
-  doc["fwversion_bms"] = FW_VERSION;
-  doc["fwbuild"] = FW_BUILD;
   doc["totalheap"] = ESP.getHeapSize();
   doc["freeheap"] = ESP.getFreeHeap();
   
@@ -243,6 +243,7 @@ String generateDatatoJSON(bool All)
 
 void notifyWSClients(bool sendalldata = true) {
   if(otaInProgress) return;
+  ws.cleanupClients();
   if(ws.count()>0 && ws.availableForWriteAll())
     ws.textAll(generateDatatoJSON(sendalldata));
 }
