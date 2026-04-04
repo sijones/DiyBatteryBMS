@@ -75,6 +75,7 @@ const char* const ccFanTempSrc = "FanTempSrc";
 const char* const ccMQTTBattTopic = "MQBattTopic";
 const char* const ccMQTTInvTopic = "MQInvTopic";
 const char* const ccNever100SOC = "Never100SOC";
+const char* const ccPylonVersion = "PylonVer";
 const char* const ccFanOffTemp = "FanOffTemp";
 const char* const ccFanFullTemp = "FanFullTemp";
 

@@ -141,6 +141,7 @@ void setup()
     pref.putUInt8(ccVELOOPTIME, VE_LOOP_TIME);
     pref.putString(ccNTPServer,"");
     pref.putBool(ccNever100SOC, false);
+    pref.putUInt8(ccPylonVersion, 1);
     pref.putUInt8(ccBattTempSrc, 0);
     pref.putUInt8(ccFanTempSrc, 0);
     pref.putString(ccMQTTBattTopic, "");
@@ -257,6 +258,7 @@ void setup()
   Inverter.EnableSOCTrick(pref.getBool(ccSOCTrick, false));
   Inverter.EnableRequestFlags(pref.getBool(ccRequestFlags, false));
   Inverter.Never100SOC(pref.getBool(ccNever100SOC, false));
+  Inverter.PylonVersion(pref.getUInt8(ccPylonVersion, 1));
   Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));
   Inverter.SetSlowChargeDivider(2,pref.getUInt8(ccSlowSOCDivider2,initSlowSOCDivider2));
   Inverter.SetSlowChargeSOCLimit(1, pref.getUInt8(ccSlowSOCCharge1, initSlowSOCCharge1));

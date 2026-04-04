@@ -37,7 +37,7 @@ bool CANBUS::SendToDriver(uint32_t CMD,uint8_t Length,uint8_t *Data) {
   }
 #else
   byte sndStat;
-  sndStat = CAN->sendMsgBuf(CMD, Length, Data);
+  sndStat = CAN->sendMsgBuf(CMD, 0, Length, Data);
   if (sndStat == CAN_OK)
     return true;
   else
@@ -595,15 +595,17 @@ bool CANBUS::SendCANData(){
 
   sendCAN(0x35E, 8, MSG_PYLON);
 
-  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-  CAN_MSG[0] = 0xC0;
-  CAN_MSG[1] = 0x00;
-  if(_enableRequestFlags) {
-    CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagRequestFullCharge,_forceCharge);
-    CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
-    CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
+  if (_pylonVersion >= 1) {
+    memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+    CAN_MSG[0] = 0xC0;
+    CAN_MSG[1] = 0x00;
+    if(_enableRequestFlags) {
+      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagRequestFullCharge,_forceCharge);
+      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
+      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
+    }
+    sendCAN(0x35C, 2, CAN_MSG);
   }
-  sendCAN(0x35C, 2, CAN_MSG);
 
     // Current measured values of the BMS battery voltage, battery current, battery temperature
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
@@ -664,18 +666,18 @@ bool CANBUS::SendCANData(){
 
   sendCAN(0x351, 8, CAN_MSG);
 
-  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-
-  CAN_MSG[0] = 0x00;
-  CAN_MSG[1] = 0x00;
-  CAN_MSG[2] = 0x00;
-  CAN_MSG[3] = 0x00;
-  CAN_MSG[4] = 0x0A;
-  CAN_MSG[5] = 0x50;
-  CAN_MSG[6] = 0x4E;
-  CAN_MSG[7] = 0x00;
-
-  sendCAN(0x359, 8, CAN_MSG);
+  if (_pylonVersion >= 1) {
+    memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+    CAN_MSG[0] = 0x00;
+    CAN_MSG[1] = 0x00;
+    CAN_MSG[2] = 0x00;
+    CAN_MSG[3] = 0x00;
+    CAN_MSG[4] = 0x0A;
+    CAN_MSG[5] = 0x50;
+    CAN_MSG[6] = 0x4E;
+    CAN_MSG[7] = 0x00;
+    sendCAN(0x359, 8, CAN_MSG);
+  }
 
 if(_failedCanSendCount > 0)
   WS_LOG_E("Failed to Send CAN Packets: %i",_failedCanSendCount);

@@ -155,6 +155,7 @@ String generateDatatoJSON(bool All)
     doc["soctrickenabled"] = Inverter.EnableSOCTrick();
     doc["requestflagsenabled"] = Inverter.EnableRequestFlags();
     doc["never100soc"] = Inverter.Never100SOC();
+    doc["pylonversion"] = Inverter.PylonVersion();
     doc["wifissid"] = wifiManager.GetWifiSSID();
     doc["wifipass"] = wifiManager.GetWifiPass();
     doc["wifihostname"] = wifiManager.GetWifiHostName();
@@ -622,6 +623,13 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         pref.putBool(ccNever100SOC, value);
         Inverter.Never100SOC(value);
         WS_LOG_I("Never send 100%% SOC set to: %s", value ? "ON" : "OFF");
+        notifyWSClients();}
+      if (!doc["pylonversion"].isNull()) {
+        uint8_t value = doc["pylonversion"];
+        handled = true;
+        pref.putUInt8(ccPylonVersion, value);
+        Inverter.PylonVersion(value);
+        WS_LOG_I("Pylontech version set to: 1.%s", value == 0 ? "2" : "3");
         notifyWSClients();}
 
       if (!doc["velooptime"].isNull()) {

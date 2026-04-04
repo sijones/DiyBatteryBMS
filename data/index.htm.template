@@ -987,9 +987,18 @@
       <!-- Settings Tab -->
       <div id="settings" class="tab-pane">
         <div class="section-title">CAN Bus Configuration</div>
-        <div class="checkbox-row">
-          <input type="checkbox" id="canbusenabled" onchange="SendJSONUpdate('canbusenabled')">
-          <label for="canbusenabled"><span class="tip" data-tip="Enable CAN bus communication with the inverter. Disable if no inverter is connected.">CAN Bus Enabled</span></label>
+        <div class="form-row">
+          <div class="checkbox-row">
+            <input type="checkbox" id="canbusenabled" onchange="SendJSONUpdate('canbusenabled')">
+            <label for="canbusenabled"><span class="tip" data-tip="Enable CAN bus communication with the inverter. Disable if no inverter is connected.">CAN Bus Enabled</span></label>
+          </div>
+          <div class="form-group">
+            <label for="pylonversion"><span class="tip" data-tip="Select the Pylontech CAN protocol version. 1.3 sends additional request and alarm frames (0x35C, 0x359). Use 1.2 if your inverter doesn't support these.">Protocol Version:</span></label>
+            <select id="pylonversion" onchange="SendJSONUpdate('pylonversion')">
+              <option value="0">Pylontech 1.2</option>
+              <option value="1">Pylontech 1.3</option>
+            </select>
+          </div>
         </div>
         <div class="form-row">
           {{CAN_CONFIG_FIELDS}}
@@ -1536,6 +1545,7 @@
       if(obj.rechargevoltageoffset !== undefined) { document.getElementById('rechargevoltageoffset').value=(obj.rechargevoltageoffset*0.001).toFixed(1); AckUpdate('rechargevoltageoffset'); }
       if(obj.tempprotection !== undefined) { document.getElementById('tempprotection').checked=obj.tempprotection; AckUpdate('tempprotection'); toggleTempConfig(); }
       if(obj.showtempdashboard !== undefined) { document.getElementById('showtempdashboard').checked=obj.showtempdashboard; AckUpdate('showtempdashboard'); }
+      if(obj.pylonversion !== undefined) { document.getElementById('pylonversion').value=obj.pylonversion; AckUpdate('pylonversion'); }
       if(obj.batttempsrc !== undefined) { document.getElementById('batttempsrc').value=obj.batttempsrc; AckUpdate('batttempsrc'); toggleMqttTempTopics(); }
       if(obj.fantempsrc !== undefined) { document.getElementById('fantempsrc').value=obj.fantempsrc; AckUpdate('fantempsrc'); toggleMqttTempTopics(); }
       if(obj.lcdenabled !== undefined) { document.getElementById('lcdenabled').checked=obj.lcdenabled; AckUpdate('lcdenabled'); }

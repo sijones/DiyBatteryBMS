@@ -122,6 +122,7 @@ bool _tempProtectionEnabled = false;
 bool _showTempOnDashboard = false;
 
 bool _never100SOC = false;       // Never send 100% SOC over CAN
+uint8_t _pylonVersion = 1;       // 0=Pylontech 1.2, 1=Pylontech 1.3
 
 // Temperature source selection
 uint8_t _battTempSource = 0;      // 0=VE.Direct, 1=MQTT
@@ -339,6 +340,8 @@ public:
 
   bool Never100SOC() { return _never100SOC; }
   void Never100SOC(bool v) { _never100SOC = v; }
+  uint8_t PylonVersion() { return _pylonVersion; }
+  void PylonVersion(uint8_t v) { _pylonVersion = v; }
 
   // Temperature source selectors
   uint8_t BattTempSource() { return _battTempSource; }
