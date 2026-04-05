@@ -22,28 +22,44 @@ bool CANBUS::SendToDriver(uint32_t CMD,uint8_t Length,uint8_t *Data) {
   tx_msg.flags = TWAI_MSG_FLAG_NONE; // Standard frame, no RTR
   memcpy(tx_msg.data, Data, tx_msg.data_length_code);
 
-  // Use a short timeout to avoid blocking the task and triggering WDT
-  esp_err_t result = twai_transmit(&tx_msg, pdMS_TO_TICKS(10));
+  esp_err_t result = twai_transmit(&tx_msg, pdMS_TO_TICKS(50));
   if (result == ESP_OK) {
     return true;
   } else {
-    // Log specific error for debugging
     if (result == ESP_ERR_TIMEOUT) {
-      log_d("TWAI TX timeout for ID 0x%03X", CMD);
+      // Increase inter-frame delay to prevent future timeouts
+      if (_canSendDelay < 50) {
+        _canSendDelay += 5;
+        WS_LOG_W("CAN TX timeout 0x%03X, inter-frame delay increased to %dms", CMD, _canSendDelay);
+      }
     } else if (result == ESP_ERR_INVALID_STATE) {
       log_w("TWAI TX invalid state (bus-off?) for ID 0x%03X", CMD);
     }
     return false;
   }
 #else
-  byte sndStat;
-  sndStat = CAN->sendMsgBuf(CMD, 0, Length, Data);
+  byte sndStat = CAN->sendMsgBuf(CMD, 0, Length, Data);
   if (sndStat == CAN_OK)
     return true;
-  else
-    return false;
+  // On TX buffer timeout, increase inter-frame delay to prevent future failures
+  if ((sndStat == CAN_GETTXBFTIMEOUT || sndStat == CAN_SENDMSGTIMEOUT) && _canSendDelay < 50) {
+    _canSendDelay += 5;
+    WS_LOG_W("CAN TX timeout 0x%03X, inter-frame delay increased to %dms", CMD, _canSendDelay);
+  }
+  return false;
 #endif
 }
+
+#ifndef ESPCAN
+bool CANBUS::ReadMCP(unsigned long &id, uint8_t &len, uint8_t *buf) {
+  if (CAN == NULL || !_initialised) return false;
+  if (CAN->checkReceive() == CAN_MSGAVAIL) {
+    CAN->readMsgBuf(&id, &len, buf);
+    return true;
+  }
+  return false;
+}
+#endif
 
 void canSendTask(void * pointer){
   
@@ -78,28 +94,24 @@ void canSendTask(void * pointer){
 
   twai_message_t rx_msg;
 
-  // Receive next CAN frame (non-blocking)
-  if (twai_receive(&rx_msg, 0) == ESP_OK)
+  // Receive CAN frames (non-blocking), check for inverter 0x305 keepalive
+  while (twai_receive(&rx_msg, 0) == ESP_OK)
   {
-    if (rx_msg.flags & TWAI_MSG_FLAG_EXTD)
-    {
-      log_i("New extended frame");
+    if (rx_msg.identifier == 0x305) {
+      Inverter->InverterSeen();
+    } else {
+      log_d("CAN RX: 0x%03X DLC=%d", rx_msg.identifier, rx_msg.data_length_code);
     }
-    else
-    {
-      log_i("New standard frame");
-    }
-
-    if (rx_msg.flags & TWAI_MSG_FLAG_RTR)
-    {
-      log_i(" RTR from 0x%08X, DLC %d", rx_msg.identifier, rx_msg.data_length_code);
-    }
-    else
-    {
-      log_i(" from 0x%08X, DLC %d, Data ", rx_msg.identifier, rx_msg.data_length_code);
-      for (int i = 0; i < rx_msg.data_length_code; i++)
-      {
-        log_i("0x%02X ", rx_msg.data[i]);
+  }
+#else
+  // MCP2515: check for incoming frames (non-blocking)
+  {
+    unsigned long rxId;
+    uint8_t rxLen;
+    uint8_t rxBuf[8];
+    while (Inverter->ReadMCP(rxId, rxLen, rxBuf)) {
+      if (rxId == 0x305) {
+        Inverter->InverterSeen();
       }
     }
   }
@@ -318,7 +330,7 @@ bool CANBUS::StartRunTask()
 {
   if(CanBusAvailable && _canbusEnabled){
   // Create task and pin to Core
-    xTaskCreatePinnedToCore(&canSendTask,"canSendTask",4096,this,6,&tHandle,0);
+    xTaskCreatePinnedToCore(&canSendTask,"canSendTask",4096,this,6,&tHandle,1);
     return true;
   }
   else
@@ -571,19 +583,58 @@ bool CANBUS::DataChanged(){
 }
 
 bool CANBUS::SendCANData(){
-
-  auto sendCAN = [&](uint32_t id, uint8_t len, uint8_t* data) {
-    if (!SendToDriver(id, len, data)) {
-      _failedCanSendCount++;
-      _failedCanSendTotal++;
-      WS_LOG_W("CAN TX fail: 0x%03X", id);
-    }
-    vTaskDelay(_canSendDelay / portTICK_PERIOD_MS);
-  };
-
-  if (!Initialised() || !Configured()) {
-    return false;
+  switch (_canProtocol) {
+    case PROTO_SMA:          return SendCANData_SMA();
+    case PROTO_VICTRON:      return SendCANData_Victron();
+    case PROTO_GROWATT:      // Growatt uses Pylontech 1.3 protocol
+    case PROTO_PYLONTECH_12:
+    case PROTO_PYLONTECH_13:
+    default:                 return SendCANData_Pylontech();
   }
+}
+
+// Helper lambda-like pattern used by all protocol methods
+#define CAN_SEND_BEGIN() \
+  if (!Initialised() || !Configured()) return false; \
+  _failedCanSendCount = 0;
+
+#define CAN_SEND_MSG(id, len, data) do { \
+  if (!SendToDriver(id, len, data)) { \
+    _failedCanSendCount++; \
+    _failedCanSendTotal++; \
+    WS_LOG_W("CAN TX fail: 0x%03X", id); \
+  } \
+  vTaskDelay(_canSendDelay / portTICK_PERIOD_MS); \
+} while(0)
+
+#define CAN_SEND_END() \
+  if (_failedCanSendCount > 0) \
+    WS_LOG_E("Failed to Send CAN Packets: %i", _failedCanSendCount); \
+  CanBusDataOK = !CanBusFailed(); \
+  return (_failedCanSendCount == 0);
+
+// Shared helper: build SOC bytes into CAN_MSG[0-1]
+// Handles SOC trick, 100% override, and never100SOC logic
+void inline CANBUS_BuildSOC(uint8_t* msg, uint8_t battSOC, bool enableSOCTrick, bool forceCharge,
+                            CANBUS::ChargePhase chargePhase, bool never100SOC) {
+  if (enableSOCTrick && forceCharge) {
+    msg[0] = lowByte(uint8_t(battSOC * 0.1));
+    msg[1] = highByte(uint8_t(battSOC * 0.1));
+  }
+  else if (battSOC >= 100 && (chargePhase != CANBUS::PHASE_COMPLETE || never100SOC)) {
+    msg[0] = lowByte(99);
+    msg[1] = highByte(99);
+  }
+  else {
+    msg[0] = lowByte(battSOC);
+    msg[1] = highByte(battSOC);
+  }
+}
+
+bool CANBUS::SendCANData_Pylontech(){
+  CAN_SEND_BEGIN();
+
+  // Pylontech units: voltage in 0.01V (centivolts), current in 0.1A (deciamps)
   uint16_t _tempChargeVolt = (_chargeVoltage * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
@@ -591,11 +642,56 @@ bool CANBUS::SendCANData(){
   u_int16_t _tempMaxDisChargeCurr = (_maxDischargeCurrentmA * 0.01);
   int16_t _tempBattTemp = (_battTemp * 10);
 
-  _failedCanSendCount=0;
+  // 0x351 - Battery charge and discharge parameters
+  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+  CAN_MSG[0] = lowByte(_tempChargeVolt);
+  CAN_MSG[1] = highByte(_tempChargeVolt);
+  if((_chargeEnabled && _ManualAllowCharge)){
+    CAN_MSG[2] = lowByte(_tempChargeCurr);
+    CAN_MSG[3] = highByte(_tempChargeCurr);
+  } else {
+    CAN_MSG[2] = 0;
+    CAN_MSG[3] = 0;
+  }
+  if((_dischargeEnabled && _ManualAllowDischarge)){
+    if(_dischargeCurrentmA > _maxDischargeCurrentmA)
+      _tempDisChargeCurr = _tempMaxDisChargeCurr;
+    CAN_MSG[4] = lowByte(_tempDisChargeCurr);
+    CAN_MSG[5] = highByte(_tempDisChargeCurr);
+  } else {
+    CAN_MSG[4] = 0;
+    CAN_MSG[5] = 0;
+  }
+  CAN_MSG[6] = lowByte(_tempDisCharVolt);
+  CAN_MSG[7] = highByte(_tempDisCharVolt);
+  CAN_SEND_MSG(0x351, 8, CAN_MSG);
 
-  sendCAN(0x35E, 8, MSG_PYLON);
+  // 0x355 - SOC / SOH (4 bytes v1.2, 6 bytes v1.3)
+  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+  CANBUS_BuildSOC(CAN_MSG, _battSOC, _enableSOCTrick, _forceCharge, _chargePhase, _never100SOC);
+  CAN_MSG[2] = lowByte(_battSOH);
+  CAN_MSG[3] = highByte(_battSOH);
+  CAN_SEND_MSG(0x355, (_canProtocol == PROTO_PYLONTECH_13) ? 6 : 4, CAN_MSG);
 
-  if (_pylonVersion >= 1) {
+  // 0x356 - Battery voltage, current, temperature
+  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+  CAN_MSG[0] = lowByte(_battVoltage);
+  CAN_MSG[1] = highByte(_battVoltage);
+  CAN_MSG[2] = lowByte(int16_t(_battCurrentmA));
+  CAN_MSG[3] = highByte(int16_t(_battCurrentmA));
+  CAN_MSG[4] = lowByte(_tempBattTemp);
+  CAN_MSG[5] = highByte(_tempBattTemp);
+  CAN_SEND_MSG(0x356, 6, CAN_MSG);
+
+  if (_canProtocol == PROTO_PYLONTECH_12 || _canProtocol == PROTO_GROWATT) {
+    // v1.2: 0x359 - Protection & alarm flags
+    memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+    CAN_MSG[4] = 0x0A;
+    CAN_MSG[5] = 0x50;
+    CAN_MSG[6] = 0x4E;
+    CAN_SEND_MSG(0x359, 8, CAN_MSG);
+
+    // v1.2: 0x35C - Battery charge request flags
     memset(CAN_MSG,0x00,sizeof(CAN_MSG));
     CAN_MSG[0] = 0xC0;
     CAN_MSG[1] = 0x00;
@@ -604,10 +700,107 @@ bool CANBUS::SendCANData(){
       CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
       CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
     }
-    sendCAN(0x35C, 2, CAN_MSG);
+    CAN_SEND_MSG(0x35C, 2, CAN_MSG);
+  }
+  else if (_canProtocol == PROTO_PYLONTECH_13) {
+    // v1.3: 0x35A - Alarms & Warnings (bit-pair alarm/clear format)
+    memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+    // Byte 0: voltage alarms - set clear bits (odd bits) when no alarm
+    // Bit 1: general alarm clears, Bit 3: high voltage clears,
+    // Bit 5: low voltage clears, Bit 7: high temp clears
+    CAN_MSG[0] = 0xAA;  // All clear bits set (no alarms)
+    // Byte 1: temperature & current alarms
+    // Bit 1: low temp clears, Bit 3: high temp charge clears,
+    // Bit 5: low temp charge clears, Bit 7: high current clears
+    CAN_MSG[1] = 0xAA;  // All clear bits set
+    // Byte 2: charge current & fault alarms
+    // Bit 1: high charge current clears, Bit 3: contactor fault clears,
+    // Bit 5: short circuit clears, Bit 7: BMS internal fault clears
+    CAN_MSG[2] = 0xAA;  // All clear bits set
+    // Byte 3: reserved
+    CAN_MSG[3] = 0x00;
+
+    // Set alarm bits based on current state
+    if (_alarmActive) {
+      CAN_MSG[0] = (CAN_MSG[0] & ~0x02) | 0x01;  // General alarm set, clear bit removed
+    }
+    if (_tempProtectionEnabled) {
+      if (_battTemp >= _chargeHighTemp || _battTemp >= _dischargeHighTemp)
+        CAN_MSG[0] = (CAN_MSG[0] & ~0x80) | 0x40;  // High temp alarm
+      if (_battTemp <= _chargeLowTemp || _battTemp <= _dischargeLowTemp)
+        CAN_MSG[1] = (CAN_MSG[1] & ~0x02) | 0x01;  // Low temp alarm
+    }
+    if (_battVoltage > 0 && _overVoltage > 0 && _battVoltage >= (_overVoltage * 0.1))
+      CAN_MSG[0] = (CAN_MSG[0] & ~0x08) | 0x04;  // High voltage alarm
+    if (_battVoltage > 0 && _dischargeVoltage > 0 && _battVoltage <= (_dischargeVoltage * 0.1))
+      CAN_MSG[0] = (CAN_MSG[0] & ~0x20) | 0x10;  // Low voltage alarm
+
+    CAN_SEND_MSG(0x35A, 8, CAN_MSG);
+
+    // v1.3: 0x35F - Battery type & BMS info
+    memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+    CAN_MSG[0] = 0x4C;  // 'L'
+    CAN_MSG[1] = 0x69;  // 'i' (Lithium)
+    CAN_MSG[2] = 0x01;  // BMS version major
+    CAN_MSG[3] = 0x03;  // BMS version minor (1.3)
+    // Bytes 4-5: Battery capacity in Ah * 10
+    uint16_t capAh10 = (_battCapacity > 0) ? (uint16_t)((_battCapacity / 1000) * 10) : 0;
+    CAN_MSG[4] = lowByte(capAh10);
+    CAN_MSG[5] = highByte(capAh10);
+    CAN_MSG[6] = 0x00;  // Manufacturer ID
+    CAN_MSG[7] = 0x00;
+    CAN_SEND_MSG(0x35F, 8, CAN_MSG);
   }
 
-    // Current measured values of the BMS battery voltage, battery current, battery temperature
+  // 0x35E - Manufacturer name
+  CAN_SEND_MSG(0x35E, 8, MSG_PYLON);
+
+  CAN_SEND_END();
+}
+
+bool CANBUS::SendCANData_SMA(){
+  CAN_SEND_BEGIN();
+
+  // SMA units: voltage in 0.1V (decivolts), current in 0.1A (deciamps)
+  uint16_t _tempChargeVolt = (_chargeVoltage * 0.1);
+  uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.1);
+  uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
+  uint16_t _tempDisChargeCurr = (_dischargeCurrentmA * 0.01);
+  u_int16_t _tempMaxDisChargeCurr = (_maxDischargeCurrentmA * 0.01);
+  int16_t _tempBattTemp = (_battTemp * 10);
+
+  // 0x351 - Battery charge and discharge parameters
+  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+  CAN_MSG[0] = lowByte(_tempChargeVolt);
+  CAN_MSG[1] = highByte(_tempChargeVolt);
+  if((_chargeEnabled && _ManualAllowCharge)){
+    CAN_MSG[2] = lowByte(_tempChargeCurr);
+    CAN_MSG[3] = highByte(_tempChargeCurr);
+  } else {
+    CAN_MSG[2] = 0;
+    CAN_MSG[3] = 0;
+  }
+  if((_dischargeEnabled && _ManualAllowDischarge)){
+    if(_dischargeCurrentmA > _maxDischargeCurrentmA)
+      _tempDisChargeCurr = _tempMaxDisChargeCurr;
+    CAN_MSG[4] = lowByte(_tempDisChargeCurr);
+    CAN_MSG[5] = highByte(_tempDisChargeCurr);
+  } else {
+    CAN_MSG[4] = 0;
+    CAN_MSG[5] = 0;
+  }
+  CAN_MSG[6] = lowByte(_tempDisCharVolt);
+  CAN_MSG[7] = highByte(_tempDisCharVolt);
+  CAN_SEND_MSG(0x351, 8, CAN_MSG);
+
+  // 0x355 - SOC / SOH
+  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+  CANBUS_BuildSOC(CAN_MSG, _battSOC, _enableSOCTrick, _forceCharge, _chargePhase, _never100SOC);
+  CAN_MSG[2] = lowByte(_battSOH);
+  CAN_MSG[3] = highByte(_battSOH);
+  CAN_SEND_MSG(0x355, 4, CAN_MSG);
+
+  // 0x356 - Battery voltage, current, temperature
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
   CAN_MSG[0] = lowByte(_battVoltage);
   CAN_MSG[1] = highByte(_battVoltage);
@@ -615,82 +808,80 @@ bool CANBUS::SendCANData(){
   CAN_MSG[3] = highByte(int16_t(_battCurrentmA));
   CAN_MSG[4] = lowByte(_tempBattTemp);
   CAN_MSG[5] = highByte(_tempBattTemp);
+  CAN_SEND_MSG(0x356, 6, CAN_MSG);
 
-  sendCAN(0x356, 6, CAN_MSG);
+  // SMA: no 0x359, 0x35C, or 0x35E messages
 
+  CAN_SEND_END();
+}
+
+bool CANBUS::SendCANData_Victron(){
+  CAN_SEND_BEGIN();
+
+  // Victron units: same as Pylontech (voltage 0.01V, current 0.1A)
+  uint16_t _tempChargeVolt = (_chargeVoltage * 0.01);
+  uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
+  uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
+  uint16_t _tempDisChargeCurr = (_dischargeCurrentmA * 0.01);
+  u_int16_t _tempMaxDisChargeCurr = (_maxDischargeCurrentmA * 0.01);
+  int16_t _tempBattTemp = (_battTemp * 10);
+
+  // 0x351 - Battery charge and discharge parameters
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-
-  if (_enableSOCTrick && _forceCharge) {
-    CAN_MSG[0] = lowByte(u_int8_t(_battSOC * 0.1));
-    CAN_MSG[1] = highByte(u_int8_t(_battSOC * 0.1));
-  }
-  else if(_battSOC >= 100 && (_chargePhase != PHASE_COMPLETE || _never100SOC)) {
-    CAN_MSG[0] = lowByte(99);
-    CAN_MSG[1] = highByte(99);
-  }
-  else {
-    CAN_MSG[0] = lowByte(_battSOC);
-    CAN_MSG[1] = highByte(_battSOC);
-  }
-
-  CAN_MSG[2] = lowByte(_battSOH);
-  CAN_MSG[3] = highByte(_battSOH);
-
-  sendCAN(0x355, 4, CAN_MSG);
-
-  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-
-  // Battery charge and discharge parameters
-
-  CAN_MSG[0] = lowByte(_tempChargeVolt);           // Maximum battery voltage
+  CAN_MSG[0] = lowByte(_tempChargeVolt);
   CAN_MSG[1] = highByte(_tempChargeVolt);
   if((_chargeEnabled && _ManualAllowCharge)){
-    CAN_MSG[2] = lowByte(_tempChargeCurr);         // Maximum charging current 
+    CAN_MSG[2] = lowByte(_tempChargeCurr);
     CAN_MSG[3] = highByte(_tempChargeCurr);
   } else {
-    CAN_MSG[2] = 0;                                // Set 0 charging current to stop charge
+    CAN_MSG[2] = 0;
     CAN_MSG[3] = 0;
   }
   if((_dischargeEnabled && _ManualAllowDischarge)){
     if(_dischargeCurrentmA > _maxDischargeCurrentmA)
-      _tempDisChargeCurr = _tempMaxDisChargeCurr; 
-
-    CAN_MSG[4] = lowByte(_tempDisChargeCurr);      // Maximum discharge current 
+      _tempDisChargeCurr = _tempMaxDisChargeCurr;
+    CAN_MSG[4] = lowByte(_tempDisChargeCurr);
     CAN_MSG[5] = highByte(_tempDisChargeCurr);
   } else {
-    CAN_MSG[4] = 0;                                // Set 0 discharge current to stop discharge
+    CAN_MSG[4] = 0;
     CAN_MSG[5] = 0;
   }
-  CAN_MSG[6] = lowByte(_tempDisCharVolt);          // Currently not used by SOLIS
-  CAN_MSG[7] = highByte(_tempDisCharVolt);         // Currently not used by SOLIS
+  CAN_MSG[6] = lowByte(_tempDisCharVolt);
+  CAN_MSG[7] = highByte(_tempDisCharVolt);
+  CAN_SEND_MSG(0x351, 8, CAN_MSG);
 
-  sendCAN(0x351, 8, CAN_MSG);
+  // 0x355 - SOC / SOH
+  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+  CANBUS_BuildSOC(CAN_MSG, _battSOC, _enableSOCTrick, _forceCharge, _chargePhase, _never100SOC);
+  CAN_MSG[2] = lowByte(_battSOH);
+  CAN_MSG[3] = highByte(_battSOH);
+  CAN_SEND_MSG(0x355, 4, CAN_MSG);
 
-  if (_pylonVersion >= 1) {
-    memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-    CAN_MSG[0] = 0x00;
-    CAN_MSG[1] = 0x00;
-    CAN_MSG[2] = 0x00;
-    CAN_MSG[3] = 0x00;
-    CAN_MSG[4] = 0x0A;
-    CAN_MSG[5] = 0x50;
-    CAN_MSG[6] = 0x4E;
-    CAN_MSG[7] = 0x00;
-    sendCAN(0x359, 8, CAN_MSG);
+  // 0x356 - Battery voltage, current, temperature
+  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+  CAN_MSG[0] = lowByte(_battVoltage);
+  CAN_MSG[1] = highByte(_battVoltage);
+  CAN_MSG[2] = lowByte(int16_t(_battCurrentmA));
+  CAN_MSG[3] = highByte(int16_t(_battCurrentmA));
+  CAN_MSG[4] = lowByte(_tempBattTemp);
+  CAN_MSG[5] = highByte(_tempBattTemp);
+  CAN_SEND_MSG(0x356, 6, CAN_MSG);
+
+  // 0x35A - Alarm details (Victron specific)
+  memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+  // Byte 0: general alarm/warning flags
+  // Bit mapping: 0=no alarm, 1=warning, 2=alarm
+  // For now, derive from existing alarm state
+  if (_alarmActive) {
+    CAN_MSG[0] = 0x04;  // General alarm bit
   }
+  // Bytes 1-7: reserved / additional alarm detail
+  CAN_SEND_MSG(0x35A, 8, CAN_MSG);
 
-if(_failedCanSendCount > 0)
-  WS_LOG_E("Failed to Send CAN Packets: %i",_failedCanSendCount);
-if (CanBusFailed()) 
-    CanBusDataOK = false;
-  else
-    CanBusDataOK = true;
-  
-  if (_failedCanSendCount == 0)
-    return true;
-  else
-    return false;
+  // 0x35E - Manufacturer name (Victron uses "DIYBMS  ")
+  CAN_SEND_MSG(0x35E, 8, MSG_VICTRON);
 
+  CAN_SEND_END();
 }
 
 bool CANBUS::AllReady()

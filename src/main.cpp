@@ -258,7 +258,7 @@ void setup()
   Inverter.EnableSOCTrick(pref.getBool(ccSOCTrick, false));
   Inverter.EnableRequestFlags(pref.getBool(ccRequestFlags, false));
   Inverter.Never100SOC(pref.getBool(ccNever100SOC, false));
-  Inverter.PylonVersion(pref.getUInt8(ccPylonVersion, 1));
+  Inverter.SetCANProtocol((CANProtocol)pref.getUInt8(ccCANProtocol, PROTO_PYLONTECH_13));
   Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));
   Inverter.SetSlowChargeDivider(2,pref.getUInt8(ccSlowSOCDivider2,initSlowSOCDivider2));
   Inverter.SetSlowChargeSOCLimit(1, pref.getUInt8(ccSlowSOCCharge1, initSlowSOCCharge1));

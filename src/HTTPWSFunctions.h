@@ -155,7 +155,8 @@ String generateDatatoJSON(bool All)
     doc["soctrickenabled"] = Inverter.EnableSOCTrick();
     doc["requestflagsenabled"] = Inverter.EnableRequestFlags();
     doc["never100soc"] = Inverter.Never100SOC();
-    doc["pylonversion"] = Inverter.PylonVersion();
+    doc["canprotocol"] = (uint8_t)Inverter.GetCANProtocol();
+    doc["pylonversion"] = (uint8_t)Inverter.GetCANProtocol(); // backward compat for cached pages
     doc["wifissid"] = wifiManager.GetWifiSSID();
     doc["wifipass"] = wifiManager.GetWifiPass();
     doc["wifihostname"] = wifiManager.GetWifiHostName();
@@ -230,6 +231,9 @@ String generateDatatoJSON(bool All)
   doc["chargephase"] = Inverter.GetChargePhaseName();
   doc["showtempdashboard"] = Inverter.ShowTempOnDashboard();
   doc["cantotalfails"] = Inverter.GetFailedTotalCount();
+  doc["inverterpresent"] = Inverter.InverterPresent();
+  doc["victrondata"] = Lcd.Data.VEData.getValue();
+  doc["mqttconnected"] = Lcd.Data.MQTTConnected.getValue();
   doc["mqttinvertertemp"] = Inverter.MqttInverterTemp();
   doc["mqttbatttemp"] = Inverter.MqttBattTemp();
   doc["fanpwm"] = FAN_PWM;
@@ -624,12 +628,13 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         Inverter.Never100SOC(value);
         WS_LOG_I("Never send 100%% SOC set to: %s", value ? "ON" : "OFF");
         notifyWSClients();}
-      if (!doc["pylonversion"].isNull()) {
-        uint8_t value = doc["pylonversion"];
+      if (!doc["canprotocol"].isNull() || !doc["pylonversion"].isNull()) {
+        uint8_t value = !doc["canprotocol"].isNull() ? (uint8_t)doc["canprotocol"] : (uint8_t)doc["pylonversion"];
         handled = true;
-        pref.putUInt8(ccPylonVersion, value);
-        Inverter.PylonVersion(value);
-        WS_LOG_I("Pylontech version set to: 1.%s", value == 0 ? "2" : "3");
+        pref.putUInt8(ccCANProtocol, value);
+        Inverter.SetCANProtocol((CANProtocol)value);
+        const char* protoNames[] = {"Pylontech 1.2", "Pylontech 1.3", "SMA", "Victron", "Growatt/SolArk"};
+        WS_LOG_I("CAN Protocol set to: %s", (value < 5) ? protoNames[value] : "Unknown");
         notifyWSClients();}
 
       if (!doc["velooptime"].isNull()) {
@@ -978,7 +983,7 @@ void StartWebServices()
   ws.onEvent(onEvent);
   server.addHandler(&ws);
   // Scan network URL call (deprecated, use WebSocket GetWifiScan() instead)
-  server.on("/scan", HTTP_POST | HTTP_GET, [](AsyncWebServerRequest *request)
+  server.on("/scan", HTTP_GET, [](AsyncWebServerRequest *request)
   {
     String json = "[";
     // WiFi API is thread-safe internally; no critical section needed

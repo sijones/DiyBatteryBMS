@@ -2,12 +2,19 @@
 /*
 PYLON Protocol, messages sent every 1 second.
 
-0x35E – 50 59 4C 4F 4E 20 20 20 – Manufacturer name (“PYLON   “) (8 bytes)
-0x351 – 14 02 74 0E 74 0E CC 01 – Battery voltage + current limits (8 bytes)
-0x355 – 1A 00 64 00 – State of Health (SOH) / State of Charge (SOC) (4 bytes)
-0x356 – 4e 13 02 03 04 05 – Voltage / Current / Temp (6 bytes)
-0x359 – 00 00 00 00 0A 50 4E – Protection & Alarm flags (7 bytes)
-0x35C – C0 00 – Battery charge request flags (2 bytes)
+Common to v1.2 and v1.3:
+0x351 – Battery voltage + current limits (8 bytes)
+0x355 – State of Charge (SOC) / State of Health (SOH) (4 bytes v1.2, 6 bytes v1.3)
+0x356 – Voltage / Current / Temp (6 bytes)
+0x35E – Manufacturer name “PYLON   “ (8 bytes)
+
+Pylontech v1.2 only:
+0x359 – Protection & Alarm flags (8 bytes)
+0x35C – Battery charge request flags (2 bytes)
+
+Pylontech v1.3 only (replaces 0x359/0x35C):
+0x35A – Alarms & Warnings (8 bytes, bit-pair alarm/clear format)
+0x35F – Battery type & BMS info (8 bytes)
 
 */
 
@@ -28,6 +35,14 @@ PYLON Protocol, messages sent every 1 second.
 #define flagForceCharge 4       // Bit 4
 #define flagRequestFullCharge 3 // Bit 3
 
+enum CANProtocol : uint8_t {
+  PROTO_PYLONTECH_12 = 0,  // Pylontech v1.2
+  PROTO_PYLONTECH_13 = 1,  // Pylontech v1.3
+  PROTO_SMA          = 2,  // SMA Sunny Island
+  PROTO_VICTRON      = 3,  // Victron CAN-BMS
+  PROTO_GROWATT      = 4   // Growatt / SolArk
+};
+
 class CANBUS {
   private:
 //#pragma once
@@ -37,7 +52,8 @@ MCP_CAN *CAN;
 #endif
 
 uint8_t CAN_MSG[8];
-uint8_t MSG_PYLON[8] = {0x50,0x59,0x4C,0x4F,0x4E,0x20,0x20,0x20};
+uint8_t MSG_PYLON[8] = {0x50,0x59,0x4C,0x4F,0x4E,0x20,0x20,0x20};   // "PYLON   "
+uint8_t MSG_VICTRON[8] = {0x44,0x49,0x59,0x42,0x4D,0x53,0x20,0x20}; // "DIYBMS  "
 
 bool _canbusEnabled = true;
 bool _initialised = false;
@@ -51,8 +67,10 @@ bool _useAutoCharge = true;
 
 uint8_t _canSendDelay = 10;
 
-// CC-CV Charge Phase State Machine
+// CC-CV Charge Phase State Machine (enum is public for protocol helpers)
+public:
 enum ChargePhase { PHASE_BULK, PHASE_ABSORPTION, PHASE_COMPLETE };
+private:
 ChargePhase _chargePhase = PHASE_BULK;
 time_t _absorptionStartTime = 0;
 time_t _tailCurrentStartTime = 0;
@@ -122,7 +140,11 @@ bool _tempProtectionEnabled = false;
 bool _showTempOnDashboard = false;
 
 bool _never100SOC = false;       // Never send 100% SOC over CAN
-uint8_t _pylonVersion = 1;       // 0=Pylontech 1.2, 1=Pylontech 1.3
+CANProtocol _canProtocol = PROTO_PYLONTECH_13;  // Selected inverter protocol
+
+bool SendCANData_Pylontech();
+bool SendCANData_SMA();
+bool SendCANData_Victron();
 
 // Temperature source selection
 uint8_t _battTempSource = 0;      // 0=VE.Direct, 1=MQTT
@@ -154,6 +176,10 @@ uint8_t _slowchargeSOC[2];
 // Divider, calculation is battery capacity divide by below
 // based on SOC being above the limit above
 uint8_t _slowchargeSOCdiv[2];
+
+// Inverter presence detection via 0x305 keepalive
+volatile unsigned long _lastInverterSeen = 0;  // millis() of last 0x305 received
+static const unsigned long INVERTER_TIMEOUT_MS = 5000;  // 5 seconds without 0x305 = offline
 
 // Track how many failed CAN BUS sends and reboot ESP if more than limit
 uint8_t _maxFailedCanSendCount = 20;
@@ -232,6 +258,9 @@ public:
   bool SendBattUpdate();
   bool SendCANData();
   bool SendToDriver(u_int32_t CMD,uint8_t Bytes, uint8_t * Data);
+  #ifndef ESPCAN
+  bool ReadMCP(unsigned long &id, uint8_t &len, uint8_t *buf);
+  #endif
   bool DataChanged();
   void SetChargeVoltage(uint16_t Voltage);
   uint16_t GetChargeVoltage() {return _chargeVoltage; }
@@ -340,8 +369,10 @@ public:
 
   bool Never100SOC() { return _never100SOC; }
   void Never100SOC(bool v) { _never100SOC = v; }
-  uint8_t PylonVersion() { return _pylonVersion; }
-  void PylonVersion(uint8_t v) { _pylonVersion = v; }
+  CANProtocol GetCANProtocol() { return _canProtocol; }
+  void SetCANProtocol(CANProtocol p) { _canProtocol = p; }
+  bool InverterPresent() { return _lastInverterSeen > 0 && (millis() - _lastInverterSeen) < INVERTER_TIMEOUT_MS; }
+  void InverterSeen() { _lastInverterSeen = millis(); }
 
   // Temperature source selectors
   uint8_t BattTempSource() { return _battTempSource; }

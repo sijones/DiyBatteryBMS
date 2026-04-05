@@ -615,6 +615,15 @@
       transition: background 0.3s;
     }
     .conn-dot.connected { background: #4caf50; }
+    .status-dot-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .status-dot-label {
+      font-size: 13px;
+      color: #555;
+    }
 
     @media (max-width: 768px) {
       body {
@@ -717,14 +726,33 @@
       <div id="home" class="tab-pane active">
         <h2 style="margin-bottom: 20px; color: #667eea;">Battery Status</h2>
 
-        <!-- Visual Battery Indicator -->
-        <div class="battery-visual">
-          <div class="battery-container">
-            <div class="battery-level" id="batteryLevel" style="width: 0%"></div>
-            <div class="battery-wave" id="batteryWave"></div>
-            <div class="battery-percentage" id="batteryPercentage">0%</div>
+        <!-- Battery + Status Overview -->
+        <div style="display:flex; align-items:center; justify-content:center; gap:24px; margin:20px 0; flex-wrap:wrap;">
+          <!-- Connection Status Panel -->
+          <div style="display:flex; flex-direction:column; gap:8px; min-width:140px;">
+            <div class="status-dot-row" id="inverterStatusRow" style="display:none;">
+              <span class="conn-dot" id="inverterDot"></span>
+              <span class="status-dot-label">Inverter</span>
+            </div>
+            <div class="status-dot-row">
+              <span class="conn-dot" id="shuntDot"></span>
+              <span class="status-dot-label">Shunt Data</span>
+            </div>
+            <div class="status-dot-row">
+              <span class="conn-dot" id="mqttDot"></span>
+              <span class="status-dot-label">MQTT</span>
+            </div>
           </div>
-          <div class="battery-tip"></div>
+
+          <!-- Visual Battery Indicator -->
+          <div style="display:flex; align-items:center; gap:0;">
+            <div class="battery-container">
+              <div class="battery-level" id="batteryLevel" style="width: 0%"></div>
+              <div class="battery-wave" id="batteryWave"></div>
+              <div class="battery-percentage" id="batteryPercentage">0%</div>
+            </div>
+            <div class="battery-tip"></div>
+          </div>
         </div>
 
         <!-- Power Flow Indicator - Compact -->
@@ -993,10 +1021,13 @@
             <label for="canbusenabled"><span class="tip" data-tip="Enable CAN bus communication with the inverter. Disable if no inverter is connected.">CAN Bus Enabled</span></label>
           </div>
           <div class="form-group">
-            <label for="pylonversion"><span class="tip" data-tip="Select the Pylontech CAN protocol version. 1.3 sends additional request and alarm frames (0x35C, 0x359). Use 1.2 if your inverter doesn't support these.">Protocol Version:</span></label>
-            <select id="pylonversion" onchange="SendJSONUpdate('pylonversion')">
+            <label for="canprotocol"><span class="tip" data-tip="Select the CAN protocol for your inverter. Pylontech 1.2 sends 0x359/0x35C request flags (most compatible). Pylontech 1.3 sends 0x35A/0x35F per official spec. SMA uses different voltage scaling. Victron adds alarm messages. Growatt/SolArk uses Pylontech 1.2 format.">Inverter Protocol:</span></label>
+            <select id="canprotocol" onchange="SendJSONUpdate('canprotocol')">
               <option value="0">Pylontech 1.2</option>
               <option value="1">Pylontech 1.3</option>
+              <option value="2">SMA</option>
+              <option value="3">Victron</option>
+              <option value="4">Growatt / SolArk</option>
             </select>
           </div>
         </div>
@@ -1074,6 +1105,13 @@
           <input type="textbox" id="ntpserver" onchange="EnqueueUpdate('ntpserver')" onkeypress="HandleEnter(event, 'ntpserver')">
         </div>
         
+        <div class="section-title">Backup & Restore</div>
+        <div class="button-group">
+          <button onclick="exportSettings()">Export Settings</button>
+          <button onclick="document.getElementById('importFile').click()">Import Settings</button>
+          <input type="file" id="importFile" accept=".json" style="display:none" onchange="importSettings(this)">
+        </div>
+
         <div class="button-group">
           <button class="btn-danger" onclick="eraseAll()">Factory Reset</button>
           <button class="btn-danger" onclick="erasekeepwifi()">Factory Reset Keeping WiFi</button>
@@ -1445,7 +1483,7 @@
           var ttgElem = document.getElementById('timetogo');
           if(ttgElem) {
             var ttg = obj.timetogo;
-            if(ttg < 0) { ttgElem.innerHTML = '--'; }
+            if(ttg < 0 || ttg >= 65535) { ttgElem.innerHTML = '--'; }
             else if(ttg >= 1440) { ttgElem.innerHTML = (ttg / 1440).toFixed(1) + 'd'; }
             else if(ttg >= 60) { ttgElem.innerHTML = Math.floor(ttg/60) + 'h ' + (ttg%60) + 'm'; }
             else { ttgElem.innerHTML = ttg + 'm'; }
@@ -1545,7 +1583,8 @@
       if(obj.rechargevoltageoffset !== undefined) { document.getElementById('rechargevoltageoffset').value=(obj.rechargevoltageoffset*0.001).toFixed(1); AckUpdate('rechargevoltageoffset'); }
       if(obj.tempprotection !== undefined) { document.getElementById('tempprotection').checked=obj.tempprotection; AckUpdate('tempprotection'); toggleTempConfig(); }
       if(obj.showtempdashboard !== undefined) { document.getElementById('showtempdashboard').checked=obj.showtempdashboard; AckUpdate('showtempdashboard'); }
-      if(obj.pylonversion !== undefined) { document.getElementById('pylonversion').value=obj.pylonversion; AckUpdate('pylonversion'); }
+      if(obj.canprotocol !== undefined) { document.getElementById('canprotocol').value=obj.canprotocol; AckUpdate('canprotocol'); }
+      if(obj.pylonversion !== undefined && obj.canprotocol === undefined) { document.getElementById('canprotocol').value=obj.pylonversion; AckUpdate('canprotocol'); }
       if(obj.batttempsrc !== undefined) { document.getElementById('batttempsrc').value=obj.batttempsrc; AckUpdate('batttempsrc'); toggleMqttTempTopics(); }
       if(obj.fantempsrc !== undefined) { document.getElementById('fantempsrc').value=obj.fantempsrc; AckUpdate('fantempsrc'); toggleMqttTempTopics(); }
       if(obj.lcdenabled !== undefined) { document.getElementById('lcdenabled').checked=obj.lcdenabled; AckUpdate('lcdenabled'); }
@@ -1560,6 +1599,20 @@
       if(obj.hasOwnProperty('cantotalfails')) {
         var e=document.getElementById('canFailInfo');
         if(e) e.innerHTML=obj.cantotalfails;
+      }
+      if(obj.hasOwnProperty('inverterpresent')) {
+        var row=document.getElementById('inverterStatusRow');
+        var dot=document.getElementById('inverterDot');
+        if(row) row.style.display=obj.inverterpresent ? 'flex' : 'none';
+        if(dot) { if(obj.inverterpresent) dot.classList.add('connected'); else dot.classList.remove('connected'); }
+      }
+      if(obj.hasOwnProperty('victrondata')) {
+        var dot=document.getElementById('shuntDot');
+        if(dot) { if(obj.victrondata) dot.classList.add('connected'); else dot.classList.remove('connected'); }
+      }
+      if(obj.hasOwnProperty('mqttconnected')) {
+        var dot=document.getElementById('mqttDot');
+        if(dot) { if(obj.mqttconnected) dot.classList.add('connected'); else dot.classList.remove('connected'); }
       }
       if(obj.hasOwnProperty('fwversion_bms')) {
         var e=document.getElementById('fwVersionBms');
@@ -1605,6 +1658,123 @@
       var jsonobj = '{"saveall" : true}';
       websocket.send(jsonobj);
       setTimeout(() => setUpdateButtonsDisabled(false), 2000);
+    }
+
+    // Settings export/import - reads from DOM, sends via existing WebSocket handlers
+    const EXPORT_FIELDS = {
+      checkboxes: ['canbusenabled','soctrickenabled','requestflagsenabled','never100soc',
+                   'autocharge','tempprotection','showtempdashboard','lcdenabled'],
+      numbers: ['chargevoltage','dischargevoltage','overvoltage','maxchargecurrent',
+                'maxdischargecurrent','minchargecurr','adjuststep','batterycapacity',
+                'lowsoclimit','highsoclimit','smartinterval','tailduration',
+                'maxabsorptiontime','rechargesoc','chargehightemp','chargelowtemp',
+                'dischargehightemp','dischargelowtemp','fanofftemp','fanfulltemp',
+                'slowchargesoc1','slowchargesoc2','slowchargesoc1div','slowchargesoc2div',
+                'velooptime','mqttport'],
+      converted: { tailcurrent: 1000, rechargevoltageoffset: 1000 },
+      strings: ['ntpserver','mqttserverip','mqttclientid','mqtttopic','mqttuser',
+                'mqttpass','mqttbatttopic','mqttinvtopic','wifihostname'],
+      selects: ['canprotocol','batttempsrc','fantempsrc'],
+      pins: ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin',
+             'canbuscspin','fanpin','onewirepin']
+    };
+
+    function exportSettings() {
+      var settings = { _exportVersion: 1, _exportDate: new Date().toISOString() };
+      EXPORT_FIELDS.checkboxes.forEach(function(f) {
+        var el = document.getElementById(f);
+        if (el) settings[f] = el.checked;
+      });
+      EXPORT_FIELDS.numbers.forEach(function(f) {
+        var el = document.getElementById(f);
+        if (el && el.value !== '') settings[f] = Number(el.value);
+      });
+      for (var f in EXPORT_FIELDS.converted) {
+        var el = document.getElementById(f);
+        if (el && el.value !== '') settings[f] = Number(el.value);
+      }
+      EXPORT_FIELDS.strings.forEach(function(f) {
+        var el = document.getElementById(f);
+        if (el) settings[f] = el.value;
+      });
+      EXPORT_FIELDS.selects.forEach(function(f) {
+        var el = document.getElementById(f);
+        if (el) settings[f] = Number(el.value);
+      });
+      EXPORT_FIELDS.pins.forEach(function(f) {
+        var el = document.getElementById(f);
+        if (el && el.value !== '' && Number(el.value) > 0) settings[f] = Number(el.value);
+      });
+      // WiFi SSID from select
+      var ssid = document.getElementById('wifissid');
+      if (ssid && ssid.value) settings.wifissid = ssid.value;
+      var wpass = document.getElementById('wifipass');
+      if (wpass && wpass.value) settings.wifipass = wpass.value;
+
+      var blob = new Blob([JSON.stringify(settings, null, 2)], {type: 'application/json'});
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      var hostname = document.getElementById('wifihostname');
+      a.download = (hostname && hostname.value ? hostname.value : 'diybms') + '-settings.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast('Settings exported', 'success');
+    }
+
+    function importSettings(input) {
+      var file = input.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          var settings = JSON.parse(e.target.result);
+          if (!confirm('Import ' + Object.keys(settings).length + ' settings from ' + file.name + '?\nThis will overwrite current settings.')) {
+            input.value = '';
+            return;
+          }
+          var count = 0;
+          var skip = ['_exportVersion', '_exportDate'];
+
+          // For converted fields, set DOM value as display units (server expects raw via SendQueuedUpdate)
+          for (var key in settings) {
+            if (skip.indexOf(key) >= 0) continue;
+            var el = document.getElementById(key);
+            if (!el) continue;
+
+            if (el.type === 'checkbox') {
+              el.checked = !!settings[key];
+            } else if (key === 'wifissid') {
+              // Ensure option exists in select
+              if (el.value !== settings[key]) {
+                var opt = document.createElement('option');
+                opt.textContent = settings[key];
+                opt.value = settings[key];
+                el.appendChild(opt);
+              }
+              el.value = settings[key];
+            } else {
+              el.value = settings[key];
+            }
+            // Queue the update to send to server via existing WebSocket mechanism
+            // Use a staggered delay to avoid flooding
+            (function(k) {
+              setTimeout(function() { SendQueuedUpdate(k); }, count * 150);
+            })(key);
+            count++;
+          }
+          showToast('Importing ' + count + ' settings...', 'success');
+          // Reboot after all settings have been sent
+          var rebootDelay = (count * 150) + 2000;
+          setTimeout(function() {
+            showToast('Rebooting to apply settings...', 'success');
+            websocket.send('{"reboot" : true}');
+          }, rebootDelay);
+        } catch(err) {
+          showToast('Invalid settings file: ' + err.message, 'error');
+        }
+        input.value = '';
+      };
+      reader.readAsText(file);
     }
 
     function eraseAll() {

@@ -75,7 +75,8 @@ const char* const ccFanTempSrc = "FanTempSrc";
 const char* const ccMQTTBattTopic = "MQBattTopic";
 const char* const ccMQTTInvTopic = "MQInvTopic";
 const char* const ccNever100SOC = "Never100SOC";
-const char* const ccPylonVersion = "PylonVer";
+const char* const ccPylonVersion = "PylonVer";  // Also used as ccCANProtocol (backward compat)
+const char* const ccCANProtocol = "PylonVer";   // Same NVS key: 0-1=Pylontech, 2=SMA, 3=Victron, 4=Growatt
 const char* const ccFanOffTemp = "FanOffTemp";
 const char* const ccFanFullTemp = "FanFullTemp";
 
