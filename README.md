@@ -40,10 +40,12 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 - Home Assistant MQTT Discovery - Automatically creates all sensors and switches in Home Assistant with no manual configuration required
 - Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates.
 - Supports single MQTT server
-- OTA (Over The Air Update)<br> use your browser and go to http://IPADDRESS/update and upload the lastest binary - please note the donation button does not donate to me.
+- OTA (Over The Air Update)<br> use your browser and go to http://IPADDRESS/update and upload the lastest binary
 - LCD Screen Support (LCD 20x4 via I2C)
 - Configurable NTP Server - This is for a future feature.
 - Voltage Limited Charging, automatically reducing charge current to keep the voltage stable
+- SOC Reset, if the Smart Shunt is at 100% but battery voltage is under charged voltage sends 99% until met
+- SOC recharge, hold off recharging until under the SOC restart limit.
 
 ### Home Assistant Integration
 The device now supports **MQTT Discovery** which automatically creates all entities when connected:
