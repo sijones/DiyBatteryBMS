@@ -27,25 +27,42 @@ def generate_embedded_html(source, target, env):
         # Get environment name
         env_name = str(env['PIOENV'])
         
+        # MCP2515 CAN controller fields (SPI CS pin + crystal speed selector).
+        # Shared by all MCP2515-based environments.
+        mcp_can_fields = '''<div class="form-group">
+                <label for="canbuscspin">CAN CS Pin:</label>
+                <input type="number" id="canbuscspin" onchange="EnqueueUpdate('canbuscspin')" onkeypress="HandleEnter(event, 'canbuscspin')">
+              </div>
+              <div class="checkbox-row">
+                <input type="checkbox" id="can16mhz" onchange="SendJSONUpdate('can16mhz')">
+                <label for="can16mhz"><span class="tip" data-tip="Enable if your MCP2515 module uses a 16 MHz crystal. Leave unchecked for the common 8 MHz modules.">MCP2515 16 MHz Crystal</span></label>
+              </div>'''
+        mcp_can_handlers = '''if(obj.hasOwnProperty('canbuscspin')) document.getElementById('canbuscspin').value=obj.canbuscspin;
+          if(obj.hasOwnProperty('can16mhz')) document.getElementById('can16mhz').checked=obj.can16mhz;
+          AckUpdate('canbuscspin');
+          AckUpdate('can16mhz');'''
+
         # Define CAN configurations for all environments
         can_configs = {
             'esp32dev': {
                 'title': 'CAN Bus Configuration',
-                'can_fields': '''<div class="form-group">
-                <label for="canbuscspin">CAN CS Pin:</label>
-                <input type="number" id="canbuscspin" onchange="EnqueueUpdate('canbuscspin')" onkeypress="HandleEnter(event, 'canbuscspin')">
-              </div>''',
-                'can_handlers': '''if(obj.hasOwnProperty('canbuscspin')) document.getElementById('canbuscspin').value=obj.canbuscspin;
-          AckUpdate('canbuscspin');'''
+                'can_fields': mcp_can_fields,
+                'can_handlers': mcp_can_handlers
             },
             'esp32plus': {
                 'title': 'CAN Bus Configuration',
-                'can_fields': '''<div class="form-group">
-                <label for="canbuscspin">CAN CS Pin:</label>
-                <input type="number" id="canbuscspin" onchange="EnqueueUpdate('canbuscspin')" onkeypress="HandleEnter(event, 'canbuscspin')">
-              </div>''',
-                'can_handlers': '''if(obj.hasOwnProperty('canbuscspin')) document.getElementById('canbuscspin').value=obj.canbuscspin;
-          AckUpdate('canbuscspin');'''
+                'can_fields': mcp_can_fields,
+                'can_handlers': mcp_can_handlers
+            },
+            'esp32s3-MCP': {
+                'title': 'CAN Bus Configuration',
+                'can_fields': mcp_can_fields,
+                'can_handlers': mcp_can_handlers
+            },
+            'xiao-esp32s3': {
+                'title': 'CAN Bus Configuration',
+                'can_fields': mcp_can_fields,
+                'can_handlers': mcp_can_handlers
             },
             'esp32-ESPCAN': {
                 'title': 'ESPCAN Configuration',

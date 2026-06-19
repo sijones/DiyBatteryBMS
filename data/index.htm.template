@@ -1662,7 +1662,7 @@
 
     // Settings export/import - reads from DOM, sends via existing WebSocket handlers
     const EXPORT_FIELDS = {
-      checkboxes: ['canbusenabled','soctrickenabled','requestflagsenabled','never100soc',
+      checkboxes: ['canbusenabled','can16mhz','soctrickenabled','requestflagsenabled','never100soc',
                    'autocharge','tempprotection','showtempdashboard','lcdenabled'],
       numbers: ['chargevoltage','dischargevoltage','overvoltage','maxchargecurrent',
                 'maxdischargecurrent','minchargecurr','adjuststep','batterycapacity',
