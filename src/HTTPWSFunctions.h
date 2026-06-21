@@ -13,6 +13,8 @@ volatile bool otaInProgress = false;
 extern String sMqttBattTopic;
 extern String sMqttInvTopic;
 void mqttResubscribeTemp();
+// Re-publish HA discovery (defined in mqttFunctions.h) so number-control limits track config changes
+void publishHADiscovery();
 
 // Log buffer for web UI
 #define LOG_BUFFER_SIZE 100
@@ -414,8 +416,10 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         notifyWSClients(); }
       if (!doc["maxchargecurrent"].isNull()) {
         pref.putUInt32(ccChargeCurrent,(uint32_t) doc["maxchargecurrent"]);
-        Inverter.SetMaxChargeCurrent((uint32_t) doc["maxchargecurrent"]); 
+        Inverter.SetMaxChargeCurrent((uint32_t) doc["maxchargecurrent"]);
         WS_LOG_I("Set Max Charge Current to %u", (uint32_t) doc["maxchargecurrent"]);
+        // Re-publish HA discovery so the Charge Current slider max tracks the new limit
+        publishHADiscovery();
         handled = true;
         notifyWSClients(); }
       if (!doc["maxdischargecurrent"].isNull()) {

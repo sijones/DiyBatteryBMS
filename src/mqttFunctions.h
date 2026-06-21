@@ -315,8 +315,15 @@ void publishHADiscovery() {
   haNumber("Charge Voltage", "chargevoltage", "{{ (value_json.chargevoltage * 0.001) | round(1) }}", "ChargeVoltage",
     ",\"unit_of_measurement\":\"V\",\"device_class\":\"voltage\",\"min\":4.0,\"max\":58.0,\"step\":0.1",
     base, node, dataTopic, st, deviceJson);
+  // Slider max tracks the configured Max Charge Current (mA -> A); fall back to 100 A if unset
+  float maxChargeA = Inverter.GetMaxChargeCurrent() * 0.001f;
+  if (maxChargeA <= 0.0f) maxChargeA = 100.0f;
+  char chargeCurrentExtra[128];
+  snprintf(chargeCurrentExtra, sizeof(chargeCurrentExtra),
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"min\":0.0,\"max\":%.1f,\"step\":0.1",
+    maxChargeA);
   haNumber("Charge Current", "chargecurrent", "{{ (value_json.chargecurrent * 0.001) | round(1) }}", "ChargeCurrent",
-    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"min\":0.0,\"max\":100.0,\"step\":0.1",
+    chargeCurrentExtra,
     base, node, dataTopic, st, deviceJson);
   haNumber("Discharge Current", "dischargecurrent", "{{ value_json.dischargecurrent | multiply(0.001) | round(1) }}", "DischargeCurrent",
     ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":1",
