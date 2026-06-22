@@ -227,6 +227,7 @@ String generateDatatoJSON(bool All)
   doc["chargeenabled"] = (Inverter.ChargeEnable() && Inverter.ManualAllowCharge()) ? true : false;
   doc["dischargeenabled"] = (Inverter.DischargeEnable() && Inverter.ManualAllowDischarge()) ? true : false;
   doc["forcecharge"] = Inverter.ForceCharge();
+  doc["autocharge"] = Inverter.AutoCharge();  // smart-charge state for HA "Smart Charge Status" binary sensor
   doc["chargecurrent"] = Inverter.GetChargeCurrent();
   doc["dischargecurrent"] = Inverter.GetDischargeCurrent();
   doc["maxdischargecurrent"] = Inverter.GetMaxDischargeCurrent();
