@@ -256,11 +256,11 @@ void publishHADiscovery() {
   haSensor("Battery Temperature", "temperature", "{{ value_json.batttemp }}",
     ",\"unit_of_measurement\":\"°C\",\"device_class\":\"temperature\",\"state_class\":\"measurement\"",
     base, node, dataTopic, deviceJson);
-  haSensor("Charge Current Limit", "chargecurrent", "{{ value_json.chargecurrent | multiply(0.001) | round(1) }}",
-    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\"",
+  haSensor("Charge Current Limit", "chargecurrent", "{{ value_json.chargecurrent | multiply(0.001) | round(0) }}",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":0",
     base, node, dataTopic, deviceJson);
-  haSensor("Discharge Current Limit", "dischargecurrent", "{{ value_json.dischargecurrent | multiply(0.001) | round(1) }}",
-    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":1",
+  haSensor("Discharge Current Limit", "dischargecurrent", "{{ value_json.dischargecurrent | multiply(0.001) | round(0) }}",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":0",
     base, node, dataTopic, deviceJson);
   haSensor("Charge Adjust", "chargeadjust", "{{ value_json.chargeadjust | multiply(0.001) | round(1) }}",
     ",\"state_class\":\"measurement\",\"suggested_display_precision\":1",
@@ -320,13 +320,13 @@ void publishHADiscovery() {
   if (maxChargeA <= 0.0f) maxChargeA = 100.0f;
   char chargeCurrentExtra[128];
   snprintf(chargeCurrentExtra, sizeof(chargeCurrentExtra),
-    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"min\":0.0,\"max\":%.1f,\"step\":0.1",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"min\":0,\"max\":%.0f,\"step\":1",
     maxChargeA);
-  haNumber("Charge Current", "chargecurrent", "{{ (value_json.chargecurrent * 0.001) | round(1) }}", "ChargeCurrent",
+  haNumber("Charge Current", "chargecurrent", "{{ (value_json.chargecurrent * 0.001) | round(0) }}", "ChargeCurrent",
     chargeCurrentExtra,
     base, node, dataTopic, st, deviceJson);
-  haNumber("Discharge Current", "dischargecurrent", "{{ value_json.dischargecurrent | multiply(0.001) | round(1) }}", "DischargeCurrent",
-    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":1",
+  haNumber("Discharge Current", "dischargecurrent", "{{ value_json.dischargecurrent | multiply(0.001) | round(0) }}", "DischargeCurrent",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":0",
     base, node, dataTopic, st, deviceJson);
 
   log_i("Home Assistant Discovery published successfully.");
