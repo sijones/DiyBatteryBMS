@@ -6,6 +6,7 @@
 #include "config.h"
 #include "embedded_html.h"
 #include "Syslog.h"
+#include "Schedule.h"
 #include "GPIOForbidden.h"
 
 volatile bool otaInProgress = false;
@@ -34,6 +35,29 @@ portMUX_TYPE wifiScanMutex = portMUX_INITIALIZER_UNLOCKED;
 bool wifiScanRequested = false;  // Track if scan was requested to trigger background scan
 
 SyslogSender Syslog;
+#ifndef DISABLE_SCHEDULER
+ChargeSchedule Schedule;
+
+// Load the UI (repeating) schedule from NVS. MQTT windows are deliberately never
+// persisted - see the note in Schedule.h.
+void loadUiSchedule() {
+  String js = pref.getString(ccSchedule, "");
+  if (js.length() == 0) return;
+  JsonDocument doc;
+  if (deserializeJson(doc, js)) { log_e("Stored schedule is not valid JSON"); return; }
+  int n = Schedule.setUiFromJson(doc.as<JsonArrayConst>());
+  log_d("Loaded %d scheduled window(s) from NVS", n);
+}
+
+void saveUiSchedule() {
+  JsonDocument doc;
+  JsonArray a = doc.to<JsonArray>();
+  Schedule.uiToJson(a);
+  String out;
+  serializeJson(doc, out);
+  pref.putString(ccSchedule, out);
+}
+#endif  // DISABLE_SCHEDULER
 
 // Re-read syslog settings from preferences and push them into the sender.
 // Called on boot and whenever any syslog field changes.
@@ -355,6 +379,17 @@ String generateDatatoJSON(bool All)
   }
   doc["showtempdashboard"] = Inverter.ShowTempOnDashboard();
   doc["cantotalfails"] = Inverter.GetFailedTotalCount();
+#ifndef DISABLE_SCHEDULER
+  {
+    time_t schedNow = time(nullptr);
+    SchedDecision sd = Schedule.evaluate(schedNow, Inverter.BattSOC(), Inverter.ChargeEnable());
+    doc["schedactive"] = sd.active;
+    doc["schedsource"] = sd.active ? (sd.fromMqtt ? "mqtt" : "ui") : "none";
+    doc["schedmqttcount"] = Schedule.mqttCount();
+    doc["scheduicount"] = Schedule.uiCount();
+    doc["schednext"] = (uint32_t)Schedule.nextMqttStart(schedNow);
+  }
+#endif
   // -1 = never synced. -2 = no NTP server configured, so nothing will sync.
   doc["ntpsyncago"] = (pref.getString(ccNTPServer,"").length() == 0)
                         ? -2 : ntpSecondsSinceSync();

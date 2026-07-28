@@ -268,6 +268,9 @@ void setup()
   // clock display both use localtime_r().
   applyTimeZone();
   applySyslogConfig();
+#ifndef DISABLE_SCHEDULER
+  loadUiSchedule();
+#endif
   Inverter.SetCANProtocol((CANProtocol)pref.getUInt8(ccCANProtocol, PROTO_PYLONTECH_13));
   Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));
   Inverter.SetSlowChargeDivider(2,pref.getUInt8(ccSlowSOCDivider2,initSlowSOCDivider2));
@@ -375,6 +378,52 @@ void UpdateWifiScanResults() {
   }
 }
 
+/*
+   Apply the active schedule window.
+
+   Precedence: safety > schedule > default (charge on, discharge on, force off).
+   Safety is not checked here - it cannot be bypassed from this layer. The CAN
+   code emits (_chargeEnabled && _ManualAllowCharge), and _chargeEnabled belongs
+   to the protection logic, so writing ManualAllow* can only ever withhold, never
+   grant. Force charge is gated inside evaluate() on the same flag.
+
+   Runs once a second; the setters are no-ops when nothing changed.
+*/
+#ifndef DISABLE_SCHEDULER
+uint32_t lastScheduleEval = 0;
+bool lastSchedActive = false;
+
+void ScheduleApply(time_t now) {
+  if ((uint32_t)(millis() - lastScheduleEval) < 1000) return;
+  lastScheduleEval = millis();
+
+  // Absolute windows expire on their own; drop them once past so the list does
+  // not grow stale and the fallback to the UI schedule happens by itself.
+  Schedule.pruneExpired(now);
+
+  SchedDecision d = Schedule.evaluate(now, Inverter.BattSOC(), Inverter.ChargeEnable());
+
+  Inverter.ManualAllowCharge(d.charge);
+  Inverter.ManualAllowDischarge(d.discharge);
+  if (d.force != Inverter.ForceCharge()) Inverter.ForceCharge(d.force);
+
+  if (d.active != lastSchedActive) {
+    lastSchedActive = d.active;
+    if (d.active)
+      WS_LOG_I("Schedule window started (%s): charge %s, discharge %s, force %s%s",
+               d.fromMqtt ? "MQTT" : "web UI",
+               d.charge ? "on" : "off", d.discharge ? "on" : "off",
+               d.force ? "on" : "off",
+               d.targetSOC ? (" to " + String(d.targetSOC) + "%").c_str() : "");
+    else
+      WS_LOG_I("Schedule window ended, back to defaults");
+    publishScheduleStatus();
+  }
+}
+#else
+static inline void ScheduleApply(time_t) {}
+#endif
+
 void loop()
 {
 
@@ -386,6 +435,7 @@ void loop()
     FirstRun = false; }
   
   wifiManager.loop();
+  ScheduleApply(t);
 
   // Monitor WiFi scan completion and send results via WebSocket
   UpdateWifiScanResults();

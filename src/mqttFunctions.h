@@ -114,6 +114,37 @@ bool mqttPublish(const char* topic, const char* payload, bool retain)
 
 static char _mqTopicBuf[64];
 
+/*
+   Publish what the scheduler is currently doing, so the plan is visible and
+   debuggable from Home Assistant rather than only from the device log.
+   Retained, so a newly started HA sees the current state immediately.
+*/
+#ifndef DISABLE_SCHEDULER
+void publishScheduleStatus() {
+  if (otaInProgress || !mqttClient.connected()) return;
+  const char* t = sTopic.c_str();
+  time_t now = time(nullptr);
+  SchedDecision d = Schedule.evaluate(now, Inverter.BattSOC(), Inverter.ChargeEnable());
+
+  auto pub = [&](const char* suffix, const char* val) {
+    snprintf(_mqTopicBuf, sizeof(_mqTopicBuf), "%s/Schedule/%s", t, suffix);
+    mqttPublish(_mqTopicBuf, val, true);
+  };
+  char buf[24];
+  pub("Active", d.active ? "ON" : "OFF");
+  pub("Source", d.active ? (d.fromMqtt ? "mqtt" : "ui") : "none");
+  snprintf(buf, sizeof(buf), "%u", (unsigned)Schedule.mqttCount()); pub("Windows", buf);
+  pub("ForceCharge", d.force ? "ON" : "OFF");
+  pub("ChargeAllowed", d.charge ? "ON" : "OFF");
+  pub("DischargeAllowed", d.discharge ? "ON" : "OFF");
+  snprintf(buf, sizeof(buf), "%u", (unsigned)d.targetSOC); pub("TargetSOC", buf);
+  time_t nxt = Schedule.nextMqttStart(now);
+  snprintf(buf, sizeof(buf), "%lu", (unsigned long)nxt); pub("NextStart", buf);
+}
+#else
+static inline void publishScheduleStatus() {}
+#endif
+
 bool sendUpdateMQTTData()
 {
   if (otaInProgress) return false;
@@ -507,7 +538,22 @@ else if (sMqttInvTopic.length() > 0 && _Topic == sMqttInvTopic) {
     return;
 }
 
-if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
+if (false) { }
+#ifndef DISABLE_SCHEDULER
+  else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/Schedule")) {
+    // Retained by the publisher, so the broker replays it on reconnect and the
+    // device recovers its plan after a reboot without any flash write.
+    String err;
+    int n = Schedule.ingest(message.c_str(), err);
+    if (n < 0) WS_LOG_W("Schedule rejected: %s", err.c_str());
+    else {
+      WS_LOG_I("Schedule accepted: %d window(s) from MQTT%s%s",
+               n, err.length() ? " - " : "", err.c_str());
+    }
+    publishScheduleStatus();
+  }
+#endif
+  else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
 
     Inverter.SetDischargeCurrent(message.toInt());
     log_d("Discharge current set to: %d", message.toInt());
