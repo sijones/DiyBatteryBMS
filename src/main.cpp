@@ -2,13 +2,15 @@
 /*
 
    VE.Direct to CAN BUS & MQTT Gateway using a ESP32 Board
-   Copyright (c) 2025 Simon Jones
+   Copyright (c) 2022-2026 Nexion Software Solutions Ltd - https://nexion.uk
 
-   Free to use in personal projects and modify for your own use, no permission for 
-   selling or commericalising this code in this project.
-   
+   Free to use in personal projects and modify for your own use, no permission for
+   selling or commercialising this code in this project.
+
    The copyright notice and this permission notice shall be included in all
    copies or substantial portions of the Software.
+
+   See the LICENSE file at the root of this repository for the full terms.
 
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -140,6 +142,9 @@ void setup()
     pref.putUInt8("VE_MQTT_REC", VE_MQTT_RECONNECT);
     pref.putUInt8(ccVELOOPTIME, VE_LOOP_TIME);
     pref.putString(ccNTPServer,"");
+    pref.putString(ccSyslogServer,"");
+    pref.putUInt16(ccSyslogPort, 514);
+    pref.putBool(ccSyslogEnabled, false);
     pref.putBool(ccNever100SOC, false);
     pref.putUInt8(ccPylonVersion, 1);
     pref.putUInt8(ccBattTempSrc, 0);
@@ -258,6 +263,7 @@ void setup()
   Inverter.EnableSOCTrick(pref.getBool(ccSOCTrick, false));
   Inverter.EnableRequestFlags(pref.getBool(ccRequestFlags, false));
   Inverter.Never100SOC(pref.getBool(ccNever100SOC, false));
+  applySyslogConfig();
   Inverter.SetCANProtocol((CANProtocol)pref.getUInt8(ccCANProtocol, PROTO_PYLONTECH_13));
   Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));
   Inverter.SetSlowChargeDivider(2,pref.getUInt8(ccSlowSOCDivider2,initSlowSOCDivider2));

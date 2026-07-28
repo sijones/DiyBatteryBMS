@@ -1,13 +1,34 @@
-This is free and unencumbered software released into the public domain.
+Copyright (c) 2022-2026 Nexion Software Solutions Ltd
+https://nexion.uk
 
-Anyone is free to copy, modify, publish, use this for personal projects.
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to use, copy,
+modify, and distribute the Software for personal, non-commercial purposes,
+subject to the following conditions:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
-OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
-ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-OTHER DEALINGS IN THE SOFTWARE.
+1. The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
 
-For more information, please refer to <https://unlicense.org>
+2. Selling the Software, or otherwise commercialising it in whole or in part -
+   including distributing it as part of a product or service offered for sale,
+   or pre-loading it onto hardware offered for sale - is not permitted without
+   prior written permission from Nexion Software Solutions Ltd. Commercial
+   licensing enquiries: https://nexion.uk
+
+This licence applies to the original work in this repository. Third-party
+components retain their own licences and copyright, including:
+
+  - src/ONEWIRE.h                 Copyright (c) 2020 Ralf Lehmann
+  - src/VeDirectFrameHandler.cpp  Copyright (c) 2019 Victron Energy BV
+  - libraries referenced in platformio.ini, under their respective licences
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+This software controls battery charging hardware. Incorrect configuration can
+damage batteries or create a fire risk. You use it entirely at your own risk.

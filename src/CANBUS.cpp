@@ -614,21 +614,35 @@ bool CANBUS::SendCANData(){
   return (_failedCanSendCount == 0);
 
 // Shared helper: build SOC bytes into CAN_MSG[0-1]
-// Handles SOC trick, 100% override, and never100SOC logic
+// Handles SOC trick, 100% override, and never100SOC logic.
+// outReported/outReason record what actually went on the wire and why, so the web UI
+// can surface the fact that the inverter is being told something other than the truth.
 void inline CANBUS_BuildSOC(uint8_t* msg, uint8_t battSOC, bool enableSOCTrick, bool forceCharge,
-                            CANBUS::ChargePhase chargePhase, bool never100SOC) {
+                            CANBUS::ChargePhase chargePhase, bool never100SOC,
+                            uint8_t* outReported = nullptr, uint8_t* outReason = nullptr) {
+  uint8_t sent;
+  uint8_t reason;
+
   if (enableSOCTrick && forceCharge) {
-    msg[0] = lowByte(uint8_t(battSOC * 0.1));
-    msg[1] = highByte(uint8_t(battSOC * 0.1));
+    sent = uint8_t(battSOC * 0.1);
+    reason = CANBUS::SOC_OVR_TRICK;
   }
   else if (battSOC >= 100 && (chargePhase != CANBUS::PHASE_COMPLETE || never100SOC)) {
-    msg[0] = lowByte(99);
-    msg[1] = highByte(99);
+    sent = 99;
+    // Both conditions can hold at once; the charge-phase hold is the more
+    // informative of the two, so report that in preference.
+    reason = (chargePhase != CANBUS::PHASE_COMPLETE) ? CANBUS::SOC_OVR_HOLD99
+                                                     : CANBUS::SOC_OVR_NEVER100;
   }
   else {
-    msg[0] = lowByte(battSOC);
-    msg[1] = highByte(battSOC);
+    sent = battSOC;
+    reason = CANBUS::SOC_OVR_NONE;
   }
+
+  msg[0] = lowByte(sent);
+  msg[1] = highByte(sent);
+  if (outReported) *outReported = sent;
+  if (outReason)   *outReason = reason;
 }
 
 bool CANBUS::SendCANData_Pylontech(){
@@ -668,7 +682,8 @@ bool CANBUS::SendCANData_Pylontech(){
 
   // 0x355 - SOC / SOH (4 bytes v1.2, 6 bytes v1.3)
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-  CANBUS_BuildSOC(CAN_MSG, _battSOC, _enableSOCTrick, _forceCharge, _chargePhase, _never100SOC);
+  CANBUS_BuildSOC(CAN_MSG, _battSOC, _enableSOCTrick, _forceCharge, _chargePhase, _never100SOC,
+                  &_reportedSOC, &_socOverride);
   CAN_MSG[2] = lowByte(_battSOH);
   CAN_MSG[3] = highByte(_battSOH);
   CAN_SEND_MSG(0x355, (_canProtocol == PROTO_PYLONTECH_13) ? 6 : 4, CAN_MSG);
@@ -795,7 +810,8 @@ bool CANBUS::SendCANData_SMA(){
 
   // 0x355 - SOC / SOH
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-  CANBUS_BuildSOC(CAN_MSG, _battSOC, _enableSOCTrick, _forceCharge, _chargePhase, _never100SOC);
+  CANBUS_BuildSOC(CAN_MSG, _battSOC, _enableSOCTrick, _forceCharge, _chargePhase, _never100SOC,
+                  &_reportedSOC, &_socOverride);
   CAN_MSG[2] = lowByte(_battSOH);
   CAN_MSG[3] = highByte(_battSOH);
   CAN_SEND_MSG(0x355, 4, CAN_MSG);
@@ -852,7 +868,8 @@ bool CANBUS::SendCANData_Victron(){
 
   // 0x355 - SOC / SOH
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-  CANBUS_BuildSOC(CAN_MSG, _battSOC, _enableSOCTrick, _forceCharge, _chargePhase, _never100SOC);
+  CANBUS_BuildSOC(CAN_MSG, _battSOC, _enableSOCTrick, _forceCharge, _chargePhase, _never100SOC,
+                  &_reportedSOC, &_socOverride);
   CAN_MSG[2] = lowByte(_battSOH);
   CAN_MSG[3] = highByte(_battSOH);
   CAN_SEND_MSG(0x355, 4, CAN_MSG);

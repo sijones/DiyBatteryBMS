@@ -1,891 +1,1365 @@
 <!DOCTYPE html>
-<html charset="UTF-8" lang="en">
+<html lang="en">
 <head>
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DIY Battery BMS</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='8' width='22' height='18' rx='2' fill='%23667eea' stroke='%23444' stroke-width='1.5'/%3E%3Crect x='26' y='13' width='3' height='8' rx='1' fill='%23444'/%3E%3Crect x='7' y='11' width='5' height='12' rx='1' fill='%2356d67b'/%3E%3Crect x='13' y='11' width='5' height='12' rx='1' fill='%2356d67b'/%3E%3Crect x='19' y='14' width='5' height='9' rx='1' fill='%2356d67b' opacity='0.5'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='8' width='22' height='18' rx='2' fill='%2335c9d4' stroke='%23444' stroke-width='1.5'/%3E%3Crect x='26' y='13' width='3' height='8' rx='1' fill='%23444'/%3E%3Crect x='7' y='11' width='5' height='12' rx='1' fill='%233fbf6a'/%3E%3Crect x='13' y='11' width='5' height='12' rx='1' fill='%233fbf6a'/%3E%3Crect x='19' y='14' width='5' height='9' rx='1' fill='%233fbf6a' opacity='0.5'/%3E%3C/svg%3E">
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    /* ============================================================
+       DIY Battery BMS - instrumentation panel
+       Design tokens. Dark is the default (wall-mounted / night use);
+       light mode is a full first-class theme, not an afterthought.
+       The theme toggle writes data-theme on <html>, which wins over
+       the prefers-color-scheme default in both directions.
+       ============================================================ */
+    :root {
+      --bg:          #10151c;
+      --panel:       #171e27;
+      --panel-2:     #1e2732;
+      --raised:      #26313f;
+      --line:        #2c3746;
+      --line-soft:   #232d3a;
+      --text:        #e6edf5;
+      --text-dim:    #94a3b4;
+      --text-faint:  #6b7889;
+      --accent:      #35c9d4;
+      --accent-dim:  #1d7f88;
+      --accent-ink:  #06222a;
+      --ok:          #3fbf6a;
+      --warn:        #e0a33a;
+      --err:         #e5544b;
+      --charge:      #3fbf6a;
+      --discharge:   #e0a33a;
+      --info:        #4a9fe0;
+      --shadow:      0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.28);
+      --shadow-sm:   0 1px 2px rgba(0,0,0,.35);
+      --focus:       0 0 0 2px var(--bg), 0 0 0 4px var(--accent);
+      --r-sm: 4px;  --r: 7px;  --r-lg: 11px;
+      --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', 'JetBrains Mono', Consolas, 'DejaVu Sans Mono', monospace;
+      --sans: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
     }
-    
+
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme="dark"]) {
+        --bg:         #eef1f5;
+        --panel:      #ffffff;
+        --panel-2:    #f5f7fa;
+        --raised:     #e9edf3;
+        --line:       #d3dae3;
+        --line-soft:  #e4e9ef;
+        --text:       #16202c;
+        --text-dim:   #57657a;
+        --text-faint: #7d8a9c;
+        --accent:     #0d7f8a;
+        --accent-dim: #8fd6dc;
+        --accent-ink: #ffffff;
+        --ok:         #1f8f4a;
+        --warn:       #a8701a;
+        --err:        #c33529;
+        --charge:     #1f8f4a;
+        --discharge:  #a8701a;
+        --info:       #1a6fb5;
+        --shadow:     0 1px 2px rgba(16,32,48,.06), 0 8px 24px rgba(16,32,48,.08);
+        --shadow-sm:  0 1px 2px rgba(16,32,48,.08);
+      }
+    }
+
+    :root[data-theme="light"] {
+      --bg:         #eef1f5;
+      --panel:      #ffffff;
+      --panel-2:    #f5f7fa;
+      --raised:     #e9edf3;
+      --line:       #d3dae3;
+      --line-soft:  #e4e9ef;
+      --text:       #16202c;
+      --text-dim:   #57657a;
+      --text-faint: #7d8a9c;
+      --accent:     #0d7f8a;
+      --accent-dim: #8fd6dc;
+      --accent-ink: #ffffff;
+      --ok:         #1f8f4a;
+      --warn:       #a8701a;
+      --err:        #c33529;
+      --charge:     #1f8f4a;
+      --discharge:  #a8701a;
+      --info:       #1a6fb5;
+      --shadow:     0 1px 2px rgba(16,32,48,.06), 0 8px 24px rgba(16,32,48,.08);
+      --shadow-sm:  0 1px 2px rgba(16,32,48,.08);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    /* Several toggled elements carry classes that set display:grid/flex, which would
+       otherwise beat the UA stylesheet's [hidden] rule. Make [hidden] authoritative. */
+    [hidden] { display: none !important; }
+
     body {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: var(--bg);
+      /* faint grid, like a panel meter face */
+      background-image:
+        linear-gradient(var(--line-soft) 1px, transparent 1px),
+        linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+      background-size: 44px 44px, 44px 44px;
       min-height: 100vh;
-      padding: 20px;
-      color: #333;
+      padding: 18px;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
     }
-    
+
     .container {
-      max-width: 1200px;
+      max-width: 1180px;
       margin: 0 auto;
-      background: white;
-      border-radius: 12px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow);
       overflow: hidden;
     }
-    
+
+    /* ---------- Header ---------- */
     .header {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 20px;
-      text-align: center;
-    }
-    
-    .header img {
-      max-width: 200px;
-      margin-bottom: 15px;
-    }
-    
-    .header h1 {
-      font-size: 28px;
-      margin-bottom: 5px;
-    }
-    
-    .tabs {
+      background: var(--panel-2);
+      border-bottom: 1px solid var(--line);
+      padding: 14px 20px;
       display: flex;
-      border-bottom: 2px solid #e0e0e0;
-      background: #f8f8f8;
+      align-items: center;
+      gap: 16px;
       flex-wrap: wrap;
     }
-    
+
+    .brand { display: flex; align-items: baseline; gap: 10px; flex: 1; min-width: 200px; }
+
+    .brand h1 {
+      font-size: 17px;
+      font-weight: 600;
+      letter-spacing: .02em;
+      color: var(--text);
+    }
+    .brand h1 .accent { color: var(--accent); }
+
+    .brand .subtitle {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-faint);
+      letter-spacing: .04em;
+    }
+
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      flex-wrap: wrap;
+    }
+
+    .header-meta .meta-item { display: flex; align-items: center; gap: 5px; }
+    .header-meta .meta-item b { font-weight: 600; color: var(--text); }
+
+    .icon-btn {
+      background: transparent;
+      border: 1px solid var(--line);
+      color: var(--text-dim);
+      border-radius: var(--r-sm);
+      width: 30px; height: 30px;
+      display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      transition: color .15s, border-color .15s, background .15s;
+      padding: 0;
+    }
+    .icon-btn:hover { color: var(--accent); border-color: var(--accent-dim); background: var(--raised); }
+
+    /* ---------- Connection pill ---------- */
+    .conn-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      border: 1px solid var(--line);
+      border-radius: 100px;
+      padding: 3px 10px 3px 8px;
+      letter-spacing: .03em;
+    }
+
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--err);
+      flex-shrink: 0;
+      transition: background .3s, box-shadow .3s;
+    }
+    .dot.connected { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+    .conn-status.online { color: var(--text); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+
+    /* ---------- Tabs ---------- */
+    .tabs {
+      display: flex;
+      background: var(--panel-2);
+      border-bottom: 1px solid var(--line);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+
     .tab-button {
-      flex: 1;
-      min-width: 120px;
-      padding: 15px;
+      flex: 1 0 auto;
+      min-width: 96px;
+      padding: 11px 16px;
       border: none;
       background: none;
       cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      color: #666;
-      transition: all 0.3s ease;
-      border-bottom: 3px solid transparent;
-      margin-bottom: -2px;
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      transition: color .15s, background .15s;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
     }
-    
-    .tab-button:hover {
-      background: #f0f0f0;
-      color: #667eea;
+    .tab-button:hover { color: var(--text); background: var(--raised); }
+    .tab-button[aria-selected="true"] {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: var(--panel);
     }
-    
-    .tab-button.active {
-      color: #667eea;
-      border-bottom-color: #667eea;
-      background: white;
+    .tab-button:focus-visible { outline: none; box-shadow: var(--focus); }
+
+    .content { padding: 20px 22px 26px; }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; animation: fadeIn .22s ease both; }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+    .pane-title {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      margin-bottom: 16px;
     }
-    
-    .content {
-      padding: 20px 25px;
-    }
-    
-    .tab-pane {
-      display: none;
-    }
-    
-    .tab-pane.active {
-      display: block;
-      animation: fadeIn 0.3s ease;
-    }
-    
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to { opacity: 1; }
-    }
-    
-    .form-group {
-      margin-bottom: 12px;
-    }
-    
+
+    /* ---------- Forms ---------- */
+    .form-group { margin-bottom: 12px; }
+
     .form-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 14px;
       margin-bottom: 14px;
     }
-    
-    .form-row.full {
-      grid-template-columns: 1fr;
+    .form-row.full { grid-template-columns: 1fr; }
+    .form-row.col3 { grid-template-columns: repeat(3, 1fr); }
+    .form-row.col4 { grid-template-columns: repeat(4, 1fr); }
+
+    /* Dashboard readouts. A fixed column count (rather than auto-fit) so that every
+       row lines up with the ones above it - auto-fit sizes each grid independently,
+       which leaves 3-item rows visibly wider than 4-item rows. */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
     }
 
-    .form-row.col3 {
-      grid-template-columns: 1fr 1fr 1fr;
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: var(--text-dim);
+      font-size: 12px;
     }
 
-    .form-row.col4 {
-      grid-template-columns: 1fr 1fr 1fr 1fr;
+    input[type="text"], input[type="textbox"], input[type="password"],
+    input[type="number"], input[type="file"], select {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      transition: border-color .15s, box-shadow .15s;
     }
-    
-    .stat-box {
-      background: #f8f8f8;
-      border-radius: 8px;
-      padding: 14px 12px;
-      text-align: center;
-      margin-bottom: 8px;
-      position: relative;
-      border-left: 4px solid #667eea;
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
-      min-height: 70px;
+    input[type="file"] { font-family: var(--sans); padding: 7px 10px; }
+    select { font-family: var(--sans); cursor: pointer; }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
     }
 
-    .stat-box:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15);
+    /* Invalid / cross-field validation */
+    input.invalid, select.invalid {
+      border-color: var(--err);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 15%, transparent);
     }
+    .field-error {
+      display: none;
+      margin-top: 4px;
+      font-size: 11.5px;
+      color: var(--err);
+      line-height: 1.35;
+    }
+    .field-error.show { display: block; }
 
-    .stat-box.clickable {
+    input[type="checkbox"] {
+      width: 17px; height: 17px;
       cursor: pointer;
+      accent-color: var(--accent);
+      flex-shrink: 0;
     }
 
-    .stat-box.clickable:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
-    }
+    .password-wrapper { position: relative; display: flex; align-items: center; }
+    .password-wrapper input { padding-right: 58px; }
 
-    .stat-box.clickable:active {
-      transform: translateY(-1px);
+    .password-toggle {
+      position: absolute;
+      right: 5px;
+      cursor: pointer;
+      color: var(--text-dim);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      background: var(--raised);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      padding: 4px 8px;
+      transition: color .15s, border-color .15s;
     }
+    .password-toggle:hover { color: var(--accent); border-color: var(--accent-dim); }
 
-    .stat-box.stat-charge { border-left-color: #4caf50; }
-    .stat-box.stat-discharge { border-left-color: #ff9800; }
-    .stat-box.stat-status { border-left-color: #2196f3; }
+    /* ---------- Buttons ---------- */
+    button {
+      padding: 9px 16px;
+      background: var(--raised);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      font-family: var(--sans);
+      font-size: 13px;
+      font-weight: 500;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+    button:hover { border-color: var(--accent-dim); color: var(--accent); }
+    button:active { transform: translateY(1px); }
+    button:focus-visible { outline: none; box-shadow: var(--focus); }
+    button:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+    button:disabled:hover { border-color: var(--line); color: var(--text); }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: var(--accent-ink);
+      font-weight: 600;
+    }
+    .btn-primary:hover { background: color-mix(in srgb, var(--accent) 85%, #fff); color: var(--accent-ink); border-color: var(--accent); }
+
+    .btn-danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 45%, var(--line)); }
+    .btn-danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); border-color: var(--err); }
+
+    .button-group { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+    .button-group button { flex: 1; min-width: 150px; }
+
+    .checkbox-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .checkbox-row label { margin-bottom: 0; color: var(--text); font-size: 13px; }
+
+    /* ---------- Section titles ---------- */
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 24px 0 12px;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--line);
+    }
+    .section-title:first-child { margin-top: 0; }
+
+    /* ---------- Stat boxes / readouts ---------- */
+    .stat-box {
+      background: var(--panel-2);
+      border: 1px solid var(--line-soft);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--r);
+      padding: 11px 13px;
+      min-height: 66px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 3px;
+    }
+    .stat-box.stat-charge    { border-left-color: var(--charge); }
+    .stat-box.stat-discharge { border-left-color: var(--discharge); }
+    .stat-box.stat-status    { border-left-color: var(--info); }
 
     .stat-label {
-      font-size: 13px;
-      color: #666;
-      margin-bottom: 4px;
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--text-faint);
     }
 
     .stat-value {
-      font-size: 18px;
-      color: #667eea;
-      font-weight: 700;
-      line-height: 1.2;
+      font-family: var(--mono);
+      font-size: 19px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.15;
+      font-variant-numeric: tabular-nums;
     }
+    .stat-value .unit {
+      font-size: 12px;
+      font-weight: 400;
+      color: var(--text-faint);
+      margin-left: 1px;
+    }
+    .stat-value.sm { font-size: 14px; }
 
-    /* Battery Visual Indicator */
+    /* semantic state classes (replaces inline .style.color writes) */
+    .v-ok    { color: var(--ok) !important; }
+    .v-warn  { color: var(--warn) !important; }
+    .v-err   { color: var(--err) !important; }
+    .v-info  { color: var(--info) !important; }
+    .v-accent{ color: var(--accent) !important; }
+    .v-dim   { color: var(--text-faint) !important; }
+
+    /* ---------- Toggle switch (charge / discharge) ---------- */
+    .toggle-box {
+      background: var(--panel-2);
+      border: 1px solid var(--line-soft);
+      border-left: 3px solid var(--line);
+      border-radius: var(--r);
+      padding: 11px 13px;
+      min-height: 66px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      cursor: pointer;
+      transition: border-color .18s, background .18s;
+      text-align: left;
+      width: 100%;
+      font-family: inherit;
+    }
+    .toggle-box:hover { background: var(--raised); border-color: var(--line); }
+    .toggle-box:focus-visible { outline: none; box-shadow: var(--focus); }
+    .toggle-box[aria-pressed="true"].tg-charge    { border-left-color: var(--charge); }
+    .toggle-box[aria-pressed="true"].tg-discharge { border-left-color: var(--discharge); }
+
+    .toggle-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+    .toggle-state {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-faint);
+      letter-spacing: .04em;
+    }
+    .toggle-box[aria-pressed="true"] .toggle-state { color: var(--ok); }
+
+    .switch {
+      position: relative;
+      width: 40px; height: 22px;
+      border-radius: 100px;
+      background: var(--line);
+      flex-shrink: 0;
+      transition: background .2s;
+    }
+    .switch::after {
+      content: '';
+      position: absolute;
+      top: 3px; left: 3px;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--text-faint);
+      transition: transform .2s cubic-bezier(.3,.8,.4,1), background .2s;
+    }
+    .toggle-box[aria-pressed="true"] .switch { background: color-mix(in srgb, var(--ok) 40%, var(--line)); }
+    .toggle-box[aria-pressed="true"] .switch::after { transform: translateX(18px); background: var(--ok); }
+
+    /* ---------- Battery visual ---------- */
     .battery-visual {
       display: flex;
       align-items: center;
       justify-content: center;
-      margin: 20px 0;
-      gap: 0;
-    }
-
-    .battery-container {
-      position: relative;
-      width: 220px;
-      height: 100px;
-      border: 4px solid #667eea;
-      border-radius: 8px;
-      overflow: hidden;
-      background: #f0f0f0;
-    }
-
-    .battery-level {
-      height: 100%;
-      background: linear-gradient(90deg, #4caf50 0%, #8bc34a 100%);
-      transition: width 0.5s ease, background 0.3s ease;
-      position: absolute;
-      left: 0;
-      top: 0;
-    }
-
-    .battery-level.low { background: linear-gradient(90deg, #f44336 0%, #e91e63 100%); }
-    .battery-level.medium { background: linear-gradient(90deg, #ff9800 0%, #ffc107 100%); }
-    .battery-level.high { background: linear-gradient(90deg, #4caf50 0%, #8bc34a 100%); }
-
-    /* Battery Wave Animation */
-    .battery-wave {
-      position: absolute;
-      width: 200%;
-      height: 100%;
-      top: 0;
-      left: 0;
-      opacity: 0.3;
-      display: none;
-    }
-
-    .battery-wave.active {
-      display: block;
-    }
-
-    .battery-wave::before {
-      content: '';
-      position: absolute;
-      width: 200%;
-      height: 100%;
-      top: 0;
-      left: 0;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
-      animation: wave 2s linear infinite;
-    }
-
-    .battery-wave.charging {
-      animation: waveUp 1.5s ease-in-out infinite;
-    }
-
-    .battery-wave.discharging {
-      animation: waveDown 1.5s ease-in-out infinite;
-    }
-
-    @keyframes wave {
-      0% { transform: translateX(-50%); }
-      100% { transform: translateX(0); }
-    }
-
-    @keyframes waveUp {
-      0%, 100% { transform: translateY(3px); }
-      50% { transform: translateY(-3px); }
-    }
-
-    @keyframes waveDown {
-      0%, 100% { transform: translateY(-3px); }
-      50% { transform: translateY(3px); }
-    }
-
-    .battery-percentage {
-      position: absolute;
-      width: 100%;
-      text-align: center;
-      line-height: 100px;
-      font-size: 38px;
-      font-weight: 700;
-      color: #333;
-      z-index: 1;
-      text-shadow: 0 1px 2px rgba(255,255,255,0.8);
-    }
-
-    .battery-tip {
-      width: 12px;
-      height: 40px;
-      background: #667eea;
-      border-radius: 0 4px 4px 0;
-      margin-left: -2px;
-    }
-
-    /* Power Flow Indicator - Compact */
-    .power-flow-indicator {
-      text-align: center;
-      margin: 10px 0;
-      padding: 8px 15px;
-      background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
-      border-radius: 6px;
-      border: 2px solid rgba(102, 126, 234, 0.2);
-    }
-
-    .flow-text {
-      font-size: 18px;
-      font-weight: 700;
-      color: #667eea;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-
-    .flow-text::before {
-      content: '';
-      display: inline-block;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: currentColor;
-    }
-
-    .flow-text.charging::before {
-      animation: pulse 1s infinite;
-    }
-
-    .flow-text.discharging::before {
-      animation: pulse 1s infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.3; transform: scale(1.5); }
-    }
-
-    /* Status Warnings */
-    .status-warnings {
-      margin-top: 20px;
-      padding: 15px;
-      background: #fff3cd;
-      border-left: 4px solid #ffc107;
-      border-radius: 6px;
-      animation: fadeIn 0.3s ease;
-    }
-
-    .status-warnings.error {
-      background: #f8d7da;
-      border-left-color: #f44336;
-    }
-
-    .warning-box {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      color: #856404;
-      font-weight: 500;
-    }
-
-    .status-warnings.error .warning-box {
-      color: #721c24;
-    }
-
-    .warning-icon {
-      font-size: 24px;
-      flex-shrink: 0;
-    }
-
-    /* Last Update Timestamp */
-    .last-update {
-      text-align: center;
-      margin-top: 20px;
-      padding-top: 15px;
-      border-top: 1px solid #e0e0e0;
-      color: #999;
-      font-size: 16px;
-    }
-    
-    label {
-      display: block;
-      margin-bottom: 4px;
-      font-weight: 500;
-      color: #333;
-      font-size: 13px;
-    }
-    
-    input[type="text"],
-    input[type="textbox"],
-    input[type="password"],
-    input[type="number"],
-    input[type="file"],
-    select {
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      font-size: 13px;
-      transition: border-color 0.3s;
-    }
-    
-    input[type="text"]:focus,
-    input[type="textbox"]:focus,
-    input[type="password"]:focus,
-    input[type="number"]:focus,
-    select:focus {
-      outline: none;
-      border-color: #667eea;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-    
-    input[type="checkbox"] {
-      width: 20px;
-      height: 20px;
-      cursor: pointer;
-    }
-    
-    .password-wrapper {
-      position: relative;
-      display: flex;
-      align-items: center;
-    }
-    
-    .password-wrapper input[type="password"],
-    .password-wrapper input[type="text"] {
-      padding-right: 45px;
-    }
-    
-    .password-toggle {
-      position: absolute;
-      right: 8px;
-      cursor: pointer;
-      color: #667eea;
-      font-size: 12px;
-      font-weight: 600;
-      user-select: none;
-      background: rgba(102, 126, 234, 0.1);
-      border: 1px solid #667eea;
-      border-radius: 4px;
-      padding: 4px 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-width: auto;
-      height: 28px;
-      box-shadow: none;
-      transition: all 0.2s ease;
-    }
-    
-    .password-toggle:hover {
-      color: #764ba2;
-      transform: none;
-      box-shadow: none;
-    }
-    
-    .password-toggle:active {
-      transform: none;
-    }
-    
-    button {
-      padding: 10px 20px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    
-    button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
-    }
-    
-    button:active {
-      transform: translateY(0);
-    }
-
-    /* Toast notification */
-    .toast {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      color: #fff;
-      padding: 12px 20px;
-      border-radius: 6px;
-      box-shadow: 0 6px 18px rgba(0,0,0,0.25);
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.2s ease;
-      z-index: 2000;
-      min-width: 160px;
-      text-align: center;
-      font-weight: 500;
-    }
-    .toast.show { opacity: 1; }
-    .toast.success { background: #28a745; }
-    .toast.pending { background: #ffc107; color: #333; }
-    .toast.error { background: #dc3545; }
-    
-    .section-title {
-      font-size: 15px;
-      font-weight: 600;
-      color: #667eea;
-      margin-top: 18px;
-      margin-bottom: 10px;
-      padding-bottom: 6px;
-      border-bottom: 2px solid #f0f0f0;
-    }
-    
-    .log-viewer {
-      background: #1e1e1e;
-      border-radius: 8px;
-      padding: 15px;
-      height: 500px;
-      overflow-y: auto;
-      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-      font-size: 13px;
-      color: #d4d4d4;
-      line-height: 1.5;
-    }
-    
-    .log-entry {
-      margin-bottom: 4px;
-      word-wrap: break-word;
-    }
-    
-    .log-entry.error { color: #f48771; }
-    .log-entry.warning { color: #dcdcaa; }
-    .log-entry.info { color: #4ec9b0; }
-    .log-entry.debug { color: #9cdcfe; }
-    
-    .log-controls {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 15px;
-      align-items: center;
-    }
-    
-    .log-controls button {
-      padding: 8px 16px;
-      font-size: 13px;
-    }
-    
-    .log-controls label {
-      margin: 0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 13px;
-    }
-    
-    .section-title:first-child {
-      margin-top: 0;
-    }
-    
-    .button-group {
-      display: flex;
-      gap: 10px;
-      margin-top: 14px;
+      gap: 26px;
+      margin: 8px 0 18px;
       flex-wrap: wrap;
     }
-    
-    .button-group button {
-      flex: 1;
-      min-width: 150px;
-    }
-    
-    .checkbox-row {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 10px;
-    }
-    
-    .checkbox-row label {
-      margin-bottom: 0;
-    }
-    
-    .wifi-controls {
-      display: flex;
-      gap: 10px;
-    }
-    
-    .wifi-controls select {
-      flex: 1;
-    }
-    
-    .wifi-controls button {
-      flex: 0;
-      padding: 10px 20px;
-    }
-    
-    .save-btn {
-      background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
-      padding: 12px 30px;
-      font-weight: 600;
-      margin-top: 10px;
-    }
-    
-    .save-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
-    }
-    
-    /* Clickable toggle stat boxes */
-    .stat-box.clickable {
-      border: 2px dashed #ccc;
-      border-left: 4px solid #667eea;
-    }
-    .stat-box.clickable .stat-label::after {
-      content: ' (tap to toggle)';
-      font-size: 11px;
-      color: #999;
-    }
 
-    /* Destructive button */
-    .btn-danger {
-      background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
-    }
-    .btn-danger:hover {
-      box-shadow: 0 10px 20px rgba(229, 57, 53, 0.3);
-    }
+    .status-stack { display: flex; flex-direction: column; gap: 7px; min-width: 130px; }
 
-    /* Connection status indicator */
-    .conn-status {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 12px;
-      color: rgba(255,255,255,0.7);
-      margin-top: 6px;
-    }
-    .conn-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #f44336;
-      transition: background 0.3s;
-    }
-    .conn-dot.connected { background: #4caf50; }
     .status-dot-row {
       display: flex;
       align-items: center;
       gap: 8px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      letter-spacing: .03em;
     }
-    .status-dot-label {
+
+    .battery-col { display: flex; flex-direction: column; align-items: center; gap: 9px; }
+    .battery-rig { display: flex; align-items: center; }
+
+    /* ---------- SOC override notice ----------
+       The firmware deliberately reports a different SOC to the inverter in a few
+       cases (holding 99% until absorption completes, "never send 100%", the
+       force-charge trick). Without this the dashboard and the inverter disagree
+       and there is nothing on screen to explain why. */
+    .soc-override {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      max-width: 280px;
+      text-align: center;
+      animation: fadeIn .25s ease both;
+    }
+
+    .soc-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 10px;
+      border-radius: 100px;
+      background: color-mix(in srgb, var(--info) 14%, var(--panel));
+      border: 1px solid color-mix(in srgb, var(--info) 45%, var(--line));
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .04em;
+      white-space: nowrap;
+    }
+    .soc-chip-label { color: var(--text-dim); text-transform: uppercase; }
+    .soc-chip-value { color: var(--info); font-weight: 700; font-size: 13px; }
+
+    .soc-why { font-size: 11.5px; color: var(--text-faint); line-height: 1.4; }
+
+    /* Mark the gauge itself, so the real number is never read in isolation */
+    .battery-container.overridden { border-color: color-mix(in srgb, var(--info) 55%, var(--line)); }
+    .battery-container.overridden .battery-percentage::after {
+      content: '*';
+      color: var(--info);
+      font-size: 20px;
+      vertical-align: super;
+      margin-left: 1px;
+    }
+
+    .battery-container {
+      position: relative;
+      width: 216px;
+      height: 96px;
+      border: 2px solid var(--line);
+      border-radius: var(--r);
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .battery-level {
+      position: absolute;
+      left: 0; top: 0;
+      height: 100%;
+      width: 0;
+      background: var(--ok);
+      opacity: .22;
+      transition: width .6s cubic-bezier(.4,0,.2,1), background .3s;
+    }
+    .battery-level.low    { background: var(--err); }
+    .battery-level.medium { background: var(--warn); }
+    .battery-level.high   { background: var(--ok); }
+
+    /* segment ticks over the fill, like a real gauge */
+    .battery-container::after {
+      content: '';
+      position: absolute; inset: 0;
+      background-image: linear-gradient(90deg, var(--line) 1px, transparent 1px);
+      background-size: 21.6px 100%;
+      opacity: .5;
+      pointer-events: none;
+    }
+
+    .battery-percentage {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 34px;
+      font-weight: 600;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      z-index: 1;
+    }
+
+    .battery-tip {
+      width: 5px; height: 34px;
+      background: var(--line);
+      border-radius: 0 3px 3px 0;
+    }
+
+    .battery-wave { position: absolute; inset: 0; display: none; z-index: 0; }
+    .battery-wave.active { display: block; }
+    .battery-wave.charging {
+      background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ok) 30%, transparent), transparent);
+      animation: sweep 2.2s linear infinite;
+    }
+    .battery-wave.discharging {
+      background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--warn) 30%, transparent), transparent);
+      animation: sweep 2.2s linear infinite reverse;
+    }
+    @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+    /* ---------- Power flow ---------- */
+    .power-flow-indicator {
+      text-align: center;
+      margin: 0 0 18px;
+      padding: 9px 14px;
+      background: var(--panel-2);
+      border: 1px solid var(--line-soft);
+      border-radius: var(--r);
+    }
+
+    .flow-text {
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+    }
+    .flow-text::before {
+      content: '';
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      flex-shrink: 0;
+    }
+    .flow-text.charging::before,
+    .flow-text.discharging::before { animation: pulse 1.4s ease-in-out infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%      { opacity: .35; transform: scale(1.45); }
+    }
+
+    /* ---------- Absorption progress ---------- */
+    .absorb-panel {
+      margin: 0 0 18px;
+      padding: 13px 15px;
+      background: var(--panel-2);
+      border: 1px solid var(--line-soft);
+      border-left: 3px solid var(--warn);
+      border-radius: var(--r);
+      animation: fadeIn .25s ease both;
+    }
+
+    .absorb-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 11px;
+      flex-wrap: wrap;
+    }
+    .absorb-title {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--warn);
+    }
+    .absorb-summary {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .absorb-row {
+      display: grid;
+      grid-template-columns: 116px 1fr 92px;
+      align-items: center;
+      gap: 11px;
+      margin-bottom: 7px;
+    }
+    .absorb-label {
+      font-size: 11px;
+      color: var(--text-faint);
+      letter-spacing: .02em;
+    }
+    .absorb-track {
+      height: 7px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 100px;
+      overflow: hidden;
+    }
+    .absorb-bar {
+      height: 100%;
+      width: 0;
+      background: var(--info);
+      border-radius: 100px;
+      transition: width .5s cubic-bezier(.4,0,.2,1), background .3s;
+    }
+    /* The tail bar is the one that resets, so colour-code whether it is running */
+    .absorb-bar.tail { background: var(--text-faint); }
+    .absorb-bar.tail.running { background: var(--ok); }
+    .absorb-val {
+      font-family: var(--mono);
+      font-size: 11.5px;
+      color: var(--text-dim);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .absorb-note {
+      margin-top: 9px;
+      padding-top: 9px;
+      border-top: 1px solid var(--line-soft);
+      font-size: 11.5px;
+      color: var(--text-faint);
+      line-height: 1.45;
+    }
+
+    @media (max-width: 640px) {
+      .absorb-row { grid-template-columns: 1fr 68px; grid-template-areas: 'label val' 'track track'; row-gap: 4px; }
+      .absorb-label { grid-area: label; }
+      .absorb-val { grid-area: val; }
+      .absorb-track { grid-area: track; margin-bottom: 5px; }
+    }
+
+    /* ---------- Warnings ---------- */
+    .status-warnings {
+      margin: 0 0 18px;
+      padding: 11px 14px;
+      background: color-mix(in srgb, var(--warn) 12%, var(--panel));
+      border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line));
+      border-left: 3px solid var(--warn);
+      border-radius: var(--r);
+      animation: fadeIn .22s ease both;
+    }
+    .status-warnings.error {
+      background: color-mix(in srgb, var(--err) 12%, var(--panel));
+      border-color: color-mix(in srgb, var(--err) 40%, var(--line));
+      border-left-color: var(--err);
+    }
+
+    .warning-box { display: flex; align-items: flex-start; gap: 10px; }
+    .warning-icon { color: var(--warn); flex-shrink: 0; font-size: 15px; line-height: 1.3; }
+    .status-warnings.error .warning-icon { color: var(--err); }
+
+    .warning-list { display: flex; flex-direction: column; gap: 3px; font-size: 13px; color: var(--text); }
+    .warning-list .why { color: var(--text-dim); font-size: 12px; }
+
+    /* ---------- Stale data overlay ---------- */
+    .content.stale .tab-pane#home .stat-box,
+    .content.stale .tab-pane#home .toggle-box,
+    .content.stale .tab-pane#home .battery-rig,
+    .content.stale .tab-pane#home .power-flow-indicator {
+      opacity: .38;
+      filter: grayscale(.7);
+      transition: opacity .3s, filter .3s;
+    }
+
+    .stale-banner {
+      display: none;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 16px;
+      padding: 10px 14px;
+      background: color-mix(in srgb, var(--err) 12%, var(--panel));
+      border: 1px solid color-mix(in srgb, var(--err) 40%, var(--line));
+      border-left: 3px solid var(--err);
+      border-radius: var(--r);
       font-size: 13px;
-      color: #555;
+      color: var(--text);
+    }
+    .content.stale .stale-banner { display: flex; }
+
+    .spinner {
+      width: 13px; height: 13px;
+      border: 2px solid color-mix(in srgb, var(--err) 30%, transparent);
+      border-top-color: var(--err);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .last-update {
+      text-align: center;
+      margin-top: 20px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line-soft);
+      color: var(--text-faint);
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: .03em;
     }
 
-    @media (max-width: 768px) {
-      body {
-        padding: 8px;
-      }
-      .header {
-        padding: 14px;
-      }
-      .header h1 {
-        font-size: 22px;
-      }
-      .content {
-        padding: 12px;
-      }
-      .form-row, .form-row.col3, .form-row.col4 {
-        grid-template-columns: 1fr;
-        gap: 10px;
-        margin-bottom: 10px;
-      }
-      .form-row.col4 {
-        grid-template-columns: 1fr 1fr;
-      }
-      .tab-button {
-        min-width: 0;
-        padding: 10px 6px;
-        font-size: 11px;
-      }
-      .stat-box {
-        padding: 10px 8px;
-        min-height: 60px;
-      }
-      .battery-container {
-        width: 160px;
-        height: 70px;
-      }
-      .battery-percentage {
-        font-size: 28px;
-        line-height: 70px;
-      }
-      .battery-tip {
-        width: 8px;
-        height: 28px;
-      }
-      .button-group {
-        flex-direction: column;
-      }
-      .button-group button {
-        min-width: unset;
-      }
+    /* ---------- Logs ---------- */
+    .log-viewer {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      padding: 12px 14px;
+      height: 480px;
+      overflow-y: auto;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.65;
+      color: var(--text-dim);
     }
+    .log-entry { word-wrap: break-word; white-space: pre-wrap; }
+    .log-entry.error   { color: var(--err); }
+    .log-entry.warning { color: var(--warn); }
+    .log-entry.info    { color: var(--text); }
+    .log-entry.debug   { color: var(--text-faint); }
+    .log-entry.hidden  { display: none; }
 
-    /* Tooltips */
+    .log-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .log-controls button { padding: 7px 13px; font-size: 12px; }
+    .log-controls label {
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .log-controls select { width: auto; padding: 6px 9px; font-size: 12px; }
+    .log-spacer { flex: 1; }
+
+    /* ---------- Danger zone ---------- */
+    .danger-zone {
+      margin-top: 26px;
+      border: 1px solid color-mix(in srgb, var(--err) 35%, var(--line));
+      border-radius: var(--r);
+      overflow: hidden;
+      background: color-mix(in srgb, var(--err) 5%, var(--panel));
+    }
+    .danger-zone > summary {
+      padding: 11px 14px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--err);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+    }
+    .danger-zone > summary::-webkit-details-marker { display: none; }
+    .danger-zone > summary::before { content: '\25B8'; transition: transform .2s; }
+    .danger-zone[open] > summary::before { transform: rotate(90deg); }
+    .danger-zone > summary:focus-visible { outline: none; box-shadow: var(--focus); }
+    .danger-body { padding: 0 14px 14px; border-top: 1px solid color-mix(in srgb, var(--err) 22%, var(--line)); }
+    .danger-body p { font-size: 12.5px; color: var(--text-dim); margin: 12px 0; }
+
+    /* ---------- Modal dialog (replaces confirm/alert) ---------- */
+    .modal-backdrop {
+      position: fixed; inset: 0;
+      background: rgba(4,8,13,.66);
+      backdrop-filter: blur(2px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 3000;
+    }
+    .modal-backdrop.show { display: flex; animation: fadeIn .16s ease both; }
+
+    .modal {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow);
+      max-width: 430px;
+      width: 100%;
+      padding: 20px;
+    }
+    .modal h3 { font-size: 15px; margin-bottom: 9px; color: var(--text); font-weight: 600; }
+    .modal p  { font-size: 13px; color: var(--text-dim); margin-bottom: 15px; line-height: 1.5; }
+    .modal .modal-actions { display: flex; gap: 9px; justify-content: flex-end; }
+    .modal .modal-actions button { flex: 0 0 auto; min-width: 92px; }
+    .modal label { font-size: 12px; }
+    .modal input { margin-bottom: 15px; }
+
+    /* ---------- Toast ---------- */
+    .toast {
+      position: fixed;
+      bottom: 18px; right: 18px;
+      background: var(--raised);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      padding: 11px 16px;
+      border-radius: var(--r);
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+      transition: opacity .2s, transform .2s;
+      z-index: 4000;
+      min-width: 170px;
+      max-width: min(380px, calc(100vw - 36px));
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .toast.show { opacity: 1; transform: none; }
+    .toast.success { border-left-color: var(--ok); }
+    .toast.pending { border-left-color: var(--warn); }
+    .toast.error   { border-left-color: var(--err); }
+
+    /* ---------- Unsaved-changes bar ---------- */
+    .unsaved-bar {
+      display: none;
+      align-items: center;
+      gap: 11px;
+      margin-bottom: 16px;
+      padding: 9px 13px;
+      background: color-mix(in srgb, var(--warn) 11%, var(--panel));
+      border: 1px solid color-mix(in srgb, var(--warn) 38%, var(--line));
+      border-left: 3px solid var(--warn);
+      border-radius: var(--r);
+      font-size: 12.5px;
+      color: var(--text);
+    }
+    .unsaved-bar.show { display: flex; }
+    .unsaved-bar button { padding: 5px 12px; font-size: 12px; }
+    .unsaved-bar .spacer { flex: 1; }
+
+    /* ---------- Firmware progress ---------- */
+    .progress-track {
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      overflow: hidden;
+      height: 24px;
+    }
+    .progress-bar {
+      background: var(--accent);
+      color: var(--accent-ink);
+      height: 100%;
+      width: 0;
+      transition: width .3s;
+      text-align: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 22px;
+    }
+    .progress-bar.ok   { background: var(--ok); }
+    .progress-bar.err  { background: var(--err); }
+    .progress-bar.warn { background: var(--warn); }
+
+    /* ---------- Tooltips (tap-friendly) ---------- */
     .tip {
       position: relative;
       cursor: help;
-      border-bottom: 1px dotted #999;
+      border-bottom: 1px dotted var(--text-faint);
     }
+    .tip .tip-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px; height: 14px;
+      margin-left: 4px;
+      border-radius: 50%;
+      border: 1px solid var(--line);
+      background: var(--raised);
+      color: var(--text-faint);
+      font-size: 9px;
+      font-weight: 700;
+      cursor: pointer;
+      vertical-align: middle;
+      padding: 0;
+      line-height: 1;
+    }
+    .tip .tip-btn:hover { color: var(--accent); border-color: var(--accent-dim); }
+
     .tip::after {
       content: attr(data-tip);
       position: absolute;
-      bottom: 100%;
+      bottom: calc(100% + 6px);
       left: 0;
-      background: #333;
-      color: #fff;
-      padding: 6px 10px;
-      border-radius: 4px;
+      background: var(--raised);
+      color: var(--text);
+      border: 1px solid var(--line);
+      padding: 8px 10px;
+      border-radius: var(--r-sm);
+      box-shadow: var(--shadow);
       font-size: 12px;
       font-weight: 400;
+      line-height: 1.45;
+      letter-spacing: normal;
+      text-transform: none;
       white-space: normal;
-      width: 240px;
+      width: min(270px, 74vw);
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.2s;
+      transition: opacity .16s;
       z-index: 100;
     }
-    .tip:hover::after {
-      opacity: 1;
+    /* right-hand columns flip the tooltip so it can't overflow the panel */
+    .form-row > *:last-child .tip::after,
+    .form-row.col3 > *:nth-child(n+2) .tip::after,
+    .form-row.col4 > *:nth-child(n+3) .tip::after { left: auto; right: 0; }
+
+    .tip:hover::after, .tip.open::after { opacity: 1; }
+
+    /* ---------- WiFi ---------- */
+    .wifi-controls { display: flex; gap: 10px; }
+    .wifi-controls select { flex: 1; font-family: var(--mono); font-size: 12px; }
+    .wifi-controls button { flex: 0 0 auto; }
+
+    /* ---------- Responsive ---------- */
+    @media (max-width: 860px) {
+      .form-row.col4 { grid-template-columns: 1fr 1fr; }
+      .form-row.col3 { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 640px) {
+      body { padding: 0; background-image: none; }
+      .container { border-radius: 0; border-left: none; border-right: none; min-height: 100vh; }
+      .header { padding: 12px 14px; gap: 10px; }
+      .brand { min-width: 0; flex: 1 1 100%; }
+      .header-meta { flex: 1 1 100%; font-size: 10.5px; gap: 10px; }
+      .content { padding: 16px 14px 22px; }
+      /* Config inputs go full width - they need the room for labels + values.
+         Dashboard readouts stay 2-up, which fits comfortably even at 320px. */
+      .form-row, .form-row.col3, .form-row.col4 { grid-template-columns: 1fr; gap: 11px; margin-bottom: 11px; }
+      .form-row.col4 { grid-template-columns: 1fr 1fr; }
+      .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+
+      /* Wrap the tabs rather than scrolling them: a hidden horizontal scroll gives
+         no hint that Firmware exists off-screen. */
+      .tabs { flex-wrap: wrap; overflow-x: visible; }
+      .tab-button { flex: 1 0 33.333%; }
+      .stat-box { min-height: 58px; padding: 9px 11px; }
+      .stat-value { font-size: 17px; }
+      .toggle-box { min-height: 58px; padding: 9px 11px; gap: 7px; }
+      .toggle-state { font-size: 13px; }
+      .switch { width: 34px; height: 19px; }
+      .switch::after { width: 13px; height: 13px; }
+      .toggle-box[aria-pressed="true"] .switch::after { transform: translateX(15px); }
+      .tab-button { min-width: 0; flex: 0 0 auto; padding: 10px 13px; font-size: 11px; }
+      .battery-visual { gap: 16px; }
+      .battery-container { width: 172px; height: 78px; }
+      .battery-percentage { font-size: 27px; }
+      .battery-tip { height: 26px; }
+      .status-stack { flex-direction: row; flex-wrap: wrap; justify-content: center; min-width: 0; gap: 12px; }
+      .button-group { flex-direction: column; }
+      .button-group button { min-width: 0; }
+      .log-viewer { height: 62vh; }
+      .toast { left: 12px; right: 12px; bottom: 12px; max-width: none; }
+    }
+
+    /* ---------- Motion / contrast preferences ---------- */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
+    }
+
+    /* Fallback for browsers without color-mix(): the mixes above degrade to
+       transparent, so restore solid borders/backgrounds for the key surfaces. */
+    @supports not (color: color-mix(in srgb, red 50%, blue)) {
+      .status-warnings { background: var(--panel-2); border-color: var(--warn); }
+      .status-warnings.error { background: var(--panel-2); border-color: var(--err); }
+      .stale-banner { background: var(--panel-2); border-color: var(--err); }
+      .unsaved-bar { background: var(--panel-2); border-color: var(--warn); }
+      .danger-zone { background: var(--panel); border-color: var(--err); }
+      .danger-body { border-top-color: var(--err); }
+      .btn-danger { border-color: var(--err); }
+      .dot.connected { box-shadow: none; }
+      .toggle-box[aria-pressed="true"] .switch { background: var(--ok); }
+      input:focus, select:focus { box-shadow: 0 0 0 3px var(--accent-dim); }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <h1>DIY Battery BMS</h1>
-      <p>System Control & Configuration</p>
-      <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connText">Disconnected</span></div>
-    </div>
-    
-    <div class="tabs">
-      <button class="tab-button active" onclick="switchTab(event, 'home')">Home</button>
-      <button class="tab-button" onclick="switchTab(event, 'bms')">BMS</button>
-      <button class="tab-button" onclick="switchTab(event, 'settings')">Settings</button>
-      <button class="tab-button" onclick="switchTab(event, 'wifimqtt')">WiFi/MQTT</button>
-      <button class="tab-button" onclick="switchTab(event, 'logs')">Logs</button>
-      <button class="tab-button" onclick="switchTab(event, 'firmware')">Firmware</button>
-    </div>
-    
-    <div class="content">
-      <!-- Home Tab -->
-      <div id="home" class="tab-pane active">
-        <h2 style="margin-bottom: 20px; color: #667eea;">Battery Status</h2>
+    <header class="header">
+      <div class="brand">
+        <h1>DIY<span class="accent">/</span>BATTERY BMS</h1>
+        <span class="subtitle">Inverter Bridge</span>
+      </div>
+      <div class="header-meta">
+        <span class="meta-item" id="hostMeta" hidden><b id="hostName">--</b></span>
+        <span class="meta-item" id="fwMeta" hidden>fw <b id="fwHeader">--</b></span>
+        <span class="conn-status" id="connPill">
+          <span class="dot" id="connDot"></span><span id="connText">Offline</span>
+        </span>
+        <button class="icon-btn" id="themeBtn" onclick="cycleTheme()" title="Switch theme" aria-label="Switch colour theme">&#9681;</button>
+      </div>
+    </header>
 
-        <!-- Battery + Status Overview -->
-        <div style="display:flex; align-items:center; justify-content:center; gap:24px; margin:20px 0; flex-wrap:wrap;">
-          <!-- Connection Status Panel -->
-          <div style="display:flex; flex-direction:column; gap:8px; min-width:140px;">
-            <div class="status-dot-row" id="inverterStatusRow" style="display:none;">
-              <span class="conn-dot" id="inverterDot"></span>
-              <span class="status-dot-label">Inverter</span>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab-button" role="tab" id="tab-home"     aria-selected="true"  aria-controls="home"     onclick="switchTab('home')">Home</button>
+      <button class="tab-button" role="tab" id="tab-bms"      aria-selected="false" aria-controls="bms"      onclick="switchTab('bms')">BMS</button>
+      <button class="tab-button" role="tab" id="tab-settings" aria-selected="false" aria-controls="settings" onclick="switchTab('settings')">Settings</button>
+      <button class="tab-button" role="tab" id="tab-wifimqtt" aria-selected="false" aria-controls="wifimqtt" onclick="switchTab('wifimqtt')">WiFi/MQTT</button>
+      <button class="tab-button" role="tab" id="tab-logs"     aria-selected="false" aria-controls="logs"     onclick="switchTab('logs')">Logs</button>
+      <button class="tab-button" role="tab" id="tab-firmware" aria-selected="false" aria-controls="firmware" onclick="switchTab('firmware')">Firmware</button>
+    </nav>
+
+    <main class="content" id="content">
+      <!-- Edits apply to the running device immediately, but only persist across a
+           reboot once written to EEPROM. This makes that distinction visible. -->
+      <div class="unsaved-bar" id="unsavedBar">
+        <span><b>Unsaved changes.</b> Applied now, but will be lost on reboot.</span>
+        <span class="spacer"></span>
+        <button class="btn-primary" onclick="saveAll()">Save to EEPROM</button>
+      </div>
+
+      <!-- Home Tab -->
+      <section id="home" class="tab-pane active" role="tabpanel" aria-labelledby="tab-home">
+
+        <!-- Shown whenever the socket is down: the readouts below are frozen, not live -->
+        <div class="stale-banner">
+          <span class="spinner"></span>
+          <span><b>Connection lost.</b> Readings below are from <span id="staleSince">the last update</span> and are not live.</span>
+        </div>
+
+        <div class="battery-visual">
+          <div class="status-stack">
+            <div class="status-dot-row" id="inverterStatusRow" hidden>
+              <span class="dot" id="inverterDot"></span><span>Inverter</span>
             </div>
             <div class="status-dot-row">
-              <span class="conn-dot" id="shuntDot"></span>
-              <span class="status-dot-label">Shunt Data</span>
+              <span class="dot" id="shuntDot"></span><span>Shunt Data</span>
             </div>
             <div class="status-dot-row">
-              <span class="conn-dot" id="mqttDot"></span>
-              <span class="status-dot-label">MQTT</span>
+              <span class="dot" id="mqttDot"></span><span>MQTT</span>
             </div>
           </div>
 
-          <!-- Visual Battery Indicator -->
-          <div style="display:flex; align-items:center; gap:0;">
-            <div class="battery-container">
-              <div class="battery-level" id="batteryLevel" style="width: 0%"></div>
-              <div class="battery-wave" id="batteryWave"></div>
-              <div class="battery-percentage" id="batteryPercentage">0%</div>
+          <div class="battery-col">
+            <div class="battery-rig">
+              <div class="battery-container" role="img" id="batteryGauge" aria-label="Battery state of charge 0%">
+                <div class="battery-level" id="batteryLevel"></div>
+                <div class="battery-wave" id="batteryWave"></div>
+                <div class="battery-percentage" id="batteryPercentage">0%</div>
+              </div>
+              <div class="battery-tip"></div>
             </div>
-            <div class="battery-tip"></div>
+
+            <!-- Only appears when the SOC on the CAN bus differs from the real pack SOC -->
+            <div class="soc-override" id="socOverride" hidden>
+              <span class="soc-chip">
+                <span class="soc-chip-label">Inverter is told</span>
+                <span class="soc-chip-value" id="reportedSocValue">99%</span>
+              </span>
+              <span class="soc-why" id="socOverrideWhy"></span>
+            </div>
           </div>
         </div>
 
-        <!-- Power Flow Indicator - Compact -->
         <div class="power-flow-indicator">
           <div id="powerFlowText" class="flow-text">Idle</div>
         </div>
 
-        <!-- Status Warnings (hidden by default) -->
-        <div id="statusWarnings" class="status-warnings" style="display: none;">
+        <!-- Absorption ends on whichever finishes first: the tail-current hold, or the
+             max absorption timeout. Both are shown because the tail timer resets every
+             time current rises back above the threshold, which is otherwise invisible
+             and makes a long absorption look stuck. -->
+        <div class="absorb-panel" id="absorbPanel" hidden>
+          <div class="absorb-head">
+            <span class="absorb-title">Absorption</span>
+            <span class="absorb-summary" id="absorbSummary"></span>
+          </div>
+
+          <div class="absorb-row">
+            <span class="absorb-label">Tail current hold</span>
+            <div class="absorb-track"><div class="absorb-bar tail" id="tailBar"></div></div>
+            <span class="absorb-val" id="tailVal">--</span>
+          </div>
+
+          <div class="absorb-row">
+            <span class="absorb-label">Max absorption</span>
+            <div class="absorb-track"><div class="absorb-bar" id="absorbBar"></div></div>
+            <span class="absorb-val" id="absorbVal">--</span>
+          </div>
+
+          <div class="absorb-note" id="absorbNote"></div>
+        </div>
+
+        <div id="statusWarnings" class="status-warnings" hidden>
           <div class="warning-box">
             <span class="warning-icon">&#9888;</span>
-            <span id="warningText">System warning</span>
+            <div class="warning-list" id="warningText"></div>
           </div>
         </div>
 
-        <div class="form-row col3">
+        <div class="stat-grid">
           <div class="stat-box stat-status">
             <div class="stat-label">Battery Voltage</div>
-            <div class="stat-value"><label id="battvoltage">0</label>V</div>
+            <div class="stat-value"><span id="battvoltage">0</span><span class="unit">V</span></div>
           </div>
           <div class="stat-box stat-status">
             <div class="stat-label">Battery Current</div>
-            <div class="stat-value"><label id="battcurrent">0</label>A</div>
+            <div class="stat-value"><span id="battcurrent">0</span><span class="unit">A</span></div>
           </div>
           <div class="stat-box stat-status">
             <div class="stat-label">Power</div>
-            <div class="stat-value"><label id="battpower">0</label>W</div>
+            <div class="stat-value"><span id="battpower">0</span><span class="unit">W</span></div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Time to Go</div>
+            <div class="stat-value"><span id="timetogo">--</span></div>
           </div>
         </div>
 
-        <div class="form-row col3">
-          <div class="stat-box stat-status">
-            <div class="stat-label">Time to Go</div>
-            <div class="stat-value"><label id="timetogo">--</label></div>
-          </div>
+        <div class="stat-grid">
           <div class="stat-box stat-charge">
             <div class="stat-label">Charge Phase</div>
-            <div class="stat-value" id="chargephaseStatus" style="font-size: 16px; color: #667eea;">--</div>
+            <div class="stat-value sm" id="chargephaseStatus">--</div>
           </div>
           <div class="stat-box stat-charge">
             <div class="stat-label">Absorption Adjust</div>
-            <div class="stat-value"><label id="chargeadjust">0</label>A</div>
+            <div class="stat-value"><span id="chargeadjust">0</span><span class="unit">A</span></div>
           </div>
-        </div>
-
-        <div id="tempRow" class="form-row col3" style="display:none;">
-          <div class="stat-box stat-status">
-            <div class="stat-label">Battery Temperature</div>
-            <div class="stat-value"><label id="batttemp">--</label>&deg;C</div>
-          </div>
-          <div class="stat-box stat-status">
-            <div class="stat-label">Inverter Temperature</div>
-            <div class="stat-value"><label id="mqttinvertertemp">--</label>&deg;C</div>
-          </div>
-          <div class="stat-box stat-status">
-            <div class="stat-label">Fan PWM</div>
-            <div class="stat-value"><label id="fanpwm">0</label>%</div>
-          </div>
-        </div>
-
-        <div class="form-row col4">
           <div class="stat-box stat-charge">
             <div class="stat-label">Charge Limit</div>
-            <div class="stat-value"><label id="chargecurrent">0</label>A</div>
+            <div class="stat-value"><span id="chargecurrent">0</span><span class="unit">A</span></div>
           </div>
           <div class="stat-box stat-discharge">
             <div class="stat-label">Discharge Limit</div>
-            <div class="stat-value"><label id="dischargecurrent">0</label>A</div>
-          </div>
-          <div class="stat-box stat-charge clickable" onclick="toggleChargeEnable()">
-            <div class="stat-label">Charge</div>
-            <div class="stat-value" id="chargeenabledStatus" style="font-size: 16px; color: #f44336;">OFF</div>
-          </div>
-          <div class="stat-box stat-discharge clickable" onclick="toggleDischargeEnable()">
-            <div class="stat-label">Discharge</div>
-            <div class="stat-value" id="dischargeenabledStatus" style="font-size: 16px; color: #f44336;">OFF</div>
+            <div class="stat-value"><span id="dischargecurrent">0</span><span class="unit">A</span></div>
           </div>
         </div>
 
-        <!-- Last Update Timestamp -->
-        <div class="last-update">
-          Last updated: <span id="lastUpdate">--</span>
+        <div id="tempRow" class="stat-grid" hidden>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Battery Temp</div>
+            <div class="stat-value"><span id="batttemp">--</span><span class="unit">&deg;C</span></div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Inverter Temp</div>
+            <div class="stat-value"><span id="mqttinvertertemp">--</span><span class="unit">&deg;C</span></div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Fan PWM</div>
+            <div class="stat-value"><span id="fanpwm">0</span><span class="unit">%</span></div>
+          </div>
         </div>
-      </div>
+
+        <div class="stat-grid">
+          <button type="button" class="toggle-box tg-charge" id="chargeToggle"
+                  aria-pressed="false" onclick="toggleChargeEnable()">
+            <span class="toggle-text">
+              <span class="stat-label">Charge</span>
+              <span class="toggle-state" id="chargeenabledStatus">OFF</span>
+            </span>
+            <span class="switch" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="toggle-box tg-discharge" id="dischargeToggle"
+                  aria-pressed="false" onclick="toggleDischargeEnable()">
+            <span class="toggle-text">
+              <span class="stat-label">Discharge</span>
+              <span class="toggle-state" id="dischargeenabledStatus">OFF</span>
+            </span>
+            <span class="switch" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <div class="last-update">
+          Last updated <span id="lastUpdate">--</span>
+        </div>
+      </section>
       
       <!-- BMS Tab -->
-      <div id="bms" class="tab-pane">
+      <section id="bms" class="tab-pane" role="tabpanel" aria-labelledby="tab-bms">
         <div class="section-title">Voltage Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="chargevoltage"><span class="tip" data-tip="Target voltage the inverter will charge to. Sent to inverter via CAN as the maximum battery voltage.">Charge Voltage (mV):</span></label>
-            <input type="number" id="chargevoltage" min="0" max="65000" step="100" onchange="EnqueueUpdate('chargevoltage')" onkeypress="HandleEnter(event, 'chargevoltage')">
+            <label for="chargevoltage"><span class="tip" data-tip="Target voltage the inverter will charge to. Sent to inverter via CAN as the maximum battery voltage.">Charge Voltage (V):</span></label>
+            <input type="number" id="chargevoltage" min="0" max="65" step="0.1" onchange="EnqueueUpdate('chargevoltage')" onkeypress="HandleEnter(event, 'chargevoltage')">
+            <div class="field-error" id="err_chargevoltage"></div>
           </div>
           <div class="form-group">
-            <label for="dischargevoltage"><span class="tip" data-tip="Minimum voltage before discharge is disabled to protect the battery.">Discharge Voltage (mV):</span></label>
-            <input type="number" id="dischargevoltage" min="0" max="65000" step="100" onchange="EnqueueUpdate('dischargevoltage')" onkeypress="HandleEnter(event, 'dischargevoltage')">
+            <label for="dischargevoltage"><span class="tip" data-tip="Minimum voltage before discharge is disabled to protect the battery.">Discharge Voltage (V):</span></label>
+            <input type="number" id="dischargevoltage" min="0" max="65" step="0.1" onchange="EnqueueUpdate('dischargevoltage')" onkeypress="HandleEnter(event, 'dischargevoltage')">
+            <div class="field-error" id="err_dischargevoltage"></div>
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
-            <label for="overvoltage"><span class="tip" data-tip="Hard safety cutoff. Charging is immediately disabled if battery voltage reaches this level.">Battery Over Voltage (mV):</span></label>
-            <input type="number" id="overvoltage" min="0" max="65000" step="100" onchange="EnqueueUpdate('overvoltage')" onkeypress="HandleEnter(event, 'overvoltage')">
+            <label for="overvoltage"><span class="tip" data-tip="Hard safety cutoff. Charging is immediately disabled if battery voltage reaches this level.">Battery Over Voltage (V):</span></label>
+            <input type="number" id="overvoltage" min="0" max="65" step="0.1" onchange="EnqueueUpdate('overvoltage')" onkeypress="HandleEnter(event, 'overvoltage')">
+            <div class="field-error" id="err_overvoltage"></div>
           </div>
         </div>
         
         <div class="section-title">Current Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="maxchargecurrent"><span class="tip" data-tip="Maximum charge current sent to the inverter during bulk charging.">Max Charge (mA):</span></label>
-            <input type="number" id="maxchargecurrent" min="0" max="500000" step="1000" onchange="EnqueueUpdate('maxchargecurrent')" onkeypress="HandleEnter(event, 'maxchargecurrent')">
+            <label for="maxchargecurrent"><span class="tip" data-tip="Maximum charge current sent to the inverter during bulk charging.">Max Charge (A):</span></label>
+            <input type="number" id="maxchargecurrent" min="0" max="500" step="0.1" onchange="EnqueueUpdate('maxchargecurrent')" onkeypress="HandleEnter(event, 'maxchargecurrent')">
+            <div class="field-error" id="err_maxchargecurrent"></div>
           </div>
           <div class="form-group">
-            <label for="maxdischargecurrent"><span class="tip" data-tip="Maximum discharge current allowed. Sent to the inverter as the discharge limit.">Max Discharge (mA):</span></label>
-            <input type="number" id="maxdischargecurrent" min="0" max="500000" step="1000" onchange="EnqueueUpdate('maxdischargecurrent')" onkeypress="HandleEnter(event, 'maxdischargecurrent')">
+            <label for="maxdischargecurrent"><span class="tip" data-tip="Maximum discharge current allowed. Sent to the inverter as the discharge limit.">Max Discharge (A):</span></label>
+            <input type="number" id="maxdischargecurrent" min="0" max="500" step="0.1" onchange="EnqueueUpdate('maxdischargecurrent')" onkeypress="HandleEnter(event, 'maxdischargecurrent')">
           </div>
         </div>
         
         <div class="form-row">
           <div class="form-group">
-            <label for="adjuststep"><span class="tip" data-tip="Amount to increase or decrease the charge current each step during absorption phase to hold voltage steady.">Charge Adjust Step (mA):</span></label>
-            <input type="number" id="adjuststep" min="0" max="100000" step="100" onchange="EnqueueUpdate('adjuststep')" onkeypress="HandleEnter(event, 'adjuststep')">
+            <label for="adjuststep"><span class="tip" data-tip="Amount to increase or decrease the charge current each step during absorption phase to hold voltage steady.">Charge Adjust Step (A):</span></label>
+            <input type="number" id="adjuststep" min="0" max="100" step="0.1" onchange="EnqueueUpdate('adjuststep')" onkeypress="HandleEnter(event, 'adjuststep')">
           </div>
           <div class="form-group">
-            <label for="minchargecurr"><span class="tip" data-tip="Lowest charge current allowed during absorption. The adjust step won't reduce below this value.">Min Charge (mA):</span></label>
-            <input type="number" id="minchargecurr" min="0" max="100000" step="100" onchange="EnqueueUpdate('minchargecurr')" onkeypress="HandleEnter(event, 'minchargecurr')">
+            <label for="minchargecurr"><span class="tip" data-tip="Lowest charge current allowed during absorption. The adjust step won't reduce below this value.">Min Charge (A):</span></label>
+            <input type="number" id="minchargecurr" min="0" max="100" step="0.1" onchange="EnqueueUpdate('minchargecurr')" onkeypress="HandleEnter(event, 'minchargecurr')">
+            <div class="field-error" id="err_minchargecurr"></div>
           </div>
         </div>
         
         <div class="form-row full">
           <div class="form-group">
-            <label for="batterycapacity"><span class="tip" data-tip="Total battery capacity. Used to calculate slow charge current limits (capacity / divider).">Battery Capacity (mA):</span></label>
-            <input type="number" id="batterycapacity" min="0" max="9999000" step="1000" onchange="EnqueueUpdate('batterycapacity')" onkeypress="HandleEnter(event, 'batterycapacity')">
+            <label for="batterycapacity"><span class="tip" data-tip="Total battery capacity in amp hours. Used to calculate slow charge current limits (capacity / divider).">Battery Capacity (Ah):</span></label>
+            <input type="number" id="batterycapacity" min="0" max="9999" step="0.1" onchange="EnqueueUpdate('batterycapacity')" onkeypress="HandleEnter(event, 'batterycapacity')">
           </div>
         </div>
         
@@ -894,10 +1368,12 @@
           <div class="form-group">
             <label for="lowsoclimit"><span class="tip" data-tip="Discharge is disabled when SOC drops to or below this percentage. Set 0 to disable.">Low SOC (Stop Discharge):</span></label>
             <input type="number" id="lowsoclimit" min="0" max="100" onchange="EnqueueUpdate('lowsoclimit')" onkeypress="HandleEnter(event, 'lowsoclimit')">
+            <div class="field-error" id="err_lowsoclimit"></div>
           </div>
           <div class="form-group">
             <label for="highsoclimit"><span class="tip" data-tip="Charging is disabled when SOC reaches this percentage. Set 100 to disable.">High SOC (Stop Charge):</span></label>
             <input type="number" id="highsoclimit" min="0" max="100" onchange="EnqueueUpdate('highsoclimit')" onkeypress="HandleEnter(event, 'highsoclimit')">
+            <div class="field-error" id="err_highsoclimit"></div>
           </div>
         </div>
         
@@ -977,18 +1453,22 @@
             <div class="form-group">
               <label for="chargehightemp"><span class="tip" data-tip="Charging is disabled above this temperature.">Chg High (&deg;C):</span></label>
               <input type="number" id="chargehightemp" min="-20" max="60" onchange="EnqueueUpdate('chargehightemp')" onkeypress="HandleEnter(event, 'chargehightemp')">
+              <div class="field-error" id="err_chargehightemp"></div>
             </div>
             <div class="form-group">
               <label for="chargelowtemp"><span class="tip" data-tip="Charging is disabled below this temperature. Important for lithium batteries which should not charge below 0°C.">Chg Low (&deg;C):</span></label>
               <input type="number" id="chargelowtemp" min="-40" max="45" onchange="EnqueueUpdate('chargelowtemp')" onkeypress="HandleEnter(event, 'chargelowtemp')">
+              <div class="field-error" id="err_chargelowtemp"></div>
             </div>
             <div class="form-group">
               <label for="dischargehightemp"><span class="tip" data-tip="Discharging is disabled above this temperature.">Dchg High (&deg;C):</span></label>
               <input type="number" id="dischargehightemp" min="-20" max="70" onchange="EnqueueUpdate('dischargehightemp')" onkeypress="HandleEnter(event, 'dischargehightemp')">
+              <div class="field-error" id="err_dischargehightemp"></div>
             </div>
             <div class="form-group">
               <label for="dischargelowtemp"><span class="tip" data-tip="Discharging is disabled below this temperature.">Dchg Low (&deg;C):</span></label>
               <input type="number" id="dischargelowtemp" min="-40" max="45" onchange="EnqueueUpdate('dischargelowtemp')" onkeypress="HandleEnter(event, 'dischargelowtemp')">
+              <div class="field-error" id="err_dischargelowtemp"></div>
             </div>
           </div>
         </div>
@@ -1006,14 +1486,13 @@
         </div>
         
         <div class="button-group">
-          <button onclick="saveAll()">Save to EEPROM</button>
-          <button class="btn-danger" onclick="eraseAll()">Factory Reset</button>
-          <button onclick="rebootBMS()">Reboot & Apply</button>
+          <button class="btn-primary" onclick="saveAll()">Save to EEPROM</button>
+          <button onclick="rebootBMS()">Reboot &amp; Apply</button>
         </div>
-      </div>
-      
+      </section>
+
       <!-- Settings Tab -->
-      <div id="settings" class="tab-pane">
+      <section id="settings" class="tab-pane" role="tabpanel" aria-labelledby="tab-settings">
         <div class="section-title">CAN Bus Configuration</div>
         <div class="form-row">
           <div class="checkbox-row">
@@ -1086,10 +1565,12 @@
           <div class="form-group">
             <label for="fanofftemp"><span class="tip" data-tip="Temperature below which the fan turns off completely.">Fan Off Temperature (&deg;C):</span></label>
             <input type="number" id="fanofftemp" min="0" max="80" onchange="EnqueueUpdate('fanofftemp')" onkeypress="HandleEnter(event, 'fanofftemp')">
+            <div class="field-error" id="err_fanofftemp"></div>
           </div>
           <div class="form-group">
             <label for="fanfulltemp"><span class="tip" data-tip="Temperature at which the fan runs at full speed. Linear ramp between off and full.">Fan Full Speed Temperature (&deg;C):</span></label>
             <input type="number" id="fanfulltemp" min="0" max="80" onchange="EnqueueUpdate('fanfulltemp')" onkeypress="HandleEnter(event, 'fanfulltemp')">
+            <div class="field-error" id="err_fanfulltemp"></div>
           </div>
         </div>
 
@@ -1104,6 +1585,23 @@
           <label for="ntpserver"><span class="tip" data-tip="Time server for clock sync. Used for log timestamps. Leave blank to use default.">NTP Server:</span></label>
           <input type="textbox" id="ntpserver" onchange="EnqueueUpdate('ntpserver')" onkeypress="HandleEnter(event, 'ntpserver')">
         </div>
+
+        <div class="section-title">Remote Logging (Syslog)</div>
+        <div class="checkbox-row">
+          <input type="checkbox" id="syslogenabled" onchange="SendJSONUpdate('syslogenabled')">
+          <label for="syslogenabled"><span class="tip" data-tip="Forward the same log lines shown on the Logs tab to a syslog collector over UDP. Applies immediately, no reboot needed.">Send logs to a syslog server</span></label>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="syslogserver"><span class="tip" data-tip="IP address of your syslog collector, e.g. 192.168.1.10. Must be an IP address - hostnames are not resolved, to keep logging off the DNS path.">Syslog Server IP:</span></label>
+            <input type="textbox" id="syslogserver" placeholder="192.168.1.10" onchange="EnqueueUpdate('syslogserver')" onkeypress="HandleEnter(event, 'syslogserver')">
+            <div class="field-error" id="err_syslogserver"></div>
+          </div>
+          <div class="form-group">
+            <label for="syslogport"><span class="tip" data-tip="UDP port of the syslog collector. The standard port is 514.">Syslog Port:</span></label>
+            <input type="number" id="syslogport" min="1" max="65535" onchange="EnqueueUpdate('syslogport')" onkeypress="HandleEnter(event, 'syslogport')">
+          </div>
+        </div>
         
         <div class="section-title">Backup & Restore</div>
         <div class="button-group">
@@ -1113,14 +1611,26 @@
         </div>
 
         <div class="button-group">
-          <button class="btn-danger" onclick="eraseAll()">Factory Reset</button>
-          <button class="btn-danger" onclick="erasekeepwifi()">Factory Reset Keeping WiFi</button>
-          <button onclick="rebootBMS()">Reboot & Apply</button>
+          <button onclick="rebootBMS()">Reboot &amp; Apply</button>
         </div>
-      </div>
-      
+
+        <!-- Destructive actions live behind a disclosure and a typed confirmation,
+             so a factory reset can't be a mis-click away from Save. -->
+        <details class="danger-zone">
+          <summary>Danger Zone</summary>
+          <div class="danger-body">
+            <p>These actions erase stored configuration and cannot be undone. You will
+               need to reconfigure the device afterwards.</p>
+            <div class="button-group" style="margin-top:0">
+              <button class="btn-danger" onclick="eraseAll()">Factory Reset</button>
+              <button class="btn-danger" onclick="erasekeepwifi()">Factory Reset, Keep WiFi</button>
+            </div>
+          </div>
+        </details>
+      </section>
+
       <!-- WiFi/MQTT Tab -->
-      <div id="wifimqtt" class="tab-pane">
+      <section id="wifimqtt" class="tab-pane" role="tabpanel" aria-labelledby="tab-wifimqtt">
         <div class="section-title">WiFi Configuration</div>
         <div class="form-group">
           <label for="wifissid">WiFi Network:</label>
@@ -1194,96 +1704,131 @@
         </div>
         
         <div class="button-group">
-          <button onclick="rebootBMS()">Reboot & Apply</button>
+          <button onclick="rebootBMS()">Reboot &amp; Apply</button>
         </div>
-      </div>
-      
+      </section>
+
       <!-- Logs Tab -->
-      <div id="logs" class="tab-pane">
-        <h2 style="margin-bottom: 20px; color: #667eea;">System Logs</h2>
+      <section id="logs" class="tab-pane" role="tabpanel" aria-labelledby="tab-logs">
+        <div class="pane-title">System Logs</div>
         <div class="log-controls">
-          <button onclick="clearLogs()">Clear Logs</button>
-          <label>
-            <input type="checkbox" id="autoscroll" checked>
-            Auto-scroll
-          </label>
-          <label>
-            <input type="checkbox" id="logpause">
-            Pause
-          </label>
+          <label for="loglevel">Level</label>
+          <select id="loglevel" onchange="applyLogFilter()">
+            <option value="all">All</option>
+            <option value="info">Info &amp; above</option>
+            <option value="warning">Warnings &amp; above</option>
+            <option value="error">Errors only</option>
+          </select>
+          <label><input type="checkbox" id="autoscroll" checked> Auto-scroll</label>
+          <label><input type="checkbox" id="logpause"> Pause</label>
+          <span class="log-spacer"></span>
+          <button onclick="copyLogs()">Copy</button>
+          <button onclick="downloadLogs()">Download</button>
+          <button onclick="clearLogs()">Clear</button>
         </div>
         <div class="log-viewer" id="logviewer"></div>
-      </div>
-      
+      </section>
+
       <!-- Firmware Tab -->
-      <div id="firmware" class="tab-pane">
-        <div class="section-title">DIY BATTERY</div>
-        <div class="form-row">
+      <section id="firmware" class="tab-pane" role="tabpanel" aria-labelledby="tab-firmware">
+        <div class="section-title">DIY Battery BMS</div>
+        <div class="stat-grid">
           <div class="stat-box stat-status">
             <div class="stat-label">Version</div>
-            <div class="stat-value" id="fwVersionBms" style="font-size: 14px;">--</div>
+            <div class="stat-value sm" id="fwVersionBms">--</div>
           </div>
           <div class="stat-box stat-status">
             <div class="stat-label">Build Target</div>
-            <div class="stat-value" id="fwBuild" style="font-size: 14px;">--</div>
+            <div class="stat-value sm" id="fwBuild">--</div>
           </div>
         </div>
         <div class="form-group">
-          <label>Firmware:</label>
-          <input type="file" accept=".bin,.bin.gz" id="firmwareFile" style="margin-bottom: 10px;">
-          <button id="firmwareBtn" onclick="uploadFirmware()">Update Firmware</button>
-          <div id="fwProgress" style="display:none; margin-top:10px;">
-            <div style="background:#e0e0e0; border-radius:4px; overflow:hidden; height:24px;">
-              <div id="fwProgressBar" style="background:linear-gradient(135deg,#667eea,#764ba2); height:100%; width:0%; transition:width 0.3s; text-align:center; color:#fff; font-size:12px; line-height:24px;">0%</div>
+          <label for="firmwareFile">Firmware image (.bin or .bin.gz)</label>
+          <input type="file" accept=".bin,.bin.gz" id="firmwareFile" style="margin-bottom:10px">
+          <button id="firmwareBtn" class="btn-primary" onclick="uploadFirmware()">Update Firmware</button>
+          <div id="fwProgress" hidden style="margin-top:12px">
+            <div class="progress-track">
+              <div id="fwProgressBar" class="progress-bar">0%</div>
             </div>
           </div>
         </div>
 
         <div class="section-title">Victron Smart Shunt</div>
-        <div class="form-row">
+        <div class="stat-grid">
           <div class="stat-box stat-status">
             <div class="stat-label">Model</div>
-            <div class="stat-value" id="devModel" style="font-size: 14px;">--</div>
+            <div class="stat-value sm" id="devModel">--</div>
           </div>
           <div class="stat-box stat-status">
             <div class="stat-label">Firmware</div>
-            <div class="stat-value" id="devFW" style="font-size: 14px;">--</div>
+            <div class="stat-value sm" id="devFW">--</div>
           </div>
-        </div>
-        <div class="form-row">
           <div class="stat-box stat-status">
             <div class="stat-label">Serial Number</div>
-            <div class="stat-value" id="devSerial" style="font-size: 14px;">--</div>
+            <div class="stat-value sm" id="devSerial">--</div>
           </div>
           <div class="stat-box stat-status">
             <div class="stat-label">Product ID</div>
-            <div class="stat-value" id="devPID" style="font-size: 14px;">--</div>
+            <div class="stat-value sm" id="devPID">--</div>
           </div>
         </div>
 
         <div class="section-title">ESP32 Diagnostics</div>
-        <div class="form-row">
+        <div class="stat-grid">
           <div class="stat-box stat-status">
-            <div class="stat-label">Heap (Free / Total)</div>
-            <div class="stat-value" id="heapInfo" style="font-size: 14px;">--</div>
+            <div class="stat-label">Heap Free / Total</div>
+            <div class="stat-value sm" id="heapInfo">--</div>
           </div>
           <div class="stat-box stat-status">
-            <div class="stat-label">CAN Failures (Total)</div>
-            <div class="stat-value" id="canFailInfo" style="font-size: 14px;">0</div>
+            <div class="stat-label">CAN Failures</div>
+            <div class="stat-value sm" id="canFailInfo">0</div>
           </div>
         </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Replaces native confirm()/alert(): non-blocking, themed, and able to require
+       a typed phrase for irreversible actions. -->
+  <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal">
+      <h3 id="modalTitle">Confirm</h3>
+      <p id="modalBody"></p>
+      <div id="modalConfirmWrap" hidden>
+        <label for="modalConfirmInput">Type <b id="modalPhrase">ERASE</b> to continue</label>
+        <input type="text" id="modalConfirmInput" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="modal-actions">
+        <button id="modalCancel" onclick="closeModal(false)">Cancel</button>
+        <button id="modalOk" class="btn-primary" onclick="closeModal(true)">Confirm</button>
       </div>
     </div>
   </div>
 
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script>
     var gateway = `ws://${window.location.hostname}/ws`; 
     var websocket;
     const PIN_FIELDS = ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin','canbuscspin','fanpin','onewirepin'];
-    // Fields displayed in human units (A/V) but stored internally in mA/mV - multiply by 1000 on send
-    const UNIT_CONVERT_FIELDS = { 'tailcurrent': 1000, 'rechargevoltageoffset': 1000 };
+    // Fields displayed in human units (V/A/Ah) but stored internally in mV/mA - multiply by 1000
+    // on send, divide by 1000 on receive. Backend storage format is unchanged.
+    const UNIT_CONVERT_FIELDS = {
+      'chargevoltage': 1000, 'dischargevoltage': 1000, 'overvoltage': 1000,
+      'maxchargecurrent': 1000, 'maxdischargecurrent': 1000,
+      'minchargecurr': 1000, 'adjuststep': 1000, 'batterycapacity': 1000,
+      'tailcurrent': 1000, 'rechargevoltageoffset': 1000
+    };
+    const UNIT_DECIMALS = 1;
+
+    // Populate a field from a server value, scaling to display units where required
+    function SetFieldValue(fieldId, rawValue) {
+      const el = document.getElementById(fieldId);
+      if (!el) return;
+      const scale = UNIT_CONVERT_FIELDS[fieldId];
+      el.value = scale ? (rawValue / scale).toFixed(UNIT_DECIMALS) : rawValue;
+      AckUpdate(fieldId);
+    }
     
     // Toggle password visibility
     function togglePassword(fieldId) {
@@ -1310,26 +1855,91 @@
 
     window.addEventListener('load', onLoad);
 
-    function switchTab(event, tabName) {
-      const panes = document.querySelectorAll('.tab-pane');
-      panes.forEach(pane => pane.classList.remove('active'));
-      
-      const buttons = document.querySelectorAll('.tab-button');
-      buttons.forEach(btn => btn.classList.remove('active'));
-      
-      document.getElementById(tabName).classList.add('active');
-      event.target.classList.add('active');
-      
-      // Load buffered logs when Logs tab is opened
-      if(tabName === 'logs' && websocket) {
-        console.log('Logs tab opened. WebSocket state:', websocket.readyState);
-        if(websocket.readyState === WebSocket.OPEN) {
-          console.log('Requesting buffered logs...');
-          websocket.send('GetLogs()');
-        } else {
-          console.warn('WebSocket not open, cannot request logs');
-        }
+    const TAB_IDS = ['home','bms','settings','wifimqtt','logs','firmware'];
+
+    function switchTab(tabName, skipHash) {
+      if (TAB_IDS.indexOf(tabName) < 0) tabName = 'home';
+
+      document.querySelectorAll('.tab-pane').forEach(function(pane) {
+        pane.classList.toggle('active', pane.id === tabName);
+      });
+      document.querySelectorAll('.tab-button').forEach(function(btn) {
+        btn.setAttribute('aria-selected', btn.id === 'tab-' + tabName ? 'true' : 'false');
+      });
+
+      // Keep the tab in the URL so a refresh or bookmark lands in the same place
+      if (!skipHash && location.hash !== '#' + tabName) {
+        history.replaceState(null, '', '#' + tabName);
       }
+
+      if (tabName === 'logs' && websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send('GetLogs()');
+      }
+    }
+
+    // Arrow-key navigation across the tablist, per the WAI-ARIA tabs pattern
+    function initTabKeys() {
+      const btns = TAB_IDS.map(function(t) { return document.getElementById('tab-' + t); });
+      btns.forEach(function(btn, i) {
+        if (!btn) return;
+        btn.addEventListener('keydown', function(e) {
+          let next = -1;
+          if (e.key === 'ArrowRight') next = (i + 1) % btns.length;
+          else if (e.key === 'ArrowLeft') next = (i - 1 + btns.length) % btns.length;
+          else if (e.key === 'Home') next = 0;
+          else if (e.key === 'End') next = btns.length - 1;
+          if (next >= 0) {
+            e.preventDefault();
+            btns[next].focus();
+            switchTab(TAB_IDS[next]);
+          }
+        });
+      });
+    }
+
+    /* ---------- Theme ---------- */
+    // Cycles auto -> light -> dark. "auto" removes the attribute so the
+    // prefers-color-scheme media query takes over again.
+    const THEME_ICON = { auto: '◑', light: '☀', dark: '☾' };
+
+    function applyTheme(mode) {
+      if (mode === 'auto') document.documentElement.removeAttribute('data-theme');
+      else document.documentElement.setAttribute('data-theme', mode);
+      const btn = document.getElementById('themeBtn');
+      if (btn) {
+        btn.textContent = THEME_ICON[mode];
+        btn.title = 'Theme: ' + mode + ' (click to change)';
+      }
+      try { localStorage.setItem('bmsTheme', mode); } catch (e) {}
+    }
+
+    function cycleTheme() {
+      let cur = 'auto';
+      try { cur = localStorage.getItem('bmsTheme') || 'auto'; } catch (e) {}
+      applyTheme(cur === 'auto' ? 'light' : (cur === 'light' ? 'dark' : 'auto'));
+    }
+
+    function initTheme() {
+      let saved = 'auto';
+      try { saved = localStorage.getItem('bmsTheme') || 'auto'; } catch (e) {}
+      applyTheme(saved);
+    }
+
+    /* ---------- Tooltips ---------- */
+    // Delegated so tooltips work on touch, where :hover never fires.
+    function initTooltips() {
+      document.addEventListener('click', function(e) {
+        const tip = e.target.closest ? e.target.closest('.tip') : null;
+        document.querySelectorAll('.tip.open').forEach(function(t) {
+          if (t !== tip) t.classList.remove('open');
+        });
+        if (tip) { tip.classList.toggle('open'); e.preventDefault(); }
+      });
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+          document.querySelectorAll('.tip.open').forEach(function(t) { t.classList.remove('open'); });
+        }
+      });
     }
 
     function SendJSONUpdate(fieldId) {
@@ -1353,8 +1963,13 @@
       if(fanSettings) fanSettings.style.display = (fanSrc && fanSrc.value === '1') ? '' : 'none';
     }
 
+    /* ---------- Connection ---------- */
+    let reconnectAttempt = 0;
+    let reconnectTimer = null;
+    let lastDataAt = 0;
+    let everConnected = false;
+
     function initWebSocket() {
-      console.log('Trying to open a WebSocket connection...');
       websocket = new WebSocket(gateway);
       websocket.onopen = onOpen;
       websocket.onclose = onClose;
@@ -1363,15 +1978,34 @@
     }
 
     function setConnStatus(connected) {
-      var dot = document.getElementById('connDot');
-      var txt = document.getElementById('connText');
-      if (connected) { dot.classList.add('connected'); txt.textContent = 'Connected'; }
-      else { dot.classList.remove('connected'); txt.textContent = 'Disconnected'; }
+      const dot = document.getElementById('connDot');
+      const txt = document.getElementById('connText');
+      const pill = document.getElementById('connPill');
+      const content = document.getElementById('content');
+
+      dot.classList.toggle('connected', connected);
+      pill.classList.toggle('online', connected);
+      txt.textContent = connected ? 'Live' : (everConnected ? 'Reconnecting…' : 'Connecting…');
+
+      // Grey out the dashboard so frozen readings can't be mistaken for live ones.
+      // Only meaningful once we have actually had data - on a cold load there is
+      // nothing stale to warn about, and "connection lost" would be a lie.
+      if (content) content.classList.toggle('stale', !connected && everConnected);
+
+      const since = document.getElementById('staleSince');
+      if (since) {
+        since.textContent = lastDataAt
+          ? new Date(lastDataAt).toLocaleTimeString()
+          : 'the last update';
+      }
     }
 
-    function onOpen(event) {
-      console.log('WebSocket connection opened');
+    function onOpen() {
+      const wasDown = everConnected;
+      everConnected = true;
+      reconnectAttempt = 0;
       setConnStatus(true);
+      if (wasDown) showToast('Reconnected', 'success');
     }
 
     function onError(event) {
@@ -1379,9 +2013,14 @@
     }
 
     function onClose(event) {
-      console.log('WebSocket connection closed. Code:', event.code, 'Reason:', event.reason);
+      console.log('WebSocket closed. Code:', event.code, 'Reason:', event.reason);
       setConnStatus(false);
-      setTimeout(initWebSocket, 2000);
+      // Exponential backoff capped at 15s, so a device that is off for a while
+      // doesn't get hammered once per 2s indefinitely.
+      const delay = Math.min(1000 * Math.pow(1.6, reconnectAttempt), 15000);
+      reconnectAttempt++;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(initWebSocket, delay);
     }
 
     function onMessage(event) {
@@ -1400,12 +2039,14 @@
         ['chargevoltage','minchargecurr','adjuststep','smartinterval','overvoltage',
          'dischargevoltage','maxchargecurrent','maxdischargecurrent','batterycapacity',
          'lowsoclimit','highsoclimit','velooptime'].forEach(function(f) {
-          if(obj[f] !== undefined) { document.getElementById(f).value=obj[f]; AckUpdate(f); }
+          if(obj[f] !== undefined) SetFieldValue(f, obj[f]);
         });
         if(obj.canbusenabled !== undefined) { document.getElementById('canbusenabled').checked=obj.canbusenabled; AckUpdate('canbusenabled'); }
       }
 
       if(obj.hasOwnProperty('RealTime') && obj.RealTime) {
+        lastDataAt = Date.now();
+
         // Update battery SOC and visual indicator
         if(obj.hasOwnProperty('battsoc')) {
           const soc = obj.battsoc;
@@ -1413,10 +2054,11 @@
           // Update battery visual
           const batteryLevel = document.getElementById('batteryLevel');
           const batteryPercentage = document.getElementById('batteryPercentage');
+          const gauge = document.getElementById('batteryGauge');
 
           if(batteryLevel && batteryPercentage) {
             batteryLevel.style.width = soc + '%';
-            batteryPercentage.innerHTML = soc + '%';
+            batteryPercentage.textContent = soc + '%';
 
             // Update battery color based on level
             batteryLevel.className = 'battery-level';
@@ -1428,19 +2070,19 @@
               batteryLevel.classList.add('high');
             }
           }
+          if(gauge) gauge.setAttribute('aria-label', 'Battery state of charge ' + soc + '%');
 
-          // Show warning if SOC is low
-          updateWarnings(soc, obj.chargeenabled, obj.dischargeenabled);
+          latestState.soc = soc;
         }
 
-        if(obj.hasOwnProperty('battvoltage')) document.getElementById('battvoltage').innerHTML=(obj.battvoltage*0.01).toFixed(1);
+        if(obj.hasOwnProperty('battvoltage')) document.getElementById('battvoltage').textContent=(obj.battvoltage*0.01).toFixed(1);
 
         // Update battery current and power flow indicator
         if(obj.hasOwnProperty('battcurrent')) {
           const current = obj.battcurrent * 0.1;
           const battCurrentElem = document.getElementById('battcurrent');
           if(battCurrentElem) {
-            battCurrentElem.innerHTML = current.toFixed(1);
+            battCurrentElem.textContent = current.toFixed(1);
           }
 
           // Update battery wave animation and power flow indicator
@@ -1448,105 +2090,103 @@
           const flowText = document.getElementById('powerFlowText');
 
           if(batteryWave && flowText) {
-            // Remove all classes first
             batteryWave.className = 'battery-wave';
             flowText.className = 'flow-text';
 
             if(obj.forcecharge) {
               batteryWave.classList.add('active', 'charging');
-              flowText.classList.add('charging');
-              flowText.innerHTML = '&#9889; Force Charging';
-              flowText.style.color = '#f44336';
+              flowText.classList.add('charging', 'v-err');
+              flowText.textContent = 'Force Charging';
             } else if(current > 0.5) {
               batteryWave.classList.add('active', 'charging');
-              flowText.classList.add('charging');
-              flowText.innerHTML = '&#9650; Charging';
-              flowText.style.color = '#4caf50';
+              flowText.classList.add('charging', 'v-ok');
+              flowText.textContent = 'Charging';
             } else if(current < -0.5) {
               batteryWave.classList.add('active', 'discharging');
-              flowText.classList.add('discharging');
-              flowText.innerHTML = '&#9660; Discharging';
-              flowText.style.color = '#ff9800';
+              flowText.classList.add('discharging', 'v-warn');
+              flowText.textContent = 'Discharging';
             } else {
-              flowText.innerHTML = 'Idle';
-              flowText.style.color = '#667eea';
+              flowText.textContent = 'Idle';
             }
           }
         }
 
         if(obj.hasOwnProperty('battpower')) {
           var powerElem = document.getElementById('battpower');
-          if(powerElem) powerElem.innerHTML = Math.abs(obj.battpower);
+          if(powerElem) powerElem.textContent = Math.abs(obj.battpower);
         }
 
         if(obj.hasOwnProperty('timetogo')) {
           var ttgElem = document.getElementById('timetogo');
           if(ttgElem) {
             var ttg = obj.timetogo;
-            if(ttg < 0 || ttg >= 65535) { ttgElem.innerHTML = '--'; }
-            else if(ttg >= 1440) { ttgElem.innerHTML = (ttg / 1440).toFixed(1) + 'd'; }
-            else if(ttg >= 60) { ttgElem.innerHTML = Math.floor(ttg/60) + 'h ' + (ttg%60) + 'm'; }
-            else { ttgElem.innerHTML = ttg + 'm'; }
+            if(ttg < 0 || ttg >= 65535) { ttgElem.textContent = '--'; }
+            else if(ttg >= 1440) { ttgElem.textContent = (ttg / 1440).toFixed(1) + 'd'; }
+            else if(ttg >= 60) { ttgElem.textContent = Math.floor(ttg/60) + 'h ' + (ttg%60) + 'm'; }
+            else { ttgElem.textContent = ttg + 'm'; }
           }
         }
 
         if(obj.hasOwnProperty('batttemp')) {
           var tempElem = document.getElementById('batttemp');
-          if(tempElem) tempElem.innerHTML = obj.batttemp;
+          if(tempElem) tempElem.textContent = obj.batttemp;
+          latestState.batttemp = obj.batttemp;
         }
         if(obj.hasOwnProperty('mqttinvertertemp')) {
           var e = document.getElementById('mqttinvertertemp');
-          if(e) e.innerHTML = obj.mqttinvertertemp == -127 ? '--' : obj.mqttinvertertemp;
+          if(e) e.textContent = obj.mqttinvertertemp == -127 ? '--' : obj.mqttinvertertemp;
         }
         if(obj.hasOwnProperty('fanpwm')) {
           var e = document.getElementById('fanpwm');
-          if(e) e.innerHTML = obj.fanpwm;
+          if(e) e.textContent = obj.fanpwm;
         }
 
         if(obj.hasOwnProperty('showtempdashboard')) {
           var tempRow = document.getElementById('tempRow');
-          if(tempRow) tempRow.style.display = obj.showtempdashboard ? '' : 'none';
+          if(tempRow) tempRow.hidden = !obj.showtempdashboard;
         }
 
         if(obj.hasOwnProperty('chargeadjust')) {
           var adjElem = document.getElementById('chargeadjust');
-          if(adjElem) adjElem.innerHTML = (obj.chargeadjust * 0.001).toFixed(0);
+          if(adjElem) adjElem.textContent = (obj.chargeadjust * 0.001).toFixed(0);
         }
 
-        if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').innerHTML=(obj.chargecurrent*0.001).toFixed(0);
-        if(obj.hasOwnProperty('dischargecurrent')) document.getElementById('dischargecurrent').innerHTML=(obj.dischargecurrent*0.001).toFixed(0);
+        if(obj.hasOwnProperty('chargecurrent')) document.getElementById('chargecurrent').textContent=(obj.chargecurrent*0.001).toFixed(0);
+        if(obj.hasOwnProperty('dischargecurrent')) document.getElementById('dischargecurrent').textContent=(obj.dischargecurrent*0.001).toFixed(0);
 
-        // Update Charge/Discharge enabled status with color coding
         if(obj.hasOwnProperty('chargeenabled')) {
-          chargeEnabled = obj.chargeenabled;  // Track state for toggle
-          let chargeStatus = document.getElementById('chargeenabledStatus');
-          chargeStatus.innerHTML = obj.chargeenabled ? 'ON' : 'OFF';
-          chargeStatus.style.color = obj.chargeenabled ? '#4caf50' : '#f44336';
+          chargeEnabled = obj.chargeenabled;
+          latestState.chargeenabled = obj.chargeenabled;
+          setToggleState('chargeToggle', 'chargeenabledStatus', obj.chargeenabled);
         }
         if(obj.hasOwnProperty('dischargeenabled')) {
-          dischargeEnabled = obj.dischargeenabled;  // Track state for toggle
-          let dischargeStatus = document.getElementById('dischargeenabledStatus');
-          dischargeStatus.innerHTML = obj.dischargeenabled ? 'ON' : 'OFF';
-          dischargeStatus.style.color = obj.dischargeenabled ? '#4caf50' : '#f44336';
+          dischargeEnabled = obj.dischargeenabled;
+          latestState.dischargeenabled = obj.dischargeenabled;
+          setToggleState('dischargeToggle', 'dischargeenabledStatus', obj.dischargeenabled);
         }
 
         if(obj.hasOwnProperty('chargephase')) {
           let phaseElem = document.getElementById('chargephaseStatus');
           if(phaseElem) {
-            phaseElem.innerHTML = obj.chargephase;
-            if(obj.chargephase === 'Bulk') phaseElem.style.color = '#4caf50';
-            else if(obj.chargephase === 'Absorption') phaseElem.style.color = '#ff9800';
-            else if(obj.chargephase === 'Complete') phaseElem.style.color = '#2196f3';
-            else phaseElem.style.color = '#667eea';
+            const PHASE_CLASS = { Bulk: 'v-ok', Absorption: 'v-warn', Complete: 'v-info' };
+            phaseElem.textContent = obj.chargephase;
+            phaseElem.className = 'stat-value sm ' + (PHASE_CLASS[obj.chargephase] || 'v-accent');
           }
+          latestState.chargephase = obj.chargephase;
         }
+
+        ['forcecharge','battvoltage','battcurrent','reportedsoc','socoverride',
+         'absorbelapsed','absorbmax','tailheld','tailneed','tailactive','tailthreshold'
+        ].forEach(function(k) {
+          if (obj.hasOwnProperty(k)) latestState[k] = obj[k];
+        });
+        updateAbsorption();
+        updateSOCOverride();
+        updateWarnings();
 
         // Update last update timestamp
         const lastUpdateElem = document.getElementById('lastUpdate');
-        if(lastUpdateElem) {
-          const now = new Date().toLocaleTimeString();
-          lastUpdateElem.textContent = now;
-        }
+        if(lastUpdateElem) lastUpdateElem.textContent = new Date().toLocaleTimeString();
       }
 
       ['soctrickenabled','requestflagsenabled','never100soc','autocharge'].forEach(function(f) {
@@ -1575,12 +2215,11 @@
        'tailduration','maxabsorptiontime','rechargesoc',
        'chargehightemp','chargelowtemp','dischargehightemp','dischargelowtemp',
        'mqttbatttopic','mqttinvtopic','fanofftemp','fanfulltemp',
-       'ntpserver'].forEach(function(f) {
-        if(obj[f] !== undefined) { document.getElementById(f).value=obj[f]; AckUpdate(f); }
+       'ntpserver','syslogserver','syslogport',
+       'tailcurrent','rechargevoltageoffset'].forEach(function(f) {
+        if(obj[f] !== undefined) SetFieldValue(f, obj[f]);
       });
       {{CAN_FIELD_HANDLERS}}
-      if(obj.tailcurrent !== undefined) { document.getElementById('tailcurrent').value=(obj.tailcurrent*0.001).toFixed(1); AckUpdate('tailcurrent'); }
-      if(obj.rechargevoltageoffset !== undefined) { document.getElementById('rechargevoltageoffset').value=(obj.rechargevoltageoffset*0.001).toFixed(1); AckUpdate('rechargevoltageoffset'); }
       if(obj.tempprotection !== undefined) { document.getElementById('tempprotection').checked=obj.tempprotection; AckUpdate('tempprotection'); toggleTempConfig(); }
       if(obj.showtempdashboard !== undefined) { document.getElementById('showtempdashboard').checked=obj.showtempdashboard; AckUpdate('showtempdashboard'); }
       if(obj.canprotocol !== undefined) { document.getElementById('canprotocol').value=obj.canprotocol; AckUpdate('canprotocol'); }
@@ -1588,39 +2227,52 @@
       if(obj.batttempsrc !== undefined) { document.getElementById('batttempsrc').value=obj.batttempsrc; AckUpdate('batttempsrc'); toggleMqttTempTopics(); }
       if(obj.fantempsrc !== undefined) { document.getElementById('fantempsrc').value=obj.fantempsrc; AckUpdate('fantempsrc'); toggleMqttTempTopics(); }
       if(obj.lcdenabled !== undefined) { document.getElementById('lcdenabled').checked=obj.lcdenabled; AckUpdate('lcdenabled'); }
+      if(obj.syslogenabled !== undefined) { document.getElementById('syslogenabled').checked=obj.syslogenabled; AckUpdate('syslogenabled'); validateFields(); }
       {{FAN_PIN_HANDLER}}
 
       var devFields = {modelstring:'devModel',fwversion:'devFW',serialnumber:'devSerial',pidstring:'devPID'};
-      for(var k in devFields) { if(obj[k] !== undefined) { var e=document.getElementById(devFields[k]); if(e) e.innerHTML=obj[k]||'--'; } }
+      for(var k in devFields) { if(obj[k] !== undefined) { var e=document.getElementById(devFields[k]); if(e) e.textContent=obj[k]||'--'; } }
       if(obj.hasOwnProperty('freeheap') && obj.hasOwnProperty('totalheap')) {
         var e=document.getElementById('heapInfo');
-        if(e) e.innerHTML=(obj.freeheap/1024).toFixed(0) + 'KB / ' + (obj.totalheap/1024).toFixed(0) + 'KB';
+        if(e) e.textContent=(obj.freeheap/1024).toFixed(0) + 'K / ' + (obj.totalheap/1024).toFixed(0) + 'K';
       }
       if(obj.hasOwnProperty('cantotalfails')) {
         var e=document.getElementById('canFailInfo');
-        if(e) e.innerHTML=obj.cantotalfails;
+        if(e) {
+          e.textContent=obj.cantotalfails;
+          e.className = 'stat-value sm ' + (obj.cantotalfails > 0 ? 'v-warn' : '');
+        }
       }
       if(obj.hasOwnProperty('inverterpresent')) {
         var row=document.getElementById('inverterStatusRow');
         var dot=document.getElementById('inverterDot');
-        if(row) row.style.display=obj.inverterpresent ? 'flex' : 'none';
-        if(dot) { if(obj.inverterpresent) dot.classList.add('connected'); else dot.classList.remove('connected'); }
+        if(row) row.hidden = !obj.inverterpresent;
+        if(dot) dot.classList.toggle('connected', !!obj.inverterpresent);
+        latestState.inverterpresent = obj.inverterpresent;
       }
       if(obj.hasOwnProperty('victrondata')) {
         var dot=document.getElementById('shuntDot');
-        if(dot) { if(obj.victrondata) dot.classList.add('connected'); else dot.classList.remove('connected'); }
+        if(dot) dot.classList.toggle('connected', !!obj.victrondata);
+        latestState.victrondata = obj.victrondata;
       }
       if(obj.hasOwnProperty('mqttconnected')) {
         var dot=document.getElementById('mqttDot');
-        if(dot) { if(obj.mqttconnected) dot.classList.add('connected'); else dot.classList.remove('connected'); }
+        if(dot) dot.classList.toggle('connected', !!obj.mqttconnected);
       }
       if(obj.hasOwnProperty('fwversion_bms')) {
         var e=document.getElementById('fwVersionBms');
-        if(e) e.innerHTML=obj.fwversion_bms;
+        if(e) e.textContent=obj.fwversion_bms;
+        // Mirror into the header so you can tell two devices apart at a glance
+        var h=document.getElementById('fwHeader');
+        if(h) { h.textContent=obj.fwversion_bms; document.getElementById('fwMeta').hidden = false; }
       }
       if(obj.hasOwnProperty('fwbuild')) {
         var e=document.getElementById('fwBuild');
-        if(e) e.innerHTML=obj.fwbuild;
+        if(e) e.textContent=obj.fwbuild;
+      }
+      if(obj.hasOwnProperty('wifihostname') && obj.wifihostname) {
+        var h=document.getElementById('hostName');
+        if(h) { h.textContent=obj.wifihostname; document.getElementById('hostMeta').hidden = false; }
       }
 
       // Handle WiFi scan results from WebSocket
@@ -1628,51 +2280,73 @@
         PopulateWifiList(obj.wifinetworks);
       }
 
-      if(obj.hasOwnProperty('Message')) alert(obj.Message);
-      if(obj.hasOwnProperty('ERROR')) alert(obj.ERROR);
+      if(obj.hasOwnProperty('Message')) showToast(obj.Message, 'success', 4000);
+      if(obj.hasOwnProperty('ERROR')) showToast(obj.ERROR, 'error', 6000);
     }
 
-    function onLoad(event) {
+    function onLoad() {
+      initTheme();
+      initTabKeys();
+      initTooltips();
+      initValidation();
+      // Restore the tab from the URL so refresh/bookmark lands in the same place
+      switchTab((location.hash || '#home').slice(1), true);
+      window.addEventListener('hashchange', function() {
+        switchTab((location.hash || '#home').slice(1), true);
+      });
+      setConnStatus(false);
       initWebSocket();
     }
 
-
     function setUpdateButtonsDisabled(disabled) {
-      const buttons = document.querySelectorAll('.button-group button, .wifi-controls button');
-      buttons.forEach(button => {
-        button.disabled = disabled;
-        if (disabled) {
-          button.style.opacity = '0.5';
-          button.style.cursor = 'not-allowed';
-        } else {
-          button.style.opacity = '1';
-          button.style.cursor = 'pointer';
-        }
-      });
+      document.querySelectorAll('.button-group button, .wifi-controls button')
+        .forEach(function(button) { button.disabled = disabled; });
+    }
+
+    /* ---------- Unsaved-changes tracking ---------- */
+    // Field edits are applied to the running device immediately but are only durable
+    // once written to EEPROM, so surface that gap rather than leaving it implicit.
+    let hasUnsaved = false;
+
+    function markUnsaved() {
+      hasUnsaved = true;
+      const bar = document.getElementById('unsavedBar');
+      if (bar) bar.classList.add('show');
+    }
+
+    function clearUnsaved() {
+      hasUnsaved = false;
+      const bar = document.getElementById('unsavedBar');
+      if (bar) bar.classList.remove('show');
     }
 
     function saveAll() {
-      console.log('Sending Save All command');
       setUpdateButtonsDisabled(true);
-      showFeedback('Saving configuration...');
-      var jsonobj = '{"saveall" : true}';
-      websocket.send(jsonobj);
+      showFeedback('Saving configuration…');
+      websocket.send('{"saveall" : true}');
+      clearUnsaved();
       setTimeout(() => setUpdateButtonsDisabled(false), 2000);
+    }
+
+    function setToggleState(btnId, labelId, on) {
+      const btn = document.getElementById(btnId);
+      const lbl = document.getElementById(labelId);
+      if (btn) btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (lbl) lbl.textContent = on ? 'ON' : 'OFF';
     }
 
     // Settings export/import - reads from DOM, sends via existing WebSocket handlers
     const EXPORT_FIELDS = {
       checkboxes: ['canbusenabled','can16mhz','soctrickenabled','requestflagsenabled','never100soc',
-                   'autocharge','tempprotection','showtempdashboard','lcdenabled'],
-      numbers: ['chargevoltage','dischargevoltage','overvoltage','maxchargecurrent',
-                'maxdischargecurrent','minchargecurr','adjuststep','batterycapacity',
-                'lowsoclimit','highsoclimit','smartinterval','tailduration',
+                   'autocharge','tempprotection','showtempdashboard','lcdenabled','syslogenabled'],
+      numbers: ['lowsoclimit','highsoclimit','smartinterval','tailduration',
                 'maxabsorptiontime','rechargesoc','chargehightemp','chargelowtemp',
                 'dischargehightemp','dischargelowtemp','fanofftemp','fanfulltemp',
                 'slowchargesoc1','slowchargesoc2','slowchargesoc1div','slowchargesoc2div',
-                'velooptime','mqttport'],
-      converted: { tailcurrent: 1000, rechargevoltageoffset: 1000 },
-      strings: ['ntpserver','mqttserverip','mqttclientid','mqtttopic','mqttuser',
+                'velooptime','mqttport','syslogport'],
+      // Exported in display units (V/A/Ah); import re-scales on send
+      converted: UNIT_CONVERT_FIELDS,
+      strings: ['ntpserver','syslogserver','mqttserverip','mqttclientid','mqtttopic','mqttuser',
                 'mqttpass','mqttbatttopic','mqttinvtopic','wifihostname'],
       selects: ['canprotocol','batttempsrc','fantempsrc'],
       pins: ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin',
@@ -1680,7 +2354,7 @@
     };
 
     function exportSettings() {
-      var settings = { _exportVersion: 1, _exportDate: new Date().toISOString() };
+      var settings = { _exportVersion: 2, _exportDate: new Date().toISOString() };
       EXPORT_FIELDS.checkboxes.forEach(function(f) {
         var el = document.getElementById(f);
         if (el) settings[f] = el.checked;
@@ -1721,6 +2395,10 @@
       showToast('Settings exported', 'success');
     }
 
+    // v1 exports held these in raw mV/mA; v2 onwards holds display units (V/A/Ah)
+    const LEGACY_RAW_FIELDS = ['chargevoltage','dischargevoltage','overvoltage','maxchargecurrent',
+                               'maxdischargecurrent','minchargecurr','adjuststep','batterycapacity'];
+
     function importSettings(input) {
       var file = input.files[0];
       if (!file) return;
@@ -1728,12 +2406,28 @@
       reader.onload = function(e) {
         try {
           var settings = JSON.parse(e.target.result);
-          if (!confirm('Import ' + Object.keys(settings).length + ' settings from ' + file.name + '?\nThis will overwrite current settings.')) {
+          askConfirm({
+            title: 'Import Settings',
+            body: 'Import ' + Object.keys(settings).length + ' settings from ' + file.name +
+                  '? This overwrites your current configuration and reboots the device.',
+            okLabel: 'Import'
+          }).then(function(ok) {
             input.value = '';
-            return;
-          }
+            if (ok) applyImportedSettings(settings);
+          });
+        } catch(err) {
+          showToast('Invalid settings file: ' + err.message, 'error', 5000);
+          input.value = '';
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function applyImportedSettings(settings) {
+        try {
           var count = 0;
           var skip = ['_exportVersion', '_exportDate'];
+          var exportVersion = settings._exportVersion || 1;
 
           // For converted fields, set DOM value as display units (server expects raw via SendQueuedUpdate)
           for (var key in settings) {
@@ -1753,7 +2447,12 @@
               }
               el.value = settings[key];
             } else {
-              el.value = settings[key];
+              var value = settings[key];
+              // Rescale legacy raw-unit exports into the display units the field now expects
+              if (exportVersion < 2 && LEGACY_RAW_FIELDS.indexOf(key) >= 0) {
+                value = (Number(value) / 1000).toFixed(UNIT_DECIMALS);
+              }
+              el.value = value;
             }
             // Queue the update to send to server via existing WebSocket mechanism
             // Use a staggered delay to avoid flooding
@@ -1762,49 +2461,110 @@
             })(key);
             count++;
           }
-          showToast('Importing ' + count + ' settings...', 'success');
+          showToast('Importing ' + count + ' settings…', 'pending', (count * 150) + 2000);
           // Reboot after all settings have been sent
           var rebootDelay = (count * 150) + 2000;
           setTimeout(function() {
-            showToast('Rebooting to apply settings...', 'success');
+            showToast('Rebooting to apply settings…', 'success', 4000);
             websocket.send('{"reboot" : true}');
           }, rebootDelay);
         } catch(err) {
-          showToast('Invalid settings file: ' + err.message, 'error');
+          showToast('Could not apply settings: ' + err.message, 'error', 5000);
         }
-        input.value = '';
-      };
-      reader.readAsText(file);
     }
 
+    /* ---------- Modal dialog (replaces blocking confirm/alert) ---------- */
+    let modalResolve = null;
+
+    // opts: { title, body, okLabel, danger, requirePhrase }
+    function askConfirm(opts) {
+      return new Promise(function(resolve) {
+        modalResolve = resolve;
+        const back = document.getElementById('modalBackdrop');
+        const ok = document.getElementById('modalOk');
+        const wrap = document.getElementById('modalConfirmWrap');
+        const input = document.getElementById('modalConfirmInput');
+
+        document.getElementById('modalTitle').textContent = opts.title || 'Confirm';
+        document.getElementById('modalBody').textContent = opts.body || '';
+        ok.textContent = opts.okLabel || 'Confirm';
+        ok.className = opts.danger ? 'btn-danger' : 'btn-primary';
+
+        // Irreversible actions require the phrase to be typed out in full
+        if (opts.requirePhrase) {
+          document.getElementById('modalPhrase').textContent = opts.requirePhrase;
+          input.value = '';
+          wrap.hidden = false;
+          ok.disabled = true;
+          input.oninput = function() {
+            ok.disabled = input.value.trim().toUpperCase() !== opts.requirePhrase.toUpperCase();
+          };
+        } else {
+          wrap.hidden = true;
+          ok.disabled = false;
+          input.oninput = null;
+        }
+
+        back.classList.add('show');
+        setTimeout(function() { (opts.requirePhrase ? input : ok).focus(); }, 40);
+      });
+    }
+
+    function closeModal(result) {
+      document.getElementById('modalBackdrop').classList.remove('show');
+      const r = modalResolve;
+      modalResolve = null;
+      if (r) r(result);
+    }
+
+    document.addEventListener('keydown', function(e) {
+      if (!modalResolve) return;
+      if (e.key === 'Escape') closeModal(false);
+      else if (e.key === 'Enter' && !document.getElementById('modalOk').disabled) closeModal(true);
+    });
+
     function eraseAll() {
-      if (!confirm('Are you sure? This will erase all settings.')) return;
-      console.log('Sending Erase All (EEPROM) command');
-      setUpdateButtonsDisabled(true);
-      showFeedback('Erasing configuration...');
-      var jsonobj = '{"eraseall" : true}';
-      websocket.send(jsonobj);
-      setTimeout(() => setUpdateButtonsDisabled(false), 2000);
+      askConfirm({
+        title: 'Factory Reset',
+        body: 'This erases every stored setting, including WiFi credentials. The device will need to be reconfigured from scratch. This cannot be undone.',
+        okLabel: 'Erase Everything', danger: true, requirePhrase: 'ERASE'
+      }).then(function(ok) {
+        if (!ok) return;
+        setUpdateButtonsDisabled(true);
+        showFeedback('Erasing configuration…');
+        websocket.send('{"eraseall" : true}');
+        setTimeout(() => setUpdateButtonsDisabled(false), 2000);
+      });
     }
 
     function erasekeepwifi() {
-      if (!confirm('Are you sure? This will erase settings but keep WiFi.')) return;
-      console.log('Sending Erase All Keep Wifi (EEPROM) command');
-      setUpdateButtonsDisabled(true);
-      showFeedback('Erasing configuration (keeping WiFi)...');
-      var jsonobj = '{"erasekeepwifi" : true}';
-      websocket.send(jsonobj);
-      setTimeout(() => setUpdateButtonsDisabled(false), 2000);
+      askConfirm({
+        title: 'Factory Reset, Keep WiFi',
+        body: 'This erases all settings except your WiFi credentials, so the device will stay reachable on the network. This cannot be undone.',
+        okLabel: 'Erase Settings', danger: true, requirePhrase: 'ERASE'
+      }).then(function(ok) {
+        if (!ok) return;
+        setUpdateButtonsDisabled(true);
+        showFeedback('Erasing configuration (keeping WiFi)…');
+        websocket.send('{"erasekeepwifi" : true}');
+        setTimeout(() => setUpdateButtonsDisabled(false), 2000);
+      });
     }
 
     function rebootBMS() {
-      if (!confirm('Reboot device?')) return;
-      console.log('Sending Reboot command');
-      setUpdateButtonsDisabled(true);
-      showFeedback('Rebooting device...');
-      var jsonobj = '{"reboot" : true}';
-      websocket.send(jsonobj);
-      setTimeout(() => setUpdateButtonsDisabled(false), 3000);
+      askConfirm({
+        title: 'Reboot Device',
+        body: hasUnsaved
+          ? 'You have unsaved changes. Rebooting now will discard them - save to EEPROM first if you want to keep them.'
+          : 'The BMS will restart. Charge and discharge control is unavailable for a few seconds.',
+        okLabel: 'Reboot', danger: hasUnsaved
+      }).then(function(ok) {
+        if (!ok) return;
+        setUpdateButtonsDisabled(true);
+        showFeedback('Rebooting device…');
+        websocket.send('{"reboot" : true}');
+        setTimeout(() => setUpdateButtonsDisabled(false), 3000);
+      });
     }
 
     // Track current charge/discharge enable states
@@ -1838,12 +2598,21 @@
       }
       if (file.size > 4194304) { showToast('File too large (max 4MB)', 'error'); return; }
 
+      askConfirm({
+        title: 'Flash Firmware',
+        body: 'Write ' + file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB) to the device? ' +
+              'Do not power off during the update - an interrupted flash can leave the BMS unbootable.',
+        okLabel: 'Flash', danger: true
+      }).then(function(ok) { if (ok) doUploadFirmware(file); });
+    }
+
+    function doUploadFirmware(file) {
       var btn = document.getElementById('firmwareBtn');
       btn.disabled = true;
-      btn.style.opacity = '0.5';
       var progressDiv = document.getElementById('fwProgress');
       var progressBar = document.getElementById('fwProgressBar');
-      progressDiv.style.display = 'block';
+      progressDiv.hidden = false;
+      progressBar.className = 'progress-bar';
 
       var formData = new FormData();
       formData.append('firmware', file);
@@ -1863,32 +2632,29 @@
         if (xhr.status === 200 && xhr.responseText.indexOf('Success') !== -1) {
           progressBar.style.width = '100%';
           progressBar.textContent = 'Flashed! Waiting for reboot...';
-          progressBar.style.background = '#4caf50';
+          progressBar.className = 'progress-bar ok';
           showToast('Update successful! Waiting for device to reconnect...', 'success', 60000);
           waitForReconnect(60);
         } else {
-          progressBar.style.background = '#f44336';
+          progressBar.className = 'progress-bar err';
           progressBar.textContent = 'Failed';
           showToast('Update failed: ' + xhr.responseText, 'error', 5000);
           btn.disabled = false;
-          btn.style.opacity = '1';
         }
       };
 
       xhr.onerror = function() {
-        progressBar.style.background = '#f44336';
+        progressBar.className = 'progress-bar err';
         progressBar.textContent = 'Error';
         showToast('Upload failed - connection error', 'error', 5000);
         btn.disabled = false;
-        btn.style.opacity = '1';
       };
 
       xhr.ontimeout = function() {
-        progressBar.style.background = '#f44336';
+        progressBar.className = 'progress-bar err';
         progressBar.textContent = 'Timeout';
         showToast('Upload timed out', 'error', 5000);
         btn.disabled = false;
-        btn.style.opacity = '1';
       };
 
       xhr.timeout = 120000; // 2 minutes
@@ -1914,11 +2680,10 @@
         }).catch(function() {}); // ignore errors, keep waiting
         if (elapsed >= maxSeconds) {
           clearInterval(interval);
-          if (progressBar) { progressBar.textContent = 'Timeout - try refreshing manually'; progressBar.style.background = '#ff9800'; }
+          if (progressBar) { progressBar.textContent = 'Timeout - try refreshing manually'; progressBar.className = 'progress-bar warn'; }
           showToast('Device did not reconnect within ' + maxSeconds + 's', 'error', 5000);
           var btn = document.getElementById('firmwareBtn');
           btn.disabled = false;
-          btn.style.opacity = '1';
         }
       }, 1000);
     }
@@ -1953,11 +2718,6 @@
       // Validate that at least SSID is provided
       if(!wifissid || wifissid.trim() === '') {
         showToast('Please select a WiFi network', 'error');
-        return;
-      }
-      
-      if(!wifipass || wifipass.trim() === '') {
-        showToast('Please enter a WiFi password', 'error');
         return;
       }
       
@@ -2037,6 +2797,9 @@
         retries: 0
       };
 
+      // Live-but-not-persisted: everything except the transient dashboard toggles
+      if (fieldId !== 'manualallowcharge' && fieldId !== 'manualallowdischarge') markUnsaved();
+
       sendQueue.push(item);
       ProcessQueue();
     }
@@ -2078,66 +2841,352 @@
       }
     }
 
-    function updateWarnings(soc, chargeEnabled, dischargeEnabled) {
+    // Rolling snapshot of device state, so a warning can be explained using values
+    // that arrived in an earlier frame rather than only what is in this message.
+    const latestState = {};
+
+    function numField(id) {
+      const el = document.getElementById(id);
+      if (!el || el.value === '') return null;
+      const n = Number(el.value);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    // Work out WHY charge or discharge is inhibited. The device reports the outcome;
+    // this reconstructs the most likely cause from the configured limits so the user
+    // isn't left guessing. Ordered most-specific first.
+    function inhibitReason(kind) {
+      const s = latestState;
+      const soc = s.soc;
+      const temp = s.batttemp;
+      const tempOn = document.getElementById('tempprotection') &&
+                     document.getElementById('tempprotection').checked;
+
+      if (kind === 'charge') {
+        const high = numField('highsoclimit');
+        if (high !== null && high < 100 && soc >= high) return 'SOC has reached the ' + high + '% charge limit';
+        if (tempOn && temp !== undefined && temp !== null) {
+          const hi = numField('chargehightemp'), lo = numField('chargelowtemp');
+          if (hi !== null && temp >= hi) return 'battery at ' + temp + '°C, above the ' + hi + '°C charge limit';
+          if (lo !== null && temp <= lo) return 'battery at ' + temp + '°C, below the ' + lo + '°C charge limit';
+        }
+        const ov = numField('overvoltage');
+        if (ov !== null && s.battvoltage !== undefined && (s.battvoltage * 0.01) >= ov) {
+          return 'pack at ' + (s.battvoltage * 0.01).toFixed(1) + 'V, at or above the ' + ov + 'V cutoff';
+        }
+        if (s.chargephase === 'Complete') return 'charge cycle complete';
+        return 'manually disabled or inhibited by the BMS';
+      }
+
+      const low = numField('lowsoclimit');
+      if (low !== null && low > 0 && soc <= low) return 'SOC has reached the ' + low + '% discharge floor';
+      if (tempOn && temp !== undefined && temp !== null) {
+        const hi = numField('dischargehightemp'), lo = numField('dischargelowtemp');
+        if (hi !== null && temp >= hi) return 'battery at ' + temp + '°C, above the ' + hi + '°C discharge limit';
+        if (lo !== null && temp <= lo) return 'battery at ' + temp + '°C, below the ' + lo + '°C discharge limit';
+      }
+      return 'manually disabled or inhibited by the BMS';
+    }
+
+    /* ---------- Absorption progress ---------- */
+    function fmtDuration(s) {
+      s = Math.max(0, Math.round(s));
+      if (s < 60) return s + 's';
+      const m = Math.floor(s / 60), r = s % 60;
+      if (m < 60) return r ? m + 'm ' + r + 's' : m + 'm';
+      const h = Math.floor(m / 60);
+      return (m % 60) ? h + 'h ' + (m % 60) + 'm' : h + 'h';
+    }
+
+    function updateAbsorption() {
+      const panel = document.getElementById('absorbPanel');
+      if (!panel) return;
+
+      const s = latestState;
+      if (s.chargephase !== 'Absorption') { panel.hidden = true; return; }
+      panel.hidden = false;
+
+      const tailHeld = s.tailheld || 0;
+      const tailNeed = s.tailneed || 0;
+      const elapsed  = s.absorbelapsed || 0;
+      const maxAbs   = s.absorbmax || 0;
+      const running  = !!s.tailactive;
+
+      // Tail-current hold
+      const tailBar = document.getElementById('tailBar');
+      const tailPct = tailNeed > 0 ? Math.min(100, (tailHeld / tailNeed) * 100) : 0;
+      tailBar.style.width = tailPct + '%';
+      tailBar.classList.toggle('running', running);
+      document.getElementById('tailVal').textContent =
+        tailNeed > 0 ? fmtDuration(tailHeld) + ' / ' + fmtDuration(tailNeed) : 'off';
+
+      // Max absorption safety timeout
+      const absBar = document.getElementById('absorbBar');
+      const absPct = maxAbs > 0 ? Math.min(100, (elapsed / maxAbs) * 100) : 0;
+      absBar.style.width = absPct + '%';
+      document.getElementById('absorbVal').textContent =
+        maxAbs > 0 ? fmtDuration(elapsed) + ' / ' + fmtDuration(maxAbs) : fmtDuration(elapsed);
+
+      // Headline: whichever race finishes first
+      const tailLeft = tailNeed > 0 && running ? tailNeed - tailHeld : null;
+      const absLeft  = maxAbs > 0 ? maxAbs - elapsed : null;
+      let summary;
+      if (tailLeft !== null && (absLeft === null || tailLeft <= absLeft)) {
+        summary = 'Complete in ' + fmtDuration(tailLeft) + ' if current stays low';
+      } else if (absLeft !== null) {
+        summary = 'Times out in ' + fmtDuration(absLeft);
+      } else {
+        summary = 'Running for ' + fmtDuration(elapsed);
+      }
+      document.getElementById('absorbSummary').textContent = summary;
+
+      // Explain the tail timer, which resets whenever current climbs back up
+      const thresholdA = (s.tailthreshold || 0) / 1000;
+      const note = document.getElementById('absorbNote');
+      if (tailNeed <= 0) {
+        note.textContent = 'Tail current detection is disabled, so absorption will run until the max absorption time is reached.';
+      } else if (running) {
+        note.textContent = 'Charge current is below the ' + thresholdA.toFixed(1) +
+          ' A tail threshold. If it rises above that, this timer resets to zero.';
+      } else {
+        note.textContent = 'Waiting for charge current to fall below the ' + thresholdA.toFixed(1) +
+          ' A tail threshold. The hold timer starts once it does.';
+      }
+    }
+
+    /* ---------- SOC override ----------
+       Must stay in step with enum SOCOverride in CANBUS.h. */
+    const SOC_OVERRIDE_WHY = {
+      1: 'Force charge is active and the SOC trick is enabled, so the inverter is sent one tenth of the real SOC to make it charge harder.',
+      2: 'The Smart Shunt is reporting 100% but full charge voltage has not been reached.',
+      3: '"Never send 100% SOC" is enabled, so 99% is sent to stop the inverter shutting down solar export.'
+    };
+
+    function updateSOCOverride() {
+      const box = document.getElementById('socOverride');
+      const gauge = document.getElementById('batteryGauge');
+      if (!box) return;
+
+      const reason = latestState.socoverride || 0;
+      const reported = latestState.reportedsoc;
+
+      // Only worth showing when what we send actually differs from what we display
+      const differs = reason !== 0 && reported !== undefined && reported !== latestState.soc;
+      box.hidden = !differs;
+      if (gauge) gauge.classList.toggle('overridden', differs);
+
+      if (!differs) return;
+      document.getElementById('reportedSocValue').textContent = reported + '%';
+      document.getElementById('socOverrideWhy').textContent = SOC_OVERRIDE_WHY[reason] || '';
+      if (gauge) {
+        gauge.setAttribute('aria-label',
+          'Battery state of charge ' + latestState.soc + '%, reported to inverter as ' + reported + '%');
+      }
+    }
+
+    function updateWarnings() {
       const warningsDiv = document.getElementById('statusWarnings');
       const warningText = document.getElementById('warningText');
-      let warnings = [];
+      if (!warningsDiv || !warningText) return;
 
-      // Check for low battery
-      if(soc <= 20) {
-        warnings.push('Low battery: ' + soc + '%');
+      const s = latestState;
+      const soc = s.soc;
+      const warnings = [];
+      let critical = false;
+
+      if (soc !== undefined) {
+        if (soc <= 10) { warnings.push(['Critically low battery: ' + soc + '%', '']); critical = true; }
+        else if (soc <= 20) { warnings.push(['Low battery: ' + soc + '%', '']); }
       }
 
-      // Check if charging/discharging is disabled
-      if(!chargeEnabled && soc < 80) {
-        warnings.push('Charging disabled');
+      // No SOC gating here: a disabled charge at 85% is exactly the case the old
+      // `soc < 80` guard hid, and it is the one most worth reporting.
+      if (s.chargeenabled === false) {
+        warnings.push(['Charging disabled', inhibitReason('charge')]);
+      }
+      if (s.dischargeenabled === false) {
+        warnings.push(['Discharge disabled', inhibitReason('discharge')]);
+        critical = critical || (soc !== undefined && soc > 20);
+      }
+      if (s.forcecharge) {
+        warnings.push(['Force charge active', 'the inverter is being told to charge at maximum']);
+      }
+      if (s.victrondata === false) {
+        warnings.push(['No shunt data', 'voltage, current and SOC are not being updated']);
+        critical = true;
       }
 
-      if(!dischargeEnabled && soc > 20) {
-        warnings.push('Discharge disabled');
-      }
+      if (warnings.length === 0) { warningsDiv.hidden = true; return; }
 
-      // Display warnings if any
-      if(warnings.length > 0) {
-        warningText.innerHTML = warnings.join(' • ');
-        warningsDiv.style.display = 'block';
-
-        // Make it error style if SOC is critically low
-        if(soc <= 10) {
-          warningsDiv.className = 'status-warnings error';
-        } else {
-          warningsDiv.className = 'status-warnings';
+      warningText.textContent = '';
+      warnings.forEach(function(w) {
+        const row = document.createElement('div');
+        row.textContent = w[0];
+        if (w[1]) {
+          const why = document.createElement('span');
+          why.className = 'why';
+          why.textContent = ' — ' + w[1];
+          row.appendChild(why);
         }
-      } else {
-        warningsDiv.style.display = 'none';
+        warningText.appendChild(row);
+      });
+      warningsDiv.className = 'status-warnings' + (critical ? ' error' : '');
+      warningsDiv.hidden = false;
+    }
+
+    /* ---------- Cross-field validation ---------- */
+    // Pairs where one value must not cross another. These are safety-relevant:
+    // nothing in the firmware stops you setting a charge target above the
+    // over-voltage cutoff, so flag it at the point of entry.
+    const FIELD_RULES = [
+      { a: 'chargevoltage',     b: 'overvoltage',        cmp: '<',  msg: 'Charge voltage must be below the over-voltage cutoff.' },
+      { a: 'dischargevoltage',  b: 'chargevoltage',      cmp: '<',  msg: 'Discharge voltage must be below the charge voltage.' },
+      { a: 'lowsoclimit',       b: 'highsoclimit',       cmp: '<',  msg: 'Low SOC limit must be below the high SOC limit.' },
+      { a: 'minchargecurr',     b: 'maxchargecurrent',   cmp: '<=', msg: 'Min charge current cannot exceed max charge current.' },
+      { a: 'chargelowtemp',     b: 'chargehightemp',     cmp: '<',  msg: 'Charge low temp must be below charge high temp.' },
+      { a: 'dischargelowtemp',  b: 'dischargehightemp',  cmp: '<',  msg: 'Discharge low temp must be below discharge high temp.' },
+      { a: 'fanofftemp',        b: 'fanfulltemp',        cmp: '<',  msg: 'Fan off temp must be below fan full-speed temp.' }
+    ];
+
+    function validateFields() {
+      document.querySelectorAll('.field-error').forEach(function(e) {
+        e.classList.remove('show'); e.textContent = '';
+      });
+      document.querySelectorAll('input.invalid').forEach(function(e) { e.classList.remove('invalid'); });
+
+      let bad = 0;
+      FIELD_RULES.forEach(function(rule) {
+        const av = numField(rule.a), bv = numField(rule.b);
+        if (av === null || bv === null) return;
+        const ok = rule.cmp === '<' ? av < bv : av <= bv;
+        if (ok) return;
+        bad++;
+        [rule.a, rule.b].forEach(function(id) {
+          const el = document.getElementById(id);
+          if (el) el.classList.add('invalid');
+        });
+        const slot = document.getElementById('err_' + rule.a);
+        if (slot) { slot.textContent = rule.msg; slot.classList.add('show'); }
+      });
+
+      // Syslog only accepts a literal IPv4 address - the firmware never resolves
+      // hostnames, so a name here would silently send nothing at all.
+      const sysEn = document.getElementById('syslogenabled');
+      const sysSrv = document.getElementById('syslogserver');
+      if (sysEn && sysSrv && sysEn.checked) {
+        const v = sysSrv.value.trim();
+        const ok = /^(\d{1,3}\.){3}\d{1,3}$/.test(v) &&
+                   v.split('.').every(function(o) { return Number(o) <= 255; });
+        if (!ok) {
+          bad++;
+          sysSrv.classList.add('invalid');
+          const slot = document.getElementById('err_syslogserver');
+          if (slot) {
+            slot.textContent = v ? 'Must be an IPv4 address such as 192.168.1.10 - hostnames are not resolved.'
+                                 : 'Enter the IP address of your syslog collector, or turn remote logging off.';
+            slot.classList.add('show');
+          }
+        }
       }
+
+      return bad === 0;
+    }
+
+    function initValidation() {
+      const ids = { syslogserver: 1 };
+      FIELD_RULES.forEach(function(r) { ids[r.a] = 1; ids[r.b] = 1; });
+      Object.keys(ids).forEach(function(id) {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', validateFields);
+      });
+      const sysEn = document.getElementById('syslogenabled');
+      if (sysEn) sysEn.addEventListener('change', validateFields);
+    }
+
+    const LOG_RANK = { debug: 0, info: 1, warning: 2, error: 3 };
+    const LOG_CAP = 500;
+
+    function logVisible(level) {
+      const sel = document.getElementById('loglevel');
+      const want = sel ? sel.value : 'all';
+      if (want === 'all') return true;
+      return (LOG_RANK[level] || 0) >= (LOG_RANK[want] || 0);
+    }
+
+    function applyLogFilter() {
+      document.querySelectorAll('#logviewer .log-entry').forEach(function(e) {
+        const lvl = (e.className.match(/log-entry (\w+)/) || [])[1] || 'info';
+        e.classList.toggle('hidden', !logVisible(lvl));
+      });
     }
 
     function addLogEntry(message, level) {
       if(document.getElementById('logpause').checked) return;
-      
+
       const logViewer = document.getElementById('logviewer');
       const entry = document.createElement('div');
       entry.className = 'log-entry ' + level;
-      
+      if (!logVisible(level)) entry.classList.add('hidden');
+
       const timestamp = new Date().toLocaleTimeString('en-GB', { hour12: false });
-      entry.textContent = `[${timestamp}] ${message}`;
-      
+      entry.textContent = '[' + timestamp + '] ' + message;
+
       logViewer.appendChild(entry);
-      
-      // Keep only last 500 entries
-      while(logViewer.children.length > 500) {
+
+      // Ring-buffer the view. The cap is deliberate, so say so rather than
+      // silently dropping the oldest lines.
+      let dropped = 0;
+      while(logViewer.children.length > LOG_CAP) {
         logViewer.removeChild(logViewer.firstChild);
+        dropped++;
       }
-      
-      // Auto-scroll to bottom if enabled
+      if (dropped && !logViewer.dataset.trimmed) {
+        logViewer.dataset.trimmed = '1';
+        console.info('Log view capped at ' + LOG_CAP + ' entries; older lines dropped from the browser only.');
+      }
+
       if(document.getElementById('autoscroll').checked) {
         logViewer.scrollTop = logViewer.scrollHeight;
       }
     }
-    
+
+    function logsAsText() {
+      return Array.from(document.querySelectorAll('#logviewer .log-entry'))
+        .filter(function(e) { return !e.classList.contains('hidden'); })
+        .map(function(e) { return e.textContent; })
+        .join('\n');
+    }
+
+    function copyLogs() {
+      const text = logsAsText();
+      if (!text) { showToast('No log entries to copy', 'error'); return; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text)
+          .then(function() { showToast('Logs copied to clipboard', 'success'); })
+          .catch(function() { showToast('Clipboard blocked - use Download instead', 'error', 3500); });
+      } else {
+        // Non-secure origins (plain http on a LAN IP) have no Clipboard API
+        showToast('Clipboard unavailable over http - use Download', 'error', 3500);
+      }
+    }
+
+    function downloadLogs() {
+      const text = logsAsText();
+      if (!text) { showToast('No log entries to download', 'error'); return; }
+      const host = document.getElementById('wifihostname');
+      const blob = new Blob([text], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = (host && host.value ? host.value : 'diybms') + '-log.txt';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      showToast('Log downloaded', 'success');
+    }
+
     function clearLogs() {
-      document.getElementById('logviewer').innerHTML = '';
+      const v = document.getElementById('logviewer');
+      v.textContent = '';
+      delete v.dataset.trimmed;
     }
     
     function GetWifiList() {
@@ -2194,23 +3243,32 @@
 
       deduped.forEach(network => {
         var el = document.createElement("option");
-        el.textContent = network.ssid;
+        // RSSI is already known here - showing it beats making the user guess
+        // which of two similarly-named networks is the reachable one.
+        el.textContent = network.ssid + '   ' + signalBars(network.rssi) + ' ' + network.rssi + ' dBm';
         el.value = network.ssid;
-        el.className = "dropdown-item";
-        
-        // Select this option if it matches the saved SSID
-        if(network.ssid === savedWifiSSID) {
-          el.selected = true;
-          console.log("Selected saved WiFi: " + network.ssid);
-        }
-        
+
+        if(network.ssid === savedWifiSSID) el.selected = true;
         select.appendChild(el);
-        console.log('Adding WiFi Option: ' + network.ssid + ' (RSSI: ' + network.rssi + ')'); 
       });
-      
+
       if(deduped.length === 0) {
-        console.log('No WiFi networks found');
+        var none = document.createElement('option');
+        none.textContent = 'No networks found';
+        none.disabled = true;
+        none.selected = true;
+        select.appendChild(none);
+        showToast('No WiFi networks found', 'error');
+      } else {
+        showToast('Found ' + deduped.length + ' networks', 'success');
       }
+    }
+
+    function signalBars(rssi) {
+      if (rssi >= -55) return '||||';
+      if (rssi >= -67) return '|||.';
+      if (rssi >= -78) return '||..';
+      return '|...';
     }
   </script>
 </body>

@@ -70,6 +70,15 @@ uint8_t _canSendDelay = 10;
 // CC-CV Charge Phase State Machine (enum is public for protocol helpers)
 public:
 enum ChargePhase { PHASE_BULK, PHASE_ABSORPTION, PHASE_COMPLETE };
+
+// Why the SOC sent over CAN differs from the real pack SOC.
+// Kept in sync with the reason strings in the web UI.
+enum SOCOverride {
+  SOC_OVR_NONE = 0,   // reporting the real SOC
+  SOC_OVR_TRICK,      // SOC trick: reporting 1/10 SOC during force charge
+  SOC_OVR_HOLD99,     // at 100% but charge phase not complete - hold 99% to keep charging
+  SOC_OVR_NEVER100    // "Never send 100% SOC" is enabled
+};
 private:
 ChargePhase _chargePhase = PHASE_BULK;
 time_t _absorptionStartTime = 0;
@@ -141,6 +150,12 @@ bool _showTempOnDashboard = false;
 
 bool _never100SOC = false;       // Never send 100% SOC over CAN
 CANProtocol _canProtocol = PROTO_PYLONTECH_13;  // Selected inverter protocol
+
+// What we last actually put on the wire for SOC, and why it differed from the
+// real pack SOC. Recorded so the UI can show that the value is being overridden
+// rather than leaving the user to wonder why the inverter disagrees with the BMS.
+uint8_t _reportedSOC = 0;
+uint8_t _socOverride = SOC_OVR_NONE;
 
 bool SendCANData_Pylontech();
 bool SendCANData_SMA();
@@ -231,6 +246,24 @@ public:
   void SetTailCurrentDuration(uint16_t value) { _tailCurrentDuration = value; }
   uint16_t GetMaxAbsorptionTime() { return _maxAbsorptionTime; }
   void SetMaxAbsorptionTime(uint16_t value) { _maxAbsorptionTime = value; }
+
+  // Absorption progress, for the dashboard. Absorption ends on whichever comes
+  // first: the tail-current hold running to completion, or the max absorption
+  // timeout. Elapsed seconds are computed here rather than from a start timestamp
+  // in the browser, so the display does not depend on the two clocks agreeing.
+  bool TailCurrentHeld() { return _tailCurrentSustained; }
+
+  uint32_t GetAbsorptionElapsed() {
+    if (_chargePhase != PHASE_ABSORPTION || _absorptionStartTime <= 0) return 0;
+    time_t now = time(nullptr);
+    return (now > _absorptionStartTime) ? (uint32_t)(now - _absorptionStartTime) : 0;
+  }
+
+  uint32_t GetTailHeldSeconds() {
+    if (_chargePhase != PHASE_ABSORPTION || !_tailCurrentSustained || _tailCurrentStartTime <= 0) return 0;
+    time_t now = time(nullptr);
+    return (now > _tailCurrentStartTime) ? (uint32_t)(now - _tailCurrentStartTime) : 0;
+  }
   uint8_t GetRechargeSOC() { return _rechargeSOC; }
   void SetRechargeSOC(uint8_t value) { _rechargeSOC = value; }
   uint16_t GetRechargeVoltageOffset() { return _rechargeVoltageOffset; }
@@ -369,6 +402,11 @@ public:
 
   bool Never100SOC() { return _never100SOC; }
   void Never100SOC(bool v) { _never100SOC = v; }
+
+  // SOC as last transmitted to the inverter, and why it was overridden (0 = not overridden)
+  uint8_t GetReportedSOC() { return _reportedSOC; }
+  uint8_t GetSOCOverride() { return _socOverride; }
+  void ClearSOCOverride() { _socOverride = SOC_OVR_NONE; _reportedSOC = _battSOC; }
   CANProtocol GetCANProtocol() { return _canProtocol; }
   void SetCANProtocol(CANProtocol p) { _canProtocol = p; }
   bool InverterPresent() { return _lastInverterSeen > 0 && (millis() - _lastInverterSeen) < INVERTER_TIMEOUT_MS; }

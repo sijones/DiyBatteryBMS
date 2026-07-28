@@ -143,4 +143,16 @@ https://www.amazon.co.uk/Victron-Energy-SmartShunt-Battery-Bluetooth/dp/B0856PHN
 I WILL NOT BE HELD LIABLE FOR ANY DAMAGE THAT YOU DO TO YOU, ONE OF YOUR DEVICES, BURN YOUR HOUSE DOWN, ETC.
 A CERTAIN LEVEL OF KNOWLEDGE IS EXPECTED, LIKE HOW TO WIRE THINGS AND PROGRAM THE SOFTWARE TO YOUR DEVICE.
 
+## Licence
+Copyright (c) 2022-2026 [Nexion Software Solutions Ltd](https://nexion.uk).
+
+Free to use, modify and share for **personal, non-commercial** use. Selling it, or
+shipping it as part of a product or on pre-loaded hardware, needs written permission —
+commercial licensing enquiries via [nexion.uk](https://nexion.uk).
+See [LICENSE](LICENSE) for the full terms.
+
+Third-party components keep their own licences — `src/ONEWIRE.h` (Ralf Lehmann),
+`src/VeDirectFrameHandler.cpp` (Victron Energy BV), and the libraries listed in
+`platformio.ini`.
+
 

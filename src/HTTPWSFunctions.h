@@ -5,6 +5,7 @@
 #include <Update.h>
 #include "config.h"
 #include "embedded_html.h"
+#include "Syslog.h"
 #include "GPIOForbidden.h"
 
 volatile bool otaInProgress = false;
@@ -32,8 +33,23 @@ int lastWifiScanCount = -2;  // -2 = no scan in progress, -1 = scan in progress,
 portMUX_TYPE wifiScanMutex = portMUX_INITIALIZER_UNLOCKED;
 bool wifiScanRequested = false;  // Track if scan was requested to trigger background scan
 
+SyslogSender Syslog;
+
+// Re-read syslog settings from preferences and push them into the sender.
+// Called on boot and whenever any syslog field changes.
+void applySyslogConfig() {
+  Syslog.configure(pref.getString(ccSyslogServer, "").c_str(),
+                   pref.getUInt16(ccSyslogPort, 514),
+                   pref.getBool(ccSyslogEnabled, false),
+                   wifiManager.GetWifiHostName().c_str());
+}
+
 // Function to send log to WebSocket clients
 void sendLogToWS(const char* message, const char* level) {
+  // Every WS_LOG_* macro funnels through here, so syslog picks up all of them
+  // without needing a hook at each of the ~96 call sites.
+  Syslog.log(message, level);
+
   // Only send if WebSocket is initialized and has connected clients
   if(ws.count() > 0 && ws.availableForWriteAll()) {
     String json = "{\"log\":\"";
@@ -175,6 +191,9 @@ String generateDatatoJSON(bool All)
     doc["slowchargesoc2div"] = Inverter.GetSlowChargeDivider(2);
     doc["lcdenabled"] = pref.getBool(ccLcdEnabled,false);
     doc["ntpserver"] = pref.getString(ccNTPServer,"");
+    doc["syslogserver"] = pref.getString(ccSyslogServer,"");
+    doc["syslogport"] = pref.getUInt16(ccSyslogPort, 514);
+    doc["syslogenabled"] = pref.getBool(ccSyslogEnabled, false);
     doc["overvoltage"] = Inverter.GetOverVoltage();
     doc["fanpin"] = pref.getUInt8(ccFanPin,0);
     doc["onewirepin"] = pref.getUInt8(ccOneWirePin,0);
@@ -232,6 +251,22 @@ String generateDatatoJSON(bool All)
   doc["dischargecurrent"] = Inverter.GetDischargeCurrent();
   doc["maxdischargecurrent"] = Inverter.GetMaxDischargeCurrent();
   doc["chargephase"] = Inverter.GetChargePhaseName();
+  // Absorption progress: the two races that can end the phase
+  doc["absorbelapsed"] = Inverter.GetAbsorptionElapsed();
+  doc["absorbmax"] = (uint32_t)Inverter.GetMaxAbsorptionTime() * 60;  // seconds, 0 = no limit
+  doc["tailheld"] = Inverter.GetTailHeldSeconds();
+  doc["tailneed"] = Inverter.GetTailCurrentDuration();
+  doc["tailactive"] = Inverter.TailCurrentHeld();
+  doc["tailthreshold"] = Inverter.GetTailCurrentmA();
+  // SOC as actually transmitted to the inverter. When CAN is disabled nothing is being
+  // sent, so report no override rather than leaving the last value to go stale.
+  if (Inverter.CANBusEnabled()) {
+    doc["reportedsoc"] = Inverter.GetReportedSOC();
+    doc["socoverride"] = Inverter.GetSOCOverride();
+  } else {
+    doc["reportedsoc"] = Inverter.BattSOC();
+    doc["socoverride"] = 0;
+  }
   doc["showtempdashboard"] = Inverter.ShowTempOnDashboard();
   doc["cantotalfails"] = Inverter.GetFailedTotalCount();
   doc["inverterpresent"] = Inverter.InverterPresent();
@@ -655,6 +690,36 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       pref.putString(ccNTPServer,value);
       notifyWSClients();}
 
+      // Syslog settings all re-apply immediately - no reboot needed
+      if (!doc["syslogserver"].isNull()) {
+        String value = doc["syslogserver"];
+        handled = true;
+        pref.putString(ccSyslogServer, value);
+        applySyslogConfig();
+        WS_LOG_I("Syslog server set to %s", value.length() ? value.c_str() : "(none)");
+        notifyWSClients();
+      }
+
+      if (!doc["syslogport"].isNull()) {
+        uint16_t value = (uint16_t) doc["syslogport"];
+        handled = true;
+        pref.putUInt16(ccSyslogPort, value ? value : 514);
+        applySyslogConfig();
+        notifyWSClients();
+      }
+
+      if (!doc["syslogenabled"].isNull()) {
+        bool value = doc["syslogenabled"];
+        handled = true;
+        pref.putBool(ccSyslogEnabled, value);
+        applySyslogConfig();
+        if (value && !Syslog.configured())
+          WS_LOG_W("Syslog enabled but no valid server IP set - nothing will be sent");
+        else
+          WS_LOG_I("Syslog %s", value ? "enabled" : "disabled");
+        notifyWSClients();
+      }
+
       if (!doc["fanpin"].isNull()) {
         uint8_t value = doc["fanpin"];
         if (value == 0) {
@@ -918,10 +983,14 @@ void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEven
   }
 }
 
-// Helper function to send embedded HTML from PROGMEM
+// Helper function to send embedded HTML from PROGMEM.
+// The payload is gzip-compressed at build time by embed_html.py, so it must go out
+// with Content-Encoding: gzip for the browser to inflate it.
 void sendEmbeddedHTML(AsyncWebServerRequest *request) {
-  // Use send() with PROGMEM data (recommended method for ESPAsyncWebServer 3.9.4+)
-  request->send(200, "text/html", (const uint8_t*)EMBEDDED_HTML, EMBEDDED_HTML_LEN);
+  AsyncWebServerResponse *response =
+      request->beginResponse(200, "text/html; charset=utf-8", EMBEDDED_HTML, EMBEDDED_HTML_LEN);
+  response->addHeader("Content-Encoding", "gzip");
+  request->send(response);
 }
 
 void StartWebServices()
@@ -934,15 +1003,8 @@ void StartWebServices()
     sendEmbeddedHTML(request);
   };
   
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    log_i("Serving Embedded HTML Page");
-    request->send(200, "text/html", (const uint8_t*)EMBEDDED_HTML, EMBEDDED_HTML_LEN);
-  });
-
-  server.on("/index.htm", HTTP_GET, [](AsyncWebServerRequest *request){
-  log_i("Serving Embedded HTML Page");
-  request->send(200, "text/html", (const uint8_t*)EMBEDDED_HTML, EMBEDDED_HTML_LEN);
-});
+  server.on("/", HTTP_GET, sendIndex);
+  server.on("/index.htm", HTTP_GET, sendIndex);
 
   // Windows NCSI: serve plain text responses to stabilize connectivity classification
   server.on("/connecttest.txt", HTTP_GET, [](AsyncWebServerRequest *request){

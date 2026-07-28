@@ -84,6 +84,9 @@ const char* const ccVELOOPTIME = "VE_LOOP_TIME";
 const char* const ccCANBusEnabled  = "CANEnabled";
 const char* const ccLcdEnabled = "lcdenabled";
 const char* const ccNTPServer = "NTPServer";
+const char* const ccSyslogServer = "SyslogSrv";
+const char* const ccSyslogPort = "SyslogPort";
+const char* const ccSyslogEnabled = "SyslogEn";
 const char* const PREF_NAME = "smartbms";
 
 

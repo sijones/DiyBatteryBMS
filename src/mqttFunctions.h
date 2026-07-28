@@ -168,7 +168,10 @@ bool sendVE2MQTT() {
 }
 
 // HA Discovery helpers — build JSON with snprintf to avoid String heap churn
-static char _haBuf[512];
+// Sized for the longest discovery payload: scaffolding + name + unique_id + state topic
+// + value template + extra attributes + up to 192 bytes of device JSON. The templated
+// sensors (SOC override reason, absorption remaining) push past 512.
+static char _haBuf[640];
 static char _haTopicBuf[128];
 
 void _haPublish(const char* type, const char* id, const char* payload,
@@ -296,12 +299,43 @@ void publishHADiscovery() {
     ",\"unit_of_measurement\":\"%\",\"icon\":\"mdi:fan\",\"state_class\":\"measurement\"",
     base, node, dataTopic, deviceJson);
 
+  // SOC reported over CAN. Differs from Battery SOC when the firmware is holding 99%,
+  // suppressing 100%, or applying the force-charge trick - see the SOC Override sensor.
+  haSensor("SOC Sent To Inverter", "reportedsoc", "{{ value_json.reportedsoc }}",
+    ",\"unit_of_measurement\":\"%\",\"device_class\":\"battery\",\"state_class\":\"measurement\",\"icon\":\"mdi:battery-sync\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("SOC Override Reason", "socoverridereason",
+    "{% set r = value_json.socoverride | int(0) %}"
+    "{{ ['None','SOC trick','Holding 99%','Never 100%'][r] if 0 <= r <= 3 else 'Unknown' }}",
+    ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:battery-alert-variant\"",
+    base, node, dataTopic, deviceJson);
+
+  // Absorption progress
+  haSensor("Absorption Elapsed", "absorbelapsed", "{{ value_json.absorbelapsed }}",
+    ",\"unit_of_measurement\":\"s\",\"device_class\":\"duration\",\"state_class\":\"measurement\",\"icon\":\"mdi:timer-sand\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Absorption Remaining", "absorbremaining",
+    "{% set m = value_json.absorbmax | int(0) %}{% set e = value_json.absorbelapsed | int(0) %}"
+    "{{ (m - e) if m > 0 and m > e else 0 }}",
+    ",\"unit_of_measurement\":\"s\",\"device_class\":\"duration\",\"state_class\":\"measurement\",\"icon\":\"mdi:timer-outline\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Tail Current Held", "tailheld", "{{ value_json.tailheld }}",
+    ",\"unit_of_measurement\":\"s\",\"device_class\":\"duration\",\"state_class\":\"measurement\",\"icon\":\"mdi:timer-check-outline\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Tail Current Remaining", "tailremaining",
+    "{% set n = value_json.tailneed | int(0) %}{% set h = value_json.tailheld | int(0) %}"
+    "{{ (n - h) if n > 0 and n > h else 0 }}",
+    ",\"unit_of_measurement\":\"s\",\"device_class\":\"duration\",\"state_class\":\"measurement\",\"icon\":\"mdi:timer-outline\"",
+    base, node, dataTopic, deviceJson);
+
   // Binary sensors
   haBinary("Charge Enabled Status", "chargeenabled", "chargeenabled", "", base, node, dataTopic, deviceJson);
   haBinary("Discharge Enabled Status", "dischargeenabled", "dischargeenabled", "", base, node, dataTopic, deviceJson);
   haBinary("Force Charge Status", "forcecharge", "forcecharge", "", base, node, dataTopic, deviceJson);
   haBinary("Smart Charge Status", "smartcharge", "autocharge", "", base, node, dataTopic, deviceJson);
   haBinary("VE.Direct Alarm", "vealarm", "alarmactive", ",\"entity_category\":\"diagnostic\"", base, node, dataTopic, deviceJson);
+  haBinary("SOC Override Active", "socoverride", "socoverride", ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:battery-sync\"", base, node, dataTopic, deviceJson);
+  haBinary("Tail Current Active", "tailactive", "tailactive", ",\"icon\":\"mdi:current-dc\"", base, node, dataTopic, deviceJson);
 
   // Switches
   haSwitch("Charge Enable", "charge", "ChargeEnable", base, node, st, deviceJson);

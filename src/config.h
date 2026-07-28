@@ -5,13 +5,15 @@
 #define CONFIG_H
 
 /*
-   Copyright (c) 2022 Simon Jones
+   Copyright (c) 2022-2026 Nexion Software Solutions Ltd - https://nexion.uk
 
-   Free to use in personal projects and modify for your own use, no permission for 
-   selling or commericalising this code in this project.
-   
+   Free to use in personal projects and modify for your own use, no permission for
+   selling or commercialising this code in this project.
+
    The copyright notice and this permission notice shall be included in all
    copies or substantial portions of the Software.
+
+   See the LICENSE file at the root of this repository for the full terms.
 
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -23,7 +25,7 @@
 */
 #define SYSLOG 1
 
-#define FW_VERSION "2.8.0-BETA4"
+#define FW_VERSION "2.8.0-BETA5"
 
 #if defined(ESPCAN_C3)
   #define FW_BUILD "ESP32-C3 TWAI"
