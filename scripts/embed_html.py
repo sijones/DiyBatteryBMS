@@ -214,6 +214,22 @@ const uint8_t EMBEDDED_HTML[] PROGMEM = {
 # Hook into build process
 try:
     env.AddPreAction("$BUILD_DIR/src/main.cpp.o", generate_embedded_html)
+
+    # The pre-action above only fires when main.cpp.o is actually rebuilt, and SCons
+    # has no idea the HTML template feeds into it. Without these dependencies, editing
+    # only index.htm.template produces a successful build containing the OLD page -
+    # no warning, no [EMBED] line, byte-identical firmware. Declare them so a template
+    # (or generator) change forces regeneration.
+    _project_dir = env['PROJECT_DIR']
+    _deps = [
+        os.path.join(_project_dir, 'data', 'index.htm.template'),
+        os.path.join(_project_dir, 'scripts', 'embed_html.py'),
+    ]
+    for _dep in _deps:
+        if os.path.exists(_dep):
+            env.Depends("$BUILD_DIR/src/main.cpp.o", _dep)
+        else:
+            print("[EMBED] Warning: dependency not found, skipping: %s" % _dep)
 except Exception as e:
     print("[EMBED] Error registering build hook: %s" % str(e))
     import traceback
