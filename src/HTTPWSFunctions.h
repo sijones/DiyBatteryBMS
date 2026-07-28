@@ -82,9 +82,51 @@ void sendLogToWS(const char* message, const char* level) {
 #include "WebLog.h"
 
 
+#include <esp_sntp.h>
+
+/*
+   Clock sync tracking.
+
+   The lwIP SNTP client polls on its own timer - CONFIG_LWIP_SNTP_UPDATE_DELAY,
+   3 hours in this build - so nothing here drives the sync. What we want is to
+   know when one actually lands, rather than printing the time on a timer of our
+   own and calling it a sync (which is what the hourly log line used to do, two
+   times out of three inaccurately).
+
+   The callback runs in the SNTP task context, so it does the least possible
+   work: record millis() and let TaskSetClock do the logging. Recording millis()
+   rather than the wall clock also means "time since last sync" survives the
+   clock stepping, which it does on every sync in SNTP_SYNC_MODE_IMMED.
+*/
+volatile uint32_t g_ntpLastSyncMs = 0;   // 0 = never synced since boot
+
+void ntpSyncCallback(struct timeval *tv) {
+  (void)tv;
+  uint32_t ms = millis();
+  g_ntpLastSyncMs = ms ? ms : 1;         // never leave it at the "never" sentinel
+}
+
+// Seconds since the last successful sync, or -1 if the clock has never been set.
+int32_t ntpSecondsSinceSync() {
+  uint32_t last = g_ntpLastSyncMs;
+  if (last == 0) return -1;
+  return (int32_t)((uint32_t)(millis() - last) / 1000);
+}
+
+// Apply the configured POSIX TZ string to the C library. Called at boot and
+// whenever the setting changes, so localtime_r() - used by the clock display and
+// by syslog timestamps - reports local time including any DST shift.
+void applyTimeZone() {
+  String tz = pref.getString(ccTimeZone, initTimeZone);
+  if (tz.length() == 0) tz = initTimeZone;
+  setenv("TZ", tz.c_str(), 1);
+  tzset();
+}
+
 void TaskSetClock(void * pointer) {
   
   log_d("Entering TaskSetClock");
+  applyTimeZone();
   String Servers = pref.getString(ccNTPServer,"");
     // Return if no servers set.
   if (Servers.length()==0)
@@ -99,42 +141,81 @@ void TaskSetClock(void * pointer) {
      
   bool secondserver = false;
   String ServerArray[2];
-  int CommaLoc = 0;
 
-  CommaLoc = Servers.indexOf(',');
-  if (CommaLoc != -1){
-    ServerArray[0] = Servers.substring(0,CommaLoc);
+  // A single server has no comma to split on. The old code only populated
+  // ServerArray[0] inside the "comma found" branch, so one server meant
+  // configTime() was handed an empty string and the clock never synced -
+  // while the log below still printed the configured address, which made it
+  // look like it was working.
+  int CommaLoc = Servers.indexOf(',');
+  if (CommaLoc == -1) {
+    ServerArray[0] = Servers;
     ServerArray[0].trim();
-    log_d("Server 1: %s", ServerArray[0].c_str());
-    if (CommaLoc < Servers.length())
-    {
-      ServerArray[1] = Servers.substring(CommaLoc+1,Servers.length());
-      ServerArray[1].trim();
-      log_d("Server 2: %s", ServerArray[1].c_str());
-      secondserver = true;
-    }
+  } else {
+    ServerArray[0] = Servers.substring(0, CommaLoc);
+    ServerArray[0].trim();
+    ServerArray[1] = Servers.substring(CommaLoc + 1);
+    ServerArray[1].trim();
+    secondserver = (ServerArray[1].length() > 0);
   }
-  log_d("Setting Clock");
-  WS_LOG_I("Setting NTP Clock from server(s): %s", Servers.c_str());
-  if (secondserver)
-    configTime(0, 0, ServerArray[0].c_str(), ServerArray[1].c_str());  // UTC
-  else
-    configTime(0, 0, ServerArray[0].c_str());  // UTC
 
+  if (ServerArray[0].length() == 0) {
+    WS_LOG_W("NTP server setting is not a usable address, clock will not be set");
+    vTaskDelete(NULL);
+    return;
+  }
+
+  String tz = pref.getString(ccTimeZone, initTimeZone);
+  if (tz.length() == 0) tz = initTimeZone;
+
+  // Register before starting SNTP so the very first sync is not missed
+  sntp_set_time_sync_notification_cb(ntpSyncCallback);
+
+  if (secondserver) {
+    WS_LOG_I("Setting NTP clock from %s and %s (TZ %s)",
+             ServerArray[0].c_str(), ServerArray[1].c_str(), tz.c_str());
+    configTzTime(tz.c_str(), ServerArray[0].c_str(), ServerArray[1].c_str(), NULL);
+  } else {
+    WS_LOG_I("Setting NTP clock from %s (TZ %s)", ServerArray[0].c_str(), tz.c_str());
+    configTzTime(tz.c_str(), ServerArray[0].c_str(), NULL, NULL);
+  }
+
+  // Wait for the first sync, but give up eventuallyrather than spinning forever
+  // in silence the way this used to when the server was unreachable.
+  const uint32_t NTP_SYNC_TIMEOUT_MS = 120000;
+  uint32_t waitStart = millis();
   time_t now = time(nullptr);
-  while (now < 8 * 3600 * 2) {
+  while (g_ntpLastSyncMs == 0) {
+    if ((uint32_t)(millis() - waitStart) > NTP_SYNC_TIMEOUT_MS) {
+      WS_LOG_E("No NTP response from %s after %us - check the address is reachable and UDP/123 is open",
+               ServerArray[0].c_str(), (unsigned)(NTP_SYNC_TIMEOUT_MS / 1000));
+      vTaskDelete(NULL);
+      return;
+    }
     vTaskDelay(500 / portTICK_PERIOD_MS);
     now = time(nullptr);
   }
-  struct tm timeinfo;
 
+  struct tm timeinfo;
+  char stamp[48];
+  uint32_t lastLogged = 0;
+
+  // One line per real sync, instead of one per hour regardless. The 5s poll is
+  // just picking up the flag the callback set; it does not drive anything.
   while (true)
   {
-    gmtime_r(&now, &timeinfo);
-    time(&now);
-    log_d("NTP time %s", asctime(&timeinfo));
-    WS_LOG_I("NTP time updated: %s", asctime(&timeinfo));
-    vTaskDelay(3600000 / portTICK_PERIOD_MS);
+    uint32_t sync = g_ntpLastSyncMs;
+    if (sync != lastLogged) {
+      lastLogged = sync;
+      time(&now);
+      localtime_r(&now, &timeinfo);
+      // strftime, not asctime: asctime appends a trailing newline, which
+      // sendLogToWS escapes and turns into a mangled log line. %Z gives GMT/BST.
+      strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S %Z", &timeinfo);
+      const char* srv = esp_sntp_getservername(0);
+      WS_LOG_I("Clock synced from %s: %s", srv ? srv : "NTP", stamp);
+    }
+    vTaskDelay(5000 / portTICK_PERIOD_MS);
   }
 
 }
@@ -191,6 +272,7 @@ String generateDatatoJSON(bool All)
     doc["slowchargesoc2div"] = Inverter.GetSlowChargeDivider(2);
     doc["lcdenabled"] = pref.getBool(ccLcdEnabled,false);
     doc["ntpserver"] = pref.getString(ccNTPServer,"");
+    doc["timezone"] = pref.getString(ccTimeZone, initTimeZone);
     doc["syslogserver"] = pref.getString(ccSyslogServer,"");
     doc["syslogport"] = pref.getUInt16(ccSyslogPort, 514);
     doc["syslogenabled"] = pref.getBool(ccSyslogEnabled, false);
@@ -273,6 +355,9 @@ String generateDatatoJSON(bool All)
   }
   doc["showtempdashboard"] = Inverter.ShowTempOnDashboard();
   doc["cantotalfails"] = Inverter.GetFailedTotalCount();
+  // -1 = never synced. -2 = no NTP server configured, so nothing will sync.
+  doc["ntpsyncago"] = (pref.getString(ccNTPServer,"").length() == 0)
+                        ? -2 : ntpSecondsSinceSync();
   doc["inverterpresent"] = Inverter.InverterPresent();
   doc["victrondata"] = Lcd.Data.VEData.getValue();
   doc["mqttconnected"] = Lcd.Data.MQTTConnected.getValue();
@@ -693,6 +778,20 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       handled = true;
       pref.putString(ccNTPServer,value);
       notifyWSClients();}
+
+      if (!doc["timezone"].isNull()) {
+        String value = doc["timezone"];
+        value.trim();
+        handled = true;
+        pref.putString(ccTimeZone, value.length() ? value : String(initTimeZone));
+        applyTimeZone();          // takes effect immediately, no reboot
+        time_t nowTz = time(nullptr);
+        struct tm tmTz; char sTz[48];
+        localtime_r(&nowTz, &tmTz);
+        strftime(sTz, sizeof(sTz), "%Y-%m-%d %H:%M:%S %Z", &tmTz);
+        WS_LOG_I("Timezone set, local time is now %s", sTz);
+        notifyWSClients();
+      }
 
       // Syslog settings all re-apply immediately - no reboot needed
       if (!doc["syslogserver"].isNull()) {

@@ -142,6 +142,7 @@ void setup()
     pref.putUInt8("VE_MQTT_REC", VE_MQTT_RECONNECT);
     pref.putUInt8(ccVELOOPTIME, VE_LOOP_TIME);
     pref.putString(ccNTPServer,"");
+    pref.putString(ccTimeZone, initTimeZone);
     pref.putString(ccSyslogServer,"");
     pref.putUInt16(ccSyslogPort, 514);
     pref.putBool(ccSyslogEnabled, false);
@@ -263,6 +264,9 @@ void setup()
   Inverter.EnableSOCTrick(pref.getBool(ccSOCTrick, false));
   Inverter.EnableRequestFlags(pref.getBool(ccRequestFlags, false));
   Inverter.Never100SOC(pref.getBool(ccNever100SOC, false));
+  // Apply the timezone before anything timestamps anything - syslog and the
+  // clock display both use localtime_r().
+  applyTimeZone();
   applySyslogConfig();
   Inverter.SetCANProtocol((CANProtocol)pref.getUInt8(ccCANProtocol, PROTO_PYLONTECH_13));
   Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));

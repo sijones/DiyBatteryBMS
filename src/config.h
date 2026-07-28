@@ -23,6 +23,10 @@
    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
    SOFTWARE.
 */
+// POSIX TZ string. Default is Europe/London, which switches to BST on the last
+// Sunday in March and back on the last Sunday in October without needing an update.
+#define initTimeZone "GMT0BST,M3.5.0/1,M10.5.0"
+
 #define SYSLOG 1
 
 #define FW_VERSION "2.8.0-BETA5"

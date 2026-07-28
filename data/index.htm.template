@@ -1587,9 +1587,35 @@
         </div>
         
         <div class="section-title">Network Configuration</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="ntpserver"><span class="tip" data-tip="Time server for clock sync, used for log and syslog timestamps. One address, or two separated by a comma. Leave blank to disable.">NTP Server:</span></label>
+            <input type="textbox" id="ntpserver" placeholder="0.uk.pool.ntp.org" onchange="EnqueueUpdate('ntpserver')" onkeypress="HandleEnter(event, 'ntpserver')">
+          </div>
+          <div class="form-group">
+            <label for="tzpreset"><span class="tip" data-tip="Sets the local time used for log and syslog timestamps. Daylight saving is handled automatically. Pick a region, or choose Custom and enter your own POSIX TZ string.">Timezone:</span></label>
+            <select id="tzpreset" onchange="applyTzPreset()">
+              <option value="GMT0BST,M3.5.0/1,M10.5.0">United Kingdom (GMT/BST)</option>
+              <option value="UTC0">UTC (no daylight saving)</option>
+              <option value="GMT0IST,M3.5.0/1,M10.5.0">Ireland (GMT/IST)</option>
+              <option value="WET0WEST,M3.5.0/1,M10.5.0">Portugal (WET/WEST)</option>
+              <option value="CET-1CEST,M3.5.0,M10.5.0/3">Central Europe (CET/CEST)</option>
+              <option value="EET-2EEST,M3.5.0/3,M10.5.0/4">Eastern Europe (EET/EEST)</option>
+              <option value="EST5EDT,M3.2.0,M11.1.0">US Eastern</option>
+              <option value="CST6CDT,M3.2.0,M11.1.0">US Central</option>
+              <option value="MST7MDT,M3.2.0,M11.1.0">US Mountain</option>
+              <option value="PST8PDT,M3.2.0,M11.1.0">US Pacific</option>
+              <option value="AEST-10AEDT,M10.1.0,M4.1.0/3">Australia (Sydney)</option>
+              <option value="NZST-12NZDT,M9.5.0,M4.1.0/3">New Zealand</option>
+              <option value="SAST-2">South Africa</option>
+              <option value="__custom__">Custom…</option>
+            </select>
+          </div>
+        </div>
         <div class="form-group">
-          <label for="ntpserver"><span class="tip" data-tip="Time server for clock sync. Used for log timestamps. Leave blank to use default.">NTP Server:</span></label>
-          <input type="textbox" id="ntpserver" onchange="EnqueueUpdate('ntpserver')" onkeypress="HandleEnter(event, 'ntpserver')">
+          <label for="timezone"><span class="tip" data-tip="The POSIX TZ string actually stored on the device. Set automatically by the dropdown above, or type your own.">TZ String:</span></label>
+          <input type="textbox" id="timezone" onchange="EnqueueUpdate('timezone'); syncTzPreset();" onkeypress="HandleEnter(event, 'timezone')">
+          <div class="field-error" id="err_timezone"></div>
         </div>
 
         <div class="section-title">Remote Logging (Syslog)</div>
@@ -1789,6 +1815,10 @@
             <div class="stat-label">CAN Failures</div>
             <div class="stat-value sm" id="canFailInfo">0</div>
           </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Clock Sync</div>
+            <div class="stat-value sm" id="ntpSyncInfo">--</div>
+          </div>
         </div>
       </section>
     </main>
@@ -1929,6 +1959,32 @@
       let saved = 'auto';
       try { saved = localStorage.getItem('bmsTheme') || 'auto'; } catch (e) {}
       applyTheme(saved);
+    }
+
+    /* ---------- Timezone ----------
+       The dropdown is a convenience over the TZ string; the string is what the
+       device actually stores, so it stays visible and editable for anything the
+       presets don't cover. */
+    function applyTzPreset() {
+      const sel = document.getElementById('tzpreset');
+      const tz = document.getElementById('timezone');
+      if (!sel || !tz) return;
+      if (sel.value === '__custom__') { tz.focus(); return; }
+      tz.value = sel.value;
+      SendQueuedUpdate('timezone');
+      validateFields();
+    }
+
+    // Point the dropdown at whichever preset matches the stored string, else Custom
+    function syncTzPreset() {
+      const sel = document.getElementById('tzpreset');
+      const tz = document.getElementById('timezone');
+      if (!sel || !tz) return;
+      const match = Array.from(sel.options).some(function(o) {
+        if (o.value === tz.value) { sel.value = o.value; return true; }
+        return false;
+      });
+      if (!match) sel.value = '__custom__';
     }
 
     /* ---------- Tooltips ---------- */
@@ -2223,7 +2279,7 @@
        'tailduration','maxabsorptiontime','rechargesoc',
        'chargehightemp','chargelowtemp','dischargehightemp','dischargelowtemp',
        'mqttbatttopic','mqttinvtopic','fanofftemp','fanfulltemp',
-       'ntpserver','syslogserver','syslogport',
+       'ntpserver','timezone','syslogserver','syslogport',
        'tailcurrent','rechargevoltageoffset'].forEach(function(f) {
         if(obj[f] !== undefined) { SetFieldValue(f, obj[f]); configDirty = true; }
       });
@@ -2236,6 +2292,7 @@
       if(obj.fantempsrc !== undefined) { document.getElementById('fantempsrc').value=obj.fantempsrc; AckUpdate('fantempsrc'); toggleMqttTempTopics(); }
       if(obj.lcdenabled !== undefined) { document.getElementById('lcdenabled').checked=obj.lcdenabled; AckUpdate('lcdenabled'); }
       if(obj.syslogenabled !== undefined) { document.getElementById('syslogenabled').checked=obj.syslogenabled; AckUpdate('syslogenabled'); validateFields(); }
+      if(obj.timezone !== undefined) syncTzPreset();
       {{FAN_PIN_HANDLER}}
 
       var devFields = {modelstring:'devModel',fwversion:'devFW',serialnumber:'devSerial',pidstring:'devPID'};
@@ -2243,6 +2300,21 @@
       if(obj.hasOwnProperty('freeheap') && obj.hasOwnProperty('totalheap')) {
         var e=document.getElementById('heapInfo');
         if(e) e.textContent=(obj.freeheap/1024).toFixed(0) + 'K / ' + (obj.totalheap/1024).toFixed(0) + 'K';
+      }
+      if(obj.hasOwnProperty('ntpsyncago')) {
+        var e=document.getElementById('ntpSyncInfo');
+        if(e) {
+          var a = obj.ntpsyncago;
+          // -2 = no NTP server set, -1 = configured but never synced yet
+          if (a === -2)      { e.textContent = 'Disabled'; e.className = 'stat-value sm v-dim'; }
+          else if (a === -1) { e.textContent = 'Never';    e.className = 'stat-value sm v-warn'; }
+          else {
+            e.textContent = fmtDuration(a) + ' ago';
+            // The SNTP client re-polls every 3 hours; well past that means it has
+            // stopped getting answers even though the clock was set once.
+            e.className = 'stat-value sm ' + (a > 14400 ? 'v-warn' : 'v-ok');
+          }
+        }
       }
       if(obj.hasOwnProperty('cantotalfails')) {
         var e=document.getElementById('canFailInfo');
@@ -2358,7 +2430,7 @@
                 'velooptime','mqttport','syslogport'],
       // Exported in display units (V/A/Ah); import re-scales on send
       converted: UNIT_CONVERT_FIELDS,
-      strings: ['ntpserver','syslogserver','mqttserverip','mqttclientid','mqtttopic','mqttuser',
+      strings: ['ntpserver','timezone','syslogserver','mqttserverip','mqttclientid','mqtttopic','mqttuser',
                 'mqttpass','mqttbatttopic','mqttinvtopic','wifihostname'],
       selects: ['canprotocol','batttempsrc','fantempsrc'],
       pins: ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin',
@@ -3125,6 +3197,18 @@
         advise('rechargevoltageoffset', 'Below 0.10 V leaves too little margin against the phase-change threshold. The firmware will clamp it to 0.06 V.');
       }
 
+      // A malformed POSIX TZ string doesn't error - the C library just falls back
+      // to UTC - so catch the common mistake of entering an IANA zone name.
+      const tzEl = document.getElementById('timezone');
+      if (tzEl) {
+        const v = tzEl.value.trim();
+        if (v.indexOf('/') >= 0 && !/,M\d/.test(v)) {
+          advise('timezone', 'This looks like an IANA name (Europe/London). The device needs a POSIX TZ string - pick your region from the dropdown instead.');
+        } else if (v.length === 0) {
+          advise('timezone', 'Empty - the device will fall back to ' + 'GMT0BST,M3.5.0/1,M10.5.0' + '.');
+        }
+      }
+
       // Syslog only accepts a literal IPv4 address - the firmware never resolves
       // hostnames, so a name here would silently send nothing at all.
       const sysEn = document.getElementById('syslogenabled');
@@ -3149,7 +3233,7 @@
     }
 
     function initValidation() {
-      const ids = { syslogserver: 1, rechargesoc: 1, rechargevoltageoffset: 1 };
+      const ids = { syslogserver: 1, rechargesoc: 1, rechargevoltageoffset: 1, timezone: 1 };
       FIELD_RULES.forEach(function(r) { ids[r.a] = 1; ids[r.b] = 1; });
       Object.keys(ids).forEach(function(id) {
         const el = document.getElementById(id);

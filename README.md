@@ -42,7 +42,7 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 - Supports single MQTT server
 - OTA (Over The Air Update)<br> use your browser and go to http://IPADDRESS/update and upload the lastest binary
 - LCD Screen Support (LCD 20x4 via I2C)
-- Configurable NTP Server - used for log timestamps
+- Configurable NTP Server with timezone support - used for log and syslog timestamps
 - Voltage Limited Charging, automatically reducing charge current to keep the voltage stable
 - SOC Reset, if the Smart Shunt is at 100% but battery voltage is under charged voltage sends 99% until met
 - SOC recharge, hold off recharging until under the SOC restart limit.
@@ -75,6 +75,17 @@ The dashboard now shows what the firmware is actually doing rather than leaving 
 - Enter the collector's IP address - hostnames are deliberately not resolved, so logging can never block on DNS
 - The Logs tab also gained level filtering, plus Copy and Download buttons for reporting problems
 
+### New in 2.8.0-BETA5 — Clock and Timezone
+- **Timezone support.** Log and syslog timestamps are now in your local time rather than UTC.
+  Pick a region from the dropdown under Settings and daylight saving is handled automatically -
+  the UK preset switches to BST and back on its own with no firmware update. The underlying
+  POSIX TZ string stays visible and editable if your zone is not listed. Applies immediately,
+  no reboot.
+- **NTP now works with a single server.** Previously only a comma-separated pair worked; one
+  address silently never synced. See the upgrade notes below.
+- **Clock Sync status** on the Firmware tab shows how long ago the clock last synced, and warns
+  if syncing has stopped. The device re-syncs automatically every 3 hours.
+
 ### Home Assistant Integration
 The device now supports **MQTT Discovery** which automatically creates all entities when connected:
 - **Sensors**: Battery SOC (%), Voltage (V), Current (A), Power (W), Temperature, Charge/Discharge Current Limits, Charge Phase, Time To Go, Fan PWM, Free Heap
@@ -96,6 +107,8 @@ A few things changed behaviour in 2.8.0-BETA5, so worth knowing before you flash
 - **Settings are now entered in V, A and Ah.** Your stored values are untouched and are converted for display, so a charge voltage that read 55200 now reads 55.2. Battery Capacity was previously labelled mA, which was wrong - it is amp hours.
 - **Battery Power now reports the correct sign over MQTT.** Discharge was being published as a positive number. If you built Home Assistant automations or energy dashboards that worked around this, they will need adjusting.
 - **Time To Go now shows blank while charging** instead of a bogus "1 minute". Same root cause as above.
+- **If your NTP server never worked, it will now.** A single server address was being passed to the clock as an empty string, so it silently never synced - only two comma-separated servers ever worked. The log claimed success regardless, which is why it looked fine. If you gave up on NTP previously, it is worth setting again.
+- **Log and syslog timestamps are now local time, not UTC.** Set your timezone under Settings. Existing devices default to Europe/London. If you have log processing that assumed UTC, it will need adjusting.
 - **Settings backups from before this version still import correctly** - the file records its own version and older files are converted on the way in.
 
 ## Features to come:
