@@ -407,6 +407,8 @@ String generateDatatoJSON(bool All)
     doc["schedmqttcount"] = Schedule.mqttCount();
     doc["scheduicount"] = Schedule.uiCount();
     doc["schednext"] = (uint32_t)Schedule.nextMqttStart(schedNow);
+    doc["schednextin"] = clockOk ? Schedule.secondsUntilNext(schedNow) : -1;
+    doc["schedendsin"] = clockOk ? Schedule.secondsUntilEnd(schedNow) : -1;
   }
 #endif
   // -1 = never synced. -2 = no NTP server configured, so nothing will sync.

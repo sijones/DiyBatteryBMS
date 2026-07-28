@@ -231,6 +231,61 @@ public:
 
   uint8_t uiCount() const { return _uiCount; }
 
+  /*
+     Seconds until the next window starts, or -1 if nothing is coming up.
+     Repeating windows are worked out with plain integer arithmetic on
+     (day-of-week, minute-of-day) rather than building candidate epochs, so this
+     stays cheap enough to call on every status update. That ignores DST
+     transitions, which can make the answer an hour out twice a year - fine for
+     a "next in" readout, and not used for anything that acts on it.
+  */
+  int32_t secondsUntilNext(time_t nowEpoch) const {
+    if (nowEpoch <= 0) return -1;
+    struct tm lt;
+    localtime_r(&nowEpoch, &lt);
+    const int32_t nowMin = lt.tm_hour * 60 + lt.tm_min;
+    const int today = lt.tm_wday;               // 0 = Sunday
+    int32_t bestMin = -1;
+
+    for (int i = 0; i < _uiCount; i++) {
+      const SchedWindow &w = _ui[i];
+      for (int d = 0; d < 7; d++) {
+        if (!(w.days & (1 << d))) continue;
+        int32_t delta = ((d - today + 7) % 7) * 1440 + (int32_t)w.startMin - nowMin;
+        if (delta <= 0) delta += 7 * 1440;       // already gone this week
+        if (bestMin < 0 || delta < bestMin) bestMin = delta;
+      }
+    }
+
+    int32_t best = (bestMin < 0) ? -1 : bestMin * 60;
+
+    for (int i = 0; i < _mqttCount; i++) {
+      if (_mqtt[i].from <= nowEpoch) continue;
+      int32_t secs = (int32_t)(_mqtt[i].from - nowEpoch);
+      if (best < 0 || secs < best) best = secs;
+    }
+    return best;
+  }
+
+  // Seconds until the active window ends, or -1 if none is active
+  int32_t secondsUntilEnd(time_t nowEpoch) const {
+    if (nowEpoch <= 0) return -1;
+    for (int i = 0; i < _mqttCount; i++)
+      if (nowEpoch >= _mqtt[i].from && nowEpoch < _mqtt[i].to)
+        return (int32_t)(_mqtt[i].to - nowEpoch);
+
+    struct tm lt;
+    localtime_r(&nowEpoch, &lt);
+    const int32_t nowMin = lt.tm_hour * 60 + lt.tm_min;
+    const uint8_t dayBit = (uint8_t)(1 << lt.tm_wday);
+    const SchedWindow* w = findRepeating((uint16_t)nowMin, dayBit);
+    if (!w) return -1;
+    int32_t endMin = (int32_t)w->endMin;
+    if (w->endMin <= w->startMin && nowMin >= (int32_t)w->startMin) endMin += 1440;  // wraps midnight
+    int32_t left = endMin - nowMin;
+    return left > 0 ? left * 60 : -1;
+  }
+
   // Epoch of the next MQTT window start after now, or 0 if none
   time_t nextMqttStart(time_t nowEpoch) const {
     time_t best = 0;

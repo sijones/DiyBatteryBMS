@@ -785,6 +785,7 @@
     .sched-noclock a { color: var(--accent); }
     .sched-noclock .warning-icon { color: var(--warn); }
 
+    .sched-next { display: block; margin-top: 3px; font-size: 11.5px; color: var(--text-faint); }
     .sched-help { font-size: 12px; color: var(--text-faint); margin-bottom: 12px; line-height: 1.5; }
     .sched-topic { font-family: var(--mono); color: var(--text-dim); }
 
@@ -1611,7 +1612,10 @@
 
         <div class="sched-status" id="schedStatus">
           <span class="sched-dot" id="schedDot"></span>
-          <span id="schedStatusText">No schedule active</span>
+          <span>
+            <span id="schedStatusText">No schedule active</span>
+            <span class="sched-next" id="schedNextText"></span>
+          </span>
         </div>
 
         <div class="section-title">Repeating Windows</div>
@@ -2210,8 +2214,34 @@
         }
         out.push(w);
       }
+      // Wait for the device to echo the stored schedule rather than claiming
+      // success on send - the old toast timed out whether it saved or not.
+      schedSavePending = out.length;
       websocket.send(JSON.stringify({ schedule: out }));
-      showToast(out.length ? 'Saving ' + out.length + ' window(s)...' : 'Clearing schedule...', 'pending');
+      showToast(out.length ? 'Saving ' + out.length + ' window(s)...' : 'Clearing schedule...', 'pending', 6000);
+      if (schedSaveTimer) clearTimeout(schedSaveTimer);
+      schedSaveTimer = setTimeout(function() {
+        if (schedSavePending !== null) {
+          schedSavePending = null;
+          showToast('No confirmation from the device - schedule may not be saved', 'error', 5000);
+        }
+      }, 6000);
+    }
+
+    let schedSavePending = null;
+    let schedSaveTimer = null;
+
+    // Called when the device echoes back what it actually stored
+    function confirmScheduleSaved(list) {
+      if (schedSavePending === null) return;
+      const n = list ? list.length : 0;
+      if (schedSaveTimer) { clearTimeout(schedSaveTimer); schedSaveTimer = null; }
+      if (n !== schedSavePending) {
+        showToast('Device stored ' + n + ' of ' + schedSavePending + ' window(s)', 'error', 5000);
+      } else {
+        showToast(n ? 'Schedule saved - ' + n + ' window(s)' : 'Schedule cleared', 'success', 3000);
+      }
+      schedSavePending = null;
     }
 
     function renderSchedStatus() {
@@ -2241,6 +2271,17 @@
       } else {
         txt.textContent = 'No schedule active - charge on, discharge on, force off';
       }
+
+      // Say when something will actually happen, so a saved schedule is visibly
+      // going to do something rather than just sitting there.
+      const nxt = document.getElementById('schedNextText');
+      if (!nxt) return;
+      const ends = s.schedendsin;
+      const next = s.schednextin;
+      if (active && ends > 0)      nxt.textContent = 'Ends in ' + fmtDuration(ends);
+      else if (next > 0)           nxt.textContent = 'Next window starts in ' + fmtDuration(next);
+      else if (s.scheduicount || s.schedmqttcount) nxt.textContent = 'Nothing else due';
+      else                         nxt.textContent = 'No windows set';
     }
 
     // The device applies the configured timezone before sending epochs, so this
@@ -2563,7 +2604,8 @@
         ['forcecharge','battvoltage','battcurrent','reportedsoc','socoverride',
          'absorbelapsed','absorbmax','tailheld','tailneed','tailactive','tailthreshold',
          'tailvoltok','tailvoltmin',
-         'schedactive','schedsource','schedmqttcount','scheduicount','schednext','schedclock'
+         'schedactive','schedsource','schedmqttcount','scheduicount','schednext','schedclock',
+         'schednextin','schedendsin'
         ].forEach(function(k) {
           if (obj.hasOwnProperty(k)) latestState[k] = obj[k];
         });
@@ -2617,7 +2659,7 @@
       if(obj.lcdenabled !== undefined) { document.getElementById('lcdenabled').checked=obj.lcdenabled; AckUpdate('lcdenabled'); }
       if(obj.syslogenabled !== undefined) { document.getElementById('syslogenabled').checked=obj.syslogenabled; AckUpdate('syslogenabled'); validateFields(); }
       if(obj.timezone !== undefined) syncTzPreset();
-      if(obj.schedui !== undefined) renderSchedule(obj.schedui);
+      if(obj.schedui !== undefined) { renderSchedule(obj.schedui); confirmScheduleSaved(obj.schedui); }
       if(obj.schedmqtt !== undefined) renderMqttWindows(obj.schedmqtt);
       if(obj.mqtttopic !== undefined) {
         var st=document.getElementById('schedTopic');
