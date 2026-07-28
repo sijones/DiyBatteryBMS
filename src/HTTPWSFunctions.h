@@ -990,6 +990,11 @@ void sendEmbeddedHTML(AsyncWebServerRequest *request) {
   AsyncWebServerResponse *response =
       request->beginResponse(200, "text/html; charset=utf-8", EMBEDDED_HTML, EMBEDDED_HTML_LEN);
   response->addHeader("Content-Encoding", "gzip");
+  // The page changes with every firmware build and carries no ETag, so without
+  // this a browser can serve a cached copy after an update - including the
+  // location.reload() the OTA flow performs, which would look like a failed
+  // update. It is 18KB over LAN, so there is nothing worth caching.
+  response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   request->send(response);
 }
 

@@ -61,9 +61,9 @@ void VEDataProcess()
       log_i("Battery Power Update: %sW", parsedValue);
       if (dataValid) {
         taskENTER_CRITICAL(&(Inverter.CANMutex));
-        int32_t power = parsedNum;
-        if (isNeg) power = -power;
-        Inverter.BattPower(power);
+        // parsedValue keeps the leading '-', so atol() has already applied the
+        // sign - negating again here would flip discharge power positive.
+        Inverter.BattPower((int32_t)parsedNum);
         taskEXIT_CRITICAL(&(Inverter.CANMutex));
       }
     }
@@ -72,10 +72,10 @@ void VEDataProcess()
     {
       log_i("Time To Go Update: %s minutes", parsedValue);
       if (dataValid) {
-        int32_t ttg = parsedNum;
-        if (isNeg) ttg = -ttg;
+        // Victron sends TTG -1 when not discharging. atol() has already applied
+        // the sign; negating again turned that -1 into a bogus "1 minute to go".
         taskENTER_CRITICAL(&(Inverter.CANMutex));
-        Inverter.TimeToGo(ttg);
+        Inverter.TimeToGo((int32_t)parsedNum);
         taskEXIT_CRITICAL(&(Inverter.CANMutex));
       }
     }
