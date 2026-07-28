@@ -81,11 +81,16 @@ enum SOCOverride {
 };
 private:
 ChargePhase _chargePhase = PHASE_BULK;
-time_t _absorptionStartTime = 0;
-time_t _tailCurrentStartTime = 0;
+// Charge-phase timers use millis(), NOT time(). The wall clock jumps ~55 years
+// forward the moment NTP syncs, which made every elapsed comparison overflow its
+// limit and slammed an in-progress absorption straight to COMPLETE. millis() is
+// monotonic; unsigned subtraction stays correct across its 49.7-day wrap, and the
+// longest interval here is the 24h max absorption time.
+uint32_t _absorptionStartTime = 0;
+uint32_t _tailCurrentStartTime = 0;
 bool _tailCurrentSustained = false;
 uint32_t _chargeAdjust = 0;
-time_t _lastAdjustTime = 0;
+uint32_t _lastAdjustTime = 0;
 bool _socOverrideLogged = false;
 
 enum Charging {
@@ -253,16 +258,28 @@ public:
   // in the browser, so the display does not depend on the two clocks agreeing.
   bool TailCurrentHeld() { return _tailCurrentSustained; }
 
+  // Tail current only counts while the pack is still being held near the charge
+  // target. A low current at a sagging voltage means the charger has backed off,
+  // not that the battery is full - so both conditions must hold.
+  // The state machine and the web UI both call these, so the threshold has a
+  // single definition and the UI cannot misreport which condition is blocking.
+  uint16_t TailVoltageMinCentiV() {
+    uint16_t cv = (uint16_t)(_chargeVoltage * 0.1);
+    return (cv > 10) ? (uint16_t)(cv - 10) : 0;
+  }
+  bool TailVoltageOK() {
+    uint16_t cv = (uint16_t)(_chargeVoltage * 0.1);
+    return cv > 10 && _battVoltage >= (uint16_t)(cv - 10);
+  }
+
   uint32_t GetAbsorptionElapsed() {
-    if (_chargePhase != PHASE_ABSORPTION || _absorptionStartTime <= 0) return 0;
-    time_t now = time(nullptr);
-    return (now > _absorptionStartTime) ? (uint32_t)(now - _absorptionStartTime) : 0;
+    if (_chargePhase != PHASE_ABSORPTION) return 0;
+    return (uint32_t)(millis() - _absorptionStartTime) / 1000;
   }
 
   uint32_t GetTailHeldSeconds() {
-    if (_chargePhase != PHASE_ABSORPTION || !_tailCurrentSustained || _tailCurrentStartTime <= 0) return 0;
-    time_t now = time(nullptr);
-    return (now > _tailCurrentStartTime) ? (uint32_t)(now - _tailCurrentStartTime) : 0;
+    if (_chargePhase != PHASE_ABSORPTION || !_tailCurrentSustained) return 0;
+    return (uint32_t)(millis() - _tailCurrentStartTime) / 1000;
   }
   uint8_t GetRechargeSOC() { return _rechargeSOC; }
   void SetRechargeSOC(uint8_t value) { _rechargeSOC = value; }

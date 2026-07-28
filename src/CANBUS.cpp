@@ -343,7 +343,8 @@ bool CANBUS::SendAllUpdates()
   if (!_canbusEnabled) return false;
   if (Initialised() && Configured())
     {
-    time_t t = time(nullptr);
+    // Monotonic. Do NOT use time() here - see the timer note in CANBUS.h.
+    uint32_t t = millis();
 
     // Unit conversions: mV -> centivolts, mA -> deciamps
     uint16_t chargeVCentiV = (uint16_t)(_chargeVoltage * 0.1);
@@ -352,6 +353,13 @@ bool CANBUS::SendAllUpdates()
     int32_t tailDA = (int32_t)(_tailCurrentmA / 100);
     if (tailDA < 1) tailDA = 1;
     uint16_t rechargeOffCentiV = _rechargeVoltageOffset / 10;
+
+    // BULK enters ABSORPTION at (target - 5 centivolts). If the recharge offset is
+    // smaller than that, the ABSORPTION->BULK condition overlaps it and the phase
+    // flips every cycle - 1 Hz log spam, constant MQTT churn, and the absorption
+    // and tail timers never accumulate so charging can never complete. Enforce a
+    // minimum so the two thresholds cannot cross, whatever is configured.
+    if (rechargeOffCentiV > 0 && rechargeOffCentiV <= 5) rechargeOffCentiV = 6;
 
     // If SOC=100 but voltage hasn't reached target, use 99 to keep charging
     uint8_t workingSOC = _battSOC;
@@ -401,7 +409,7 @@ bool CANBUS::SendAllUpdates()
     case PHASE_ABSORPTION:
     {
       if (_useAutoCharge && _adjustStep > 0
-          && (t - _lastAdjustTime) >= SMARTINTERVAL) {
+          && (uint32_t)(t - _lastAdjustTime) >= ((uint32_t)SMARTINTERVAL * 1000UL)) {
         _lastAdjustTime = t;
         if (_battVoltage >= chargeVCentiV) {
           if (_chargeAdjust + _adjustStep < baseChargeCurrent &&
@@ -434,13 +442,13 @@ bool CANBUS::SendAllUpdates()
         break;
       }
 
-      if (_battCurrentmA < tailDA
-          && _battVoltage >= (chargeVCentiV - 10)) {
+      // Both conditions share their definition with the UI via TailVoltageOK()
+      if (_battCurrentmA < tailDA && TailVoltageOK()) {
         if (!_tailCurrentSustained) {
           _tailCurrentSustained = true;
           _tailCurrentStartTime = t;
           WS_LOG_D("Tail current detected: I=%d DA (threshold=%d DA), timer started", _battCurrentmA, tailDA);
-        } else if ((t - _tailCurrentStartTime) >= _tailCurrentDuration) {
+        } else if ((uint32_t)(t - _tailCurrentStartTime) >= ((uint32_t)_tailCurrentDuration * 1000UL)) {
           _chargePhase = PHASE_COMPLETE;
           WS_LOG_I("CC-CV: ABSORPTION -> COMPLETE (tail current sustained %ds)", _tailCurrentDuration);
           break;
@@ -453,8 +461,10 @@ bool CANBUS::SendAllUpdates()
         _tailCurrentStartTime = 0;
       }
 
-      if (_maxAbsorptionTime > 0 && _absorptionStartTime > 0
-          && (t - _absorptionStartTime) >= ((time_t)_maxAbsorptionTime * 60)) {
+      // _absorptionStartTime is always set on entry to ABSORPTION and the phase
+      // resets to BULK on boot, so no "is it set" guard is needed with millis().
+      if (_maxAbsorptionTime > 0
+          && (uint32_t)(t - _absorptionStartTime) >= ((uint32_t)_maxAbsorptionTime * 60000UL)) {
         _chargePhase = PHASE_COMPLETE;
         WS_LOG_I("CC-CV: ABSORPTION -> COMPLETE (max absorption time %d min)", _maxAbsorptionTime);
       }
@@ -465,9 +475,13 @@ bool CANBUS::SendAllUpdates()
       _tempChargeEnabled = false;
       SetChargeCurrent(0);
 
-      if (_rechargeSOC > 0 && workingSOC < _rechargeSOC) {
+      // Use the real pack SOC, not workingSOC. In COMPLETE the charge current is
+      // zero so voltage sags below target, which forces workingSOC to 99 - with
+      // rechargeSOC set to 100 that made "99 < 100" true forever and the pack
+      // cycled BULK->ABSORPTION->COMPLETE without ever resting.
+      if (_rechargeSOC > 0 && _battSOC < _rechargeSOC) {
         _chargePhase = PHASE_BULK;
-        WS_LOG_I("CC-CV: COMPLETE -> BULK (SOC %d < recharge %d)", workingSOC, _rechargeSOC);
+        WS_LOG_I("CC-CV: COMPLETE -> BULK (SOC %d < recharge %d)", _battSOC, _rechargeSOC);
       }
       else if (rechargeOffCentiV > 0 && chargeVCentiV > rechargeOffCentiV
                && _battVoltage < (chargeVCentiV - rechargeOffCentiV)) {

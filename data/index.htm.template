@@ -316,6 +316,10 @@
       line-height: 1.35;
     }
     .field-error.show { display: block; }
+    /* Advisory: the value is accepted but the resulting behaviour is probably
+       not what was intended. Amber rather than red so it reads as a caution. */
+    .field-error.warn { color: var(--warn); }
+    input.warn { border-color: var(--warn); }
 
     input[type="checkbox"] {
       width: 17px; height: 17px;
@@ -1417,10 +1421,12 @@
           <div class="form-group">
             <label for="rechargesoc"><span class="tip" data-tip="After charge completes, a new bulk charge cycle starts when SOC drops below this percentage.">Recharge SOC (%):</span></label>
             <input type="number" id="rechargesoc" min="0" max="100" onchange="EnqueueUpdate('rechargesoc')" onkeypress="HandleEnter(event, 'rechargesoc')">
+            <div class="field-error" id="err_rechargesoc"></div>
           </div>
           <div class="form-group">
             <label for="rechargevoltageoffset"><span class="tip" data-tip="Voltage drop from target that triggers a new bulk charge cycle. Also used to detect significant voltage drops during absorption.">Recharge V Offset (V):</span></label>
             <input type="number" id="rechargevoltageoffset" min="0" max="10" step="0.1" onchange="EnqueueUpdate('rechargevoltageoffset')" onkeypress="HandleEnter(event, 'rechargevoltageoffset')">
+            <div class="field-error" id="err_rechargevoltageoffset"></div>
           </div>
         </div>
 
@@ -2025,6 +2031,7 @@
 
     function onMessage(event) {
       const obj = JSON.parse(event.data);
+      let configDirty = false;   // re-validate once settings land, not only on typing
       
       // Handle log messages
       if(obj.hasOwnProperty('log')) {
@@ -2176,7 +2183,8 @@
         }
 
         ['forcecharge','battvoltage','battcurrent','reportedsoc','socoverride',
-         'absorbelapsed','absorbmax','tailheld','tailneed','tailactive','tailthreshold'
+         'absorbelapsed','absorbmax','tailheld','tailneed','tailactive','tailthreshold',
+         'tailvoltok','tailvoltmin'
         ].forEach(function(k) {
           if (obj.hasOwnProperty(k)) latestState[k] = obj[k];
         });
@@ -2217,7 +2225,7 @@
        'mqttbatttopic','mqttinvtopic','fanofftemp','fanfulltemp',
        'ntpserver','syslogserver','syslogport',
        'tailcurrent','rechargevoltageoffset'].forEach(function(f) {
-        if(obj[f] !== undefined) SetFieldValue(f, obj[f]);
+        if(obj[f] !== undefined) { SetFieldValue(f, obj[f]); configDirty = true; }
       });
       {{CAN_FIELD_HANDLERS}}
       if(obj.tempprotection !== undefined) { document.getElementById('tempprotection').checked=obj.tempprotection; AckUpdate('tempprotection'); toggleTempConfig(); }
@@ -2282,6 +2290,10 @@
 
       if(obj.hasOwnProperty('Message')) showToast(obj.Message, 'success', 4000);
       if(obj.hasOwnProperty('ERROR')) showToast(obj.ERROR, 'error', 6000);
+
+      // Surface cross-field problems as soon as the config arrives, so a bad
+      // combination is visible on load rather than only after an edit.
+      if (configDirty) validateFields();
     }
 
     function onLoad() {
@@ -2940,14 +2952,28 @@
       }
       document.getElementById('absorbSummary').textContent = summary;
 
-      // Explain the tail timer, which resets whenever current climbs back up
+      // Explain the tail timer. It needs BOTH a low current and the pack still
+      // held near the charge target, so name whichever one is actually blocking -
+      // reporting only the current sends people hunting the wrong number.
       const thresholdA = (s.tailthreshold || 0) / 1000;
+      const currentA = (s.battcurrent || 0) * 0.1;
+      const voltOK = s.tailvoltok !== false;
+      const voltMin = (s.tailvoltmin || 0) / 100;
+      const voltNow = (s.battvoltage || 0) / 100;
       const note = document.getElementById('absorbNote');
+
       if (tailNeed <= 0) {
         note.textContent = 'Tail current detection is disabled, so absorption will run until the max absorption time is reached.';
       } else if (running) {
         note.textContent = 'Charge current is below the ' + thresholdA.toFixed(1) +
-          ' A tail threshold. If it rises above that, this timer resets to zero.';
+          ' A tail threshold and the pack is at charge voltage. If either stops being true, this timer resets to zero.';
+      } else if (currentA >= thresholdA) {
+        note.textContent = 'Waiting for charge current to fall below the ' + thresholdA.toFixed(1) +
+          ' A tail threshold - currently ' + currentA.toFixed(1) + ' A.';
+      } else if (!voltOK && voltMin > 0) {
+        note.textContent = 'Current is already low enough at ' + currentA.toFixed(1) +
+          ' A, but the pack must also be at ' + voltMin.toFixed(2) + ' V or above for it to count as tail current - currently ' +
+          voltNow.toFixed(2) + ' V. Absorption will end on the timeout instead.';
       } else {
         note.textContent = 'Waiting for charge current to fall below the ' + thresholdA.toFixed(1) +
           ' A tail threshold. The hold timer starts once it does.';
@@ -3050,9 +3076,11 @@
 
     function validateFields() {
       document.querySelectorAll('.field-error').forEach(function(e) {
-        e.classList.remove('show'); e.textContent = '';
+        e.classList.remove('show', 'warn'); e.textContent = '';
       });
-      document.querySelectorAll('input.invalid').forEach(function(e) { e.classList.remove('invalid'); });
+      document.querySelectorAll('input.invalid, input.warn').forEach(function(e) {
+        e.classList.remove('invalid', 'warn');
+      });
 
       let bad = 0;
       FIELD_RULES.forEach(function(rule) {
@@ -3068,6 +3096,34 @@
         const slot = document.getElementById('err_' + rule.a);
         if (slot) { slot.textContent = rule.msg; slot.classList.add('show'); }
       });
+
+      // --- Recharge advisories ---
+      // These are accepted values that produce surprising charge behaviour, so
+      // they warn (amber) rather than invalidate. They do not block saving.
+      const rsoc = numField('rechargesoc');
+      const roff = numField('rechargevoltageoffset');
+
+      function advise(id, msg) {
+        const el = document.getElementById(id);
+        const slot = document.getElementById('err_' + id);
+        if (el) el.classList.add('warn');
+        if (slot) { slot.textContent = msg; slot.classList.add('show', 'warn'); }
+      }
+
+      if (rsoc === 0 && roff === 0) {
+        // Both exit conditions from the Complete phase are disabled, so charging
+        // would never restart until the device is rebooted.
+        advise('rechargesoc', 'With both this and Recharge V Offset at 0, charging will never restart after it completes. Set at least one.');
+        advise('rechargevoltageoffset', 'Set either this or Recharge SOC above 0, or the charge cycle cannot restart.');
+      } else if (rsoc === 100) {
+        // Voltage sags once charging stops, so SOC dips below 100 immediately and
+        // the pack would re-enter Bulk forever instead of resting.
+        advise('rechargesoc', 'At 100 the pack restarts charging as soon as it finishes, and never rests. 90-95 is typical.');
+      }
+
+      if (roff !== null && roff > 0 && roff < 0.1) {
+        advise('rechargevoltageoffset', 'Below 0.10 V leaves too little margin against the phase-change threshold. The firmware will clamp it to 0.06 V.');
+      }
 
       // Syslog only accepts a literal IPv4 address - the firmware never resolves
       // hostnames, so a name here would silently send nothing at all.
@@ -3093,7 +3149,7 @@
     }
 
     function initValidation() {
-      const ids = { syslogserver: 1 };
+      const ids = { syslogserver: 1, rechargesoc: 1, rechargevoltageoffset: 1 };
       FIELD_RULES.forEach(function(r) { ids[r.a] = 1; ids[r.b] = 1; });
       Object.keys(ids).forEach(function(id) {
         const el = document.getElementById(id);

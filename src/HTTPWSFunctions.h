@@ -258,6 +258,10 @@ String generateDatatoJSON(bool All)
   doc["tailneed"] = Inverter.GetTailCurrentDuration();
   doc["tailactive"] = Inverter.TailCurrentHeld();
   doc["tailthreshold"] = Inverter.GetTailCurrentmA();
+  // Which of the two tail conditions is currently satisfied, so the dashboard
+  // can name the actual blocker instead of always blaming the current.
+  doc["tailvoltok"] = Inverter.TailVoltageOK();
+  doc["tailvoltmin"] = Inverter.TailVoltageMinCentiV();
   // SOC as actually transmitted to the inverter. When CAN is disabled nothing is being
   // sent, so report no override rather than leaving the last value to go stale.
   if (Inverter.CANBusEnabled()) {
