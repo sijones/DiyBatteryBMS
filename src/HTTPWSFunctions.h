@@ -297,6 +297,10 @@ String generateDatatoJSON(bool All)
     doc["lcdenabled"] = pref.getBool(ccLcdEnabled,false);
     doc["ntpserver"] = pref.getString(ccNTPServer,"");
     doc["timezone"] = pref.getString(ccTimeZone, initTimeZone);
+#ifndef DISABLE_SCHEDULER
+    Schedule.uiToJson(doc["schedui"].to<JsonArray>());
+    Schedule.mqttToJson(doc["schedmqtt"].to<JsonArray>());
+#endif
     doc["syslogserver"] = pref.getString(ccSyslogServer,"");
     doc["syslogport"] = pref.getUInt16(ccSyslogPort, 514);
     doc["syslogenabled"] = pref.getBool(ccSyslogEnabled, false);
@@ -813,6 +817,16 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       handled = true;
       pref.putString(ccNTPServer,value);
       notifyWSClients();}
+
+#ifndef DISABLE_SCHEDULER
+      if (!doc["schedule"].isNull()) {
+        handled = true;
+        int n = Schedule.setUiFromJson(doc["schedule"].as<JsonArrayConst>());
+        saveUiSchedule();
+        WS_LOG_I("Saved %d repeating schedule window(s)", n);
+        notifyWSClients();
+      }
+#endif
 
       if (!doc["timezone"].isNull()) {
         String value = doc["timezone"];

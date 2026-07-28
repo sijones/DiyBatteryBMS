@@ -759,6 +759,91 @@
       .absorb-track { grid-area: track; margin-bottom: 5px; }
     }
 
+    /* ---------- Schedule editor ---------- */
+    .sched-status {
+      display: flex; align-items: center; gap: 9px;
+      padding: 10px 14px; margin-bottom: 18px;
+      background: var(--panel-2);
+      border: 1px solid var(--line-soft);
+      border-left: 3px solid var(--line);
+      border-radius: var(--r);
+      font-size: 13px;
+    }
+    .sched-status.active { border-left-color: var(--ok); }
+    .sched-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
+    .sched-status.active .sched-dot { background: var(--ok); }
+
+    .sched-help { font-size: 12px; color: var(--text-faint); margin-bottom: 12px; line-height: 1.5; }
+    .sched-topic { font-family: var(--mono); color: var(--text-dim); }
+
+    .sched-table { display: flex; flex-direction: column; gap: 9px; }
+
+    .sched-row {
+      display: grid;
+      /* Fields group left; the slack column keeps Remove pinned right instead of
+         letting the Repeat select swallow the whole row. */
+      grid-template-columns: 92px 92px minmax(130px, 210px) 84px 84px 84px 78px 1fr 34px;
+      gap: 8px;
+      align-items: end;
+      padding: 11px 12px;
+      background: var(--panel-2);
+      border: 1px solid var(--line-soft);
+      border-radius: var(--r);
+    }
+    .sched-row label {
+      font-size: 9.5px; letter-spacing: .07em; text-transform: uppercase;
+      color: var(--text-faint); margin-bottom: 3px;
+    }
+    .sched-row input, .sched-row select { padding: 6px 7px; font-size: 12px; }
+    .sched-row .row-remove {
+      grid-column: -2 / -1;
+      padding: 6px 0; font-size: 15px; line-height: 1;
+      color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--line));
+    }
+    .sched-row .row-remove:hover { background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); }
+
+    .sched-empty {
+      padding: 16px; text-align: center;
+      font-size: 12.5px; color: var(--text-faint);
+      border: 1px dashed var(--line); border-radius: var(--r);
+    }
+
+    .sched-mqtt { display: flex; flex-direction: column; gap: 7px; }
+    .sched-mqtt-row {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 9px 12px;
+      background: var(--panel-2);
+      border: 1px solid var(--line-soft);
+      border-left: 3px solid var(--info);
+      border-radius: var(--r);
+      font-family: var(--mono); font-size: 12px;
+    }
+    .sched-mqtt-row .when { color: var(--text); }
+    .sched-mqtt-row .what { color: var(--text-dim); }
+    .sched-mqtt-row.now { border-left-color: var(--ok); }
+
+    @media (max-width: 860px) {
+      .sched-row {
+        /* Three equal columns so the three action selects each get a usable
+           width - a narrow column sized for the Remove button was clipping
+           "Force" down to a couple of characters. */
+        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-areas:
+          'start  end       remove'
+          'days   days      days'
+          'charge discharge force'
+          'soc    soc       soc';
+      }
+      .sched-row .f-start { grid-area: start; }
+      .sched-row .f-end { grid-area: end; }
+      .sched-row .f-days { grid-area: days; }
+      .sched-row .f-charge { grid-area: charge; }
+      .sched-row .f-discharge { grid-area: discharge; }
+      .sched-row .f-force { grid-area: force; }
+      .sched-row .f-soc { grid-area: soc; }
+      .sched-row .row-remove { grid-area: remove; align-self: end; justify-self: end; width: 40px; height: 32px; }
+    }
+
     /* ---------- Warnings ---------- */
     .status-warnings {
       margin: 0 0 18px;
@@ -1140,6 +1225,7 @@
     <nav class="tabs" role="tablist" aria-label="Sections">
       <button class="tab-button" role="tab" id="tab-home"     aria-selected="true"  aria-controls="home"     onclick="switchTab('home')">Home</button>
       <button class="tab-button" role="tab" id="tab-bms"      aria-selected="false" aria-controls="bms"      onclick="switchTab('bms')">BMS</button>
+      <button class="tab-button" role="tab" id="tab-schedule" aria-selected="false" aria-controls="schedule" onclick="switchTab('schedule')">Schedule</button>
       <button class="tab-button" role="tab" id="tab-settings" aria-selected="false" aria-controls="settings" onclick="switchTab('settings')">Settings</button>
       <button class="tab-button" role="tab" id="tab-wifimqtt" aria-selected="false" aria-controls="wifimqtt" onclick="switchTab('wifimqtt')">WiFi/MQTT</button>
       <button class="tab-button" role="tab" id="tab-logs"     aria-selected="false" aria-controls="logs"     onclick="switchTab('logs')">Logs</button>
@@ -1495,6 +1581,36 @@
           <button class="btn-primary" onclick="saveAll()">Save to EEPROM</button>
           <button onclick="rebootBMS()">Reboot &amp; Apply</button>
         </div>
+      </section>
+
+      <!-- Schedule Tab -->
+      <section id="schedule" class="tab-pane" role="tabpanel" aria-labelledby="tab-schedule">
+
+        <div class="sched-status" id="schedStatus">
+          <span class="sched-dot" id="schedDot"></span>
+          <span id="schedStatusText">No schedule active</span>
+        </div>
+
+        <div class="section-title">Repeating Windows</div>
+        <p class="sched-help">
+          Saved on the device and used whenever no Home Assistant schedule is active.
+          Times are in 5 minute steps and use the timezone set under Settings.
+        </p>
+
+        <div class="sched-table" id="schedRows"></div>
+
+        <div class="button-group">
+          <button onclick="addScheduleRow()">Add Window</button>
+          <button class="btn-primary" onclick="saveSchedule()">Save Schedule</button>
+        </div>
+
+        <div class="section-title">From Home Assistant</div>
+        <p class="sched-help">
+          Pushed over MQTT to <span class="sched-topic" id="schedTopic">&lt;topic&gt;/set/Schedule</span>,
+          held in memory only and never written to flash. These take priority over the
+          repeating windows above, and expire on their own once their end time passes.
+        </p>
+        <div class="sched-mqtt" id="schedMqttList"></div>
       </section>
 
       <!-- Settings Tab -->
@@ -1891,7 +2007,7 @@
 
     window.addEventListener('load', onLoad);
 
-    const TAB_IDS = ['home','bms','settings','wifimqtt','logs','firmware'];
+    const TAB_IDS = ['home','bms','schedule','settings','wifimqtt','logs','firmware'];
 
     function switchTab(tabName, skipHash) {
       if (TAB_IDS.indexOf(tabName) < 0) tabName = 'home';
@@ -1959,6 +2075,178 @@
       let saved = 'auto';
       try { saved = localStorage.getItem('bmsTheme') || 'auto'; } catch (e) {}
       applyTheme(saved);
+    }
+
+    /* ---------- Schedule editor ----------
+       Rows live in the DOM and are only serialised on Save, so a half-typed row
+       never reaches the device. Day masks match the SCHED_* bits in Schedule.h. */
+    const SCHED_DAY_PRESETS = [
+      { label: 'Every day', mask: 127 },
+      { label: 'Weekdays',  mask: 62  },
+      { label: 'Weekends',  mask: 65  },
+      { label: 'Monday',    mask: 2   },
+      { label: 'Tuesday',   mask: 4   },
+      { label: 'Wednesday', mask: 8   },
+      { label: 'Thursday',  mask: 16  },
+      { label: 'Friday',    mask: 32  },
+      { label: 'Saturday',  mask: 64  },
+      { label: 'Sunday',    mask: 1   }
+    ];
+
+    function minsToHHMM(m) {
+      m = Math.max(0, Math.min(1439, m | 0));
+      return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+    }
+
+    function hhmmToMins(v) {
+      const p = (v || '').split(':');
+      if (p.length < 2) return 0;
+      // Clamp to 5 minute steps, matching what the firmware stores
+      return Math.floor((Number(p[0]) * 60 + Number(p[1])) / 5) * 5;
+    }
+
+    // -1 leave alone, 0 off, 1 on - mirrors SchedWindow in Schedule.h
+    function triSelect(cls, value) {
+      let h = '<select class="' + cls + '">';
+      [['-1', 'Leave'], ['1', 'On'], ['0', 'Off']].forEach(function (o) {
+        h += '<option value="' + o[0] + '"' + (String(value) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+      });
+      return h + '</select>';
+    }
+
+    function scheduleRowHtml(w) {
+      const days = SCHED_DAY_PRESETS.map(function (d) {
+        return '<option value="' + d.mask + '"' + (d.mask === w.days ? ' selected' : '') + '>' + d.label + '</option>';
+      }).join('');
+      return '<div class="f-start"><label>Start</label><input type="time" step="300" class="s-start" value="' + minsToHHMM(w.start) + '"></div>'
+        + '<div class="f-end"><label>End</label><input type="time" step="300" class="s-end" value="' + minsToHHMM(w.end) + '"></div>'
+        + '<div class="f-days"><label>Repeat</label><select class="s-days">' + days + '</select></div>'
+        + '<div class="f-charge"><label>Charge</label>' + triSelect('s-charge', w.charge) + '</div>'
+        + '<div class="f-discharge"><label>Discharge</label>' + triSelect('s-discharge', w.discharge) + '</div>'
+        + '<div class="f-force"><label>Force</label>' + triSelect('s-force', w.force) + '</div>'
+        + '<div class="f-soc"><label>Target %</label><input type="number" class="s-soc" min="0" max="100" value="' + (w.targetsoc || '') + '" placeholder="off"></div>'
+        + '<button class="row-remove" title="Remove this window" aria-label="Remove window" onclick="this.parentElement.remove()">&times;</button>';
+    }
+
+    function addScheduleRow(w) {
+      if (!w || w.type === 'click') w = { start: 120, end: 300, days: 127, charge: -1, discharge: -1, force: 1, targetsoc: 0 };
+      const host = document.getElementById('schedRows');
+      const empty = host.querySelector('.sched-empty');
+      if (empty) empty.remove();
+      const row = document.createElement('div');
+      row.className = 'sched-row';
+      row.innerHTML = scheduleRowHtml(w);
+      host.appendChild(row);
+    }
+
+    function renderSchedule(list) {
+      const host = document.getElementById('schedRows');
+      if (!host) return;
+      host.textContent = '';
+      if (!list || list.length === 0) {
+        const e = document.createElement('div');
+        e.className = 'sched-empty';
+        e.textContent = 'No repeating windows yet. Add one, or push a schedule from Home Assistant.';
+        host.appendChild(e);
+        return;
+      }
+      list.forEach(function (w) {
+        addScheduleRow({
+          start: w.start | 0, end: w.end | 0, days: w.days | 0,
+          charge: w.charge === undefined ? -1 : (w.charge ? 1 : 0),
+          discharge: w.discharge === undefined ? -1 : (w.discharge ? 1 : 0),
+          force: w.forcecharge === undefined ? -1 : (w.forcecharge ? 1 : 0),
+          targetsoc: w.targetsoc || 0
+        });
+      });
+    }
+
+    function saveSchedule() {
+      const rows = Array.from(document.querySelectorAll('#schedRows .sched-row'));
+      const out = [];
+      for (const r of rows) {
+        const start = hhmmToMins(r.querySelector('.s-start').value);
+        const end = hhmmToMins(r.querySelector('.s-end').value);
+        if (start === end) {
+          showToast('A window needs different start and end times', 'error', 3500);
+          return;
+        }
+        const w = { start: start, end: end, days: Number(r.querySelector('.s-days').value) };
+        const c = r.querySelector('.s-charge').value;
+        const d = r.querySelector('.s-discharge').value;
+        const f = r.querySelector('.s-force').value;
+        if (c !== '-1') w.charge = (c === '1');
+        if (d !== '-1') w.discharge = (d === '1');
+        if (f !== '-1') w.forcecharge = (f === '1');
+        const soc = Number(r.querySelector('.s-soc').value);
+        if (soc > 0) w.targetsoc = Math.min(100, soc);
+        // A window that changes nothing would silently do nothing at all
+        if (w.charge === undefined && w.discharge === undefined && w.forcecharge === undefined) {
+          showToast('A window with everything set to Leave would do nothing', 'error', 3500);
+          return;
+        }
+        out.push(w);
+      }
+      websocket.send(JSON.stringify({ schedule: out }));
+      showToast(out.length ? 'Saving ' + out.length + ' window(s)...' : 'Clearing schedule...', 'pending');
+    }
+
+    function renderSchedStatus() {
+      const s = latestState;
+      const box = document.getElementById('schedStatus');
+      const txt = document.getElementById('schedStatusText');
+      if (!box || !txt) return;
+      const active = !!s.schedactive;
+      box.classList.toggle('active', active);
+      if (active) {
+        txt.textContent = s.schedsource === 'mqtt'
+          ? 'Window active, pushed from Home Assistant'
+          : 'Window active, from the repeating schedule below';
+      } else if (s.schedmqttcount) {
+        txt.textContent = s.schedmqttcount + ' Home Assistant window(s) queued, none active right now';
+      } else {
+        txt.textContent = 'No schedule active - charge on, discharge on, force off';
+      }
+    }
+
+    // The device applies the configured timezone before sending epochs, so this
+    // only formats - it does not shift anything.
+    function fmtEpoch(e) {
+      if (!e) return '--';
+      return new Date(e * 1000).toLocaleString(undefined,
+        { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function renderMqttWindows(list) {
+      const host = document.getElementById('schedMqttList');
+      if (!host) return;
+      host.textContent = '';
+      if (!list || list.length === 0) {
+        const e = document.createElement('div');
+        e.className = 'sched-empty';
+        e.textContent = 'Nothing pushed from Home Assistant.';
+        host.appendChild(e);
+        return;
+      }
+      const now = Date.now() / 1000;
+      list.forEach(function (w) {
+        const row = document.createElement('div');
+        row.className = 'sched-mqtt-row' + (now >= w.from && now < w.to ? ' now' : '');
+        const when = document.createElement('span');
+        when.className = 'when';
+        when.textContent = fmtEpoch(w.from) + '  to  ' + fmtEpoch(w.to);
+        const what = document.createElement('span');
+        what.className = 'what';
+        const bits = [];
+        if (w.forcecharge !== undefined) bits.push('force ' + (w.forcecharge ? 'on' : 'off'));
+        if (w.charge !== undefined) bits.push('charge ' + (w.charge ? 'on' : 'off'));
+        if (w.discharge !== undefined) bits.push('discharge ' + (w.discharge ? 'on' : 'off'));
+        if (w.targetsoc) bits.push('to ' + w.targetsoc + '%');
+        what.textContent = bits.join(', ');
+        row.appendChild(when);
+        row.appendChild(what);
+        host.appendChild(row);
+      });
     }
 
     /* ---------- Timezone ----------
@@ -2240,10 +2528,12 @@
 
         ['forcecharge','battvoltage','battcurrent','reportedsoc','socoverride',
          'absorbelapsed','absorbmax','tailheld','tailneed','tailactive','tailthreshold',
-         'tailvoltok','tailvoltmin'
+         'tailvoltok','tailvoltmin',
+         'schedactive','schedsource','schedmqttcount','scheduicount','schednext'
         ].forEach(function(k) {
           if (obj.hasOwnProperty(k)) latestState[k] = obj[k];
         });
+        renderSchedStatus();
         updateAbsorption();
         updateSOCOverride();
         updateWarnings();
@@ -2293,6 +2583,12 @@
       if(obj.lcdenabled !== undefined) { document.getElementById('lcdenabled').checked=obj.lcdenabled; AckUpdate('lcdenabled'); }
       if(obj.syslogenabled !== undefined) { document.getElementById('syslogenabled').checked=obj.syslogenabled; AckUpdate('syslogenabled'); validateFields(); }
       if(obj.timezone !== undefined) syncTzPreset();
+      if(obj.schedui !== undefined) renderSchedule(obj.schedui);
+      if(obj.schedmqtt !== undefined) renderMqttWindows(obj.schedmqtt);
+      if(obj.mqtttopic !== undefined) {
+        var st=document.getElementById('schedTopic');
+        if(st) st.textContent = obj.mqtttopic + '/set/Schedule';
+      }
       {{FAN_PIN_HANDLER}}
 
       var devFields = {modelstring:'devModel',fwversion:'devFW',serialnumber:'devSerial',pidstring:'devPID'};
