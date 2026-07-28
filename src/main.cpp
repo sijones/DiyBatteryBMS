@@ -397,6 +397,20 @@ void ScheduleApply(time_t now) {
   if ((uint32_t)(millis() - lastScheduleEval) < 1000) return;
   lastScheduleEval = millis();
 
+  // Scheduling is meaningless without a real clock, and actively unsafe: the
+  // windows would be evaluated against a 1970 date and could assert force charge
+  // at an arbitrary time. Hold off entirely until NTP has synced, leaving the
+  // defaults in place, and say so once rather than every second.
+  static bool warnedNoClock = false;
+  if (!clockIsValid()) {
+    if (!warnedNoClock && Schedule.uiCount() + Schedule.mqttCount() > 0) {
+      warnedNoClock = true;
+      WS_LOG_W("Schedule held off: clock not set. Configure an NTP server under Settings.");
+    }
+    return;
+  }
+  warnedNoClock = false;
+
   // Absolute windows expire on their own; drop them once past so the list does
   // not grow stale and the fallback to the UI schedule happens by itself.
   Schedule.pruneExpired(now);

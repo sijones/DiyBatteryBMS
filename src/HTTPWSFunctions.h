@@ -130,6 +130,18 @@ void ntpSyncCallback(struct timeval *tv) {
   g_ntpLastSyncMs = ms ? ms : 1;         // never leave it at the "never" sentinel
 }
 
+/*
+   Has the wall clock ever actually been set?
+
+   Without NTP, time() returns seconds since boot, which is a small but non-zero
+   number - so a naive "is it > 0" test passes and the scheduler would happily
+   evaluate windows against a 1970 date. Repeating windows would match at the
+   wrong local time and absolute windows would either never fire or expire
+   instantly. Since the scheduler can assert force charge, that is worth being
+   strict about: only a real NTP sync counts.
+*/
+bool clockIsValid() { return g_ntpLastSyncMs != 0; }
+
 // Seconds since the last successful sync, or -1 if the clock has never been set.
 int32_t ntpSecondsSinceSync() {
   uint32_t last = g_ntpLastSyncMs;
@@ -385,8 +397,11 @@ String generateDatatoJSON(bool All)
   doc["cantotalfails"] = Inverter.GetFailedTotalCount();
 #ifndef DISABLE_SCHEDULER
   {
+    bool clockOk = clockIsValid();
     time_t schedNow = time(nullptr);
-    SchedDecision sd = Schedule.evaluate(schedNow, Inverter.BattSOC(), Inverter.ChargeEnable());
+    SchedDecision sd;
+    if (clockOk) sd = Schedule.evaluate(schedNow, Inverter.BattSOC(), Inverter.ChargeEnable());
+    doc["schedclock"] = clockOk;
     doc["schedactive"] = sd.active;
     doc["schedsource"] = sd.active ? (sd.fromMqtt ? "mqtt" : "ui") : "none";
     doc["schedmqttcount"] = Schedule.mqttCount();

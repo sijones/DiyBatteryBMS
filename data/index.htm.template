@@ -773,6 +773,18 @@
     .sched-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
     .sched-status.active .sched-dot { background: var(--ok); }
 
+    .sched-noclock {
+      display: flex; align-items: flex-start; gap: 11px;
+      padding: 12px 14px; margin-bottom: 16px;
+      background: color-mix(in srgb, var(--warn) 12%, var(--panel));
+      border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line));
+      border-left: 3px solid var(--warn);
+      border-radius: var(--r);
+      font-size: 12.5px; line-height: 1.5; color: var(--text);
+    }
+    .sched-noclock a { color: var(--accent); }
+    .sched-noclock .warning-icon { color: var(--warn); }
+
     .sched-help { font-size: 12px; color: var(--text-faint); margin-bottom: 12px; line-height: 1.5; }
     .sched-topic { font-family: var(--mono); color: var(--text-dim); }
 
@@ -1586,6 +1598,17 @@
       <!-- Schedule Tab -->
       <section id="schedule" class="tab-pane" role="tabpanel" aria-labelledby="tab-schedule">
 
+        <div class="sched-noclock" id="schedNoClock" hidden>
+          <span class="warning-icon">&#9888;</span>
+          <div>
+            <b>Scheduling is inactive until the clock is set.</b>
+            Windows are stored, but nothing will run without a synced clock -
+            the device would otherwise be working from the wrong date and time.
+            Set an NTP server under <a href="#settings" onclick="switchTab('settings')">Settings</a>,
+            then check Clock Sync on the Firmware tab.
+          </div>
+        </div>
+
         <div class="sched-status" id="schedStatus">
           <span class="sched-dot" id="schedDot"></span>
           <span id="schedStatusText">No schedule active</span>
@@ -2196,6 +2219,17 @@
       const box = document.getElementById('schedStatus');
       const txt = document.getElementById('schedStatusText');
       if (!box || !txt) return;
+
+      // schedclock is false until NTP has actually synced. Windows still save,
+      // but nothing runs, so say so plainly instead of looking silently broken.
+      const clockOk = s.schedclock !== false;
+      const warn = document.getElementById('schedNoClock');
+      if (warn) warn.hidden = clockOk;
+      if (!clockOk) {
+        box.classList.remove('active');
+        txt.textContent = 'Waiting for the clock - no window can run yet';
+        return;
+      }
       const active = !!s.schedactive;
       box.classList.toggle('active', active);
       if (active) {
@@ -2529,7 +2563,7 @@
         ['forcecharge','battvoltage','battcurrent','reportedsoc','socoverride',
          'absorbelapsed','absorbmax','tailheld','tailneed','tailactive','tailthreshold',
          'tailvoltok','tailvoltmin',
-         'schedactive','schedsource','schedmqttcount','scheduicount','schednext'
+         'schedactive','schedsource','schedmqttcount','scheduicount','schednext','schedclock'
         ].forEach(function(k) {
           if (obj.hasOwnProperty(k)) latestState[k] = obj[k];
         });
