@@ -773,6 +773,12 @@
     .sched-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex-shrink: 0; }
     .sched-status.active .sched-dot { background: var(--ok); }
 
+    /* Something outside has taken a lever off the schedule - amber, because it
+       is a temporary state that will end on its own, not a fault. */
+    .sched-override { border-left-color: var(--warn); }
+    .sched-override .sched-dot { background: var(--warn); }
+    .sched-ovr-clear { margin-left: auto; flex-shrink: 0; padding: 5px 10px; font-size: 11.5px; }
+
     .sched-noclock {
       display: flex; align-items: flex-start; gap: 11px;
       padding: 12px 14px; margin-bottom: 16px;
@@ -1116,11 +1122,14 @@
     }
     .tip .tip-btn:hover { color: var(--accent); border-color: var(--accent-dim); }
 
-    .tip::after {
-      content: attr(data-tip);
-      position: absolute;
-      bottom: calc(100% + 6px);
-      left: 0;
+    /* One shared bubble, positioned in viewport coordinates by JS, rather than a
+       ::after on each .tip. The page container clips its overflow, so a bubble
+       anchored inside it was cut off for fields near a panel edge or on a top row,
+       leaving the text unreadable with no way to scroll to the rest. Fixed
+       positioning escapes the clip; positionTip() then keeps it on screen. */
+    .tip-pop {
+      position: fixed;
+      top: 0; left: 0;
       background: var(--raised);
       color: var(--text);
       border: 1px solid var(--line);
@@ -1132,19 +1141,15 @@
       line-height: 1.45;
       letter-spacing: normal;
       text-transform: none;
+      text-align: left;
       white-space: normal;
-      width: min(270px, 74vw);
+      max-width: min(320px, calc(100vw - 24px));
       opacity: 0;
       pointer-events: none;
       transition: opacity .16s;
-      z-index: 100;
+      z-index: 2000;
     }
-    /* right-hand columns flip the tooltip so it can't overflow the panel */
-    .form-row > *:last-child .tip::after,
-    .form-row.col3 > *:nth-child(n+2) .tip::after,
-    .form-row.col4 > *:nth-child(n+3) .tip::after { left: auto; right: 0; }
-
-    .tip:hover::after, .tip.open::after { opacity: 1; }
+    .tip-pop.show { opacity: 1; }
 
     /* ---------- WiFi ---------- */
     .wifi-controls { display: flex; gap: 10px; }
@@ -1453,7 +1458,7 @@
             <input type="number" id="adjuststep" min="0" max="100" step="0.1" onchange="EnqueueUpdate('adjuststep')" onkeypress="HandleEnter(event, 'adjuststep')">
           </div>
           <div class="form-group">
-            <label for="minchargecurr"><span class="tip" data-tip="Lowest charge current allowed during absorption. The adjust step won't reduce below this value.">Min Charge (A):</span></label>
+            <label for="minchargecurr"><span class="tip" data-tip="Lowest charge current allowed during absorption. The adjust step won't reduce below this value. Do not set this too low: many inverters ignore a limit of a few hundred milliamps, and a limit at or near zero while the voltage target stays high leaves them no way to shed surplus power - some respond by discharging the battery. A few amps is a safer floor than a fraction of one.">Min Charge (A):</span></label>
             <input type="number" id="minchargecurr" min="0" max="100" step="0.1" onchange="EnqueueUpdate('minchargecurr')" onkeypress="HandleEnter(event, 'minchargecurr')">
             <div class="field-error" id="err_minchargecurr"></div>
           </div>
@@ -1526,6 +1531,19 @@
             <label for="rechargevoltageoffset"><span class="tip" data-tip="Voltage drop from target that triggers a new bulk charge cycle. Also used to detect significant voltage drops during absorption.">Recharge V Offset (V):</span></label>
             <input type="number" id="rechargevoltageoffset" min="0" max="10" step="0.1" onchange="EnqueueUpdate('rechargevoltageoffset')" onkeypress="HandleEnter(event, 'rechargevoltageoffset')">
             <div class="field-error" id="err_rechargevoltageoffset"></div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="floatvoltage"><span class="tip" data-tip="Voltage held after absorption finishes, instead of stopping the charge outright. Set 0 to disable the float stage and end the cycle at Complete as before. Typical LiFePO4 float is 3.375-3.40 V per cell (54.0-54.4 V for 16S).">Float Voltage (V):</span></label>
+            <input type="number" id="floatvoltage" min="0" max="65" step="0.1" onchange="EnqueueUpdate('floatvoltage')" onkeypress="HandleEnter(event, 'floatvoltage')">
+            <div class="field-error" id="err_floatvoltage"></div>
+          </div>
+          <div class="form-group">
+            <label for="floatcurrent"><span class="tip" data-tip="Charge current allowance sent to the inverter during float. Keep it above zero: an inverter given a voltage target it cannot charge towards has no way to shed surplus power, and some respond by discharging the battery.">Float Current (A):</span></label>
+            <input type="number" id="floatcurrent" min="0" max="100" step="0.1" onchange="EnqueueUpdate('floatcurrent')" onkeypress="HandleEnter(event, 'floatcurrent')">
+            <div class="field-error" id="err_floatcurrent"></div>
           </div>
         </div>
 
@@ -1618,6 +1636,15 @@
           </span>
         </div>
 
+        <div class="sched-status sched-override" id="schedOverride" hidden>
+          <span class="sched-dot"></span>
+          <span>
+            <span id="schedOverrideText"></span>
+            <span class="sched-next" id="schedOverrideNext"></span>
+          </span>
+          <button class="sched-ovr-clear" onclick="clearOverride()">Return to Schedule</button>
+        </div>
+
         <div class="section-title">Repeating Windows</div>
         <p class="sched-help">
           Saved on the device and used whenever no Home Assistant schedule is active.
@@ -1638,6 +1665,21 @@
           repeating windows above, and expire on their own once their end time passes.
         </p>
         <div class="sched-mqtt" id="schedMqttList"></div>
+
+        <div class="section-title">Outside Control</div>
+        <p class="sched-help">
+          Charge, discharge and force charge can also be driven from outside the schedule - the
+          Dashboard toggles, Home Assistant over MQTT, or a supervisor such as PowerPilot on the
+          WebSocket. Whatever does so takes that one lever off the schedule for the timeout below,
+          then control reverts on its own. The timeout is the safety net: a controller that crashes
+          or drops off the network cannot leave the battery sitting on its last command.
+        </p>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="overridetimeout"><span class="tip" data-tip="Seconds an outside command holds a lever off the schedule. A supervisor should re-send well inside this. 0 disables the hold entirely, so the schedule always wins.">Override Timeout (s):</span></label>
+            <input type="number" id="overridetimeout" min="0" max="3600" onchange="EnqueueUpdate('overridetimeout')" onkeypress="HandleEnter(event, 'overridetimeout')">
+          </div>
+        </div>
       </section>
 
       <!-- Settings Tab -->
@@ -1996,7 +2038,8 @@
       'chargevoltage': 1000, 'dischargevoltage': 1000, 'overvoltage': 1000,
       'maxchargecurrent': 1000, 'maxdischargecurrent': 1000,
       'minchargecurr': 1000, 'adjuststep': 1000, 'batterycapacity': 1000,
-      'tailcurrent': 1000, 'rechargevoltageoffset': 1000
+      'tailcurrent': 1000, 'rechargevoltageoffset': 1000,
+      'floatvoltage': 1000, 'floatcurrent': 1000
     };
     const UNIT_DECIMALS = 1;
 
@@ -2250,6 +2293,25 @@
       const txt = document.getElementById('schedStatusText');
       if (!box || !txt) return;
 
+      /* Levers something outside has taken off the schedule, and how long is
+         left before they come back on their own. Rendered ahead of the clock
+         check below, because an override applies whether or not the clock is
+         set - it is the schedule that needs the clock, not the override. */
+      const ovrBox = document.getElementById('schedOverride');
+      if (ovrBox) {
+        const held = [];
+        if (s.ovrcharge)    held.push('charge');
+        if (s.ovrdischarge) held.push('discharge');
+        if (s.ovrforce)     held.push('force charge');
+        ovrBox.hidden = held.length === 0;
+        if (held.length) {
+          document.getElementById('schedOverrideText').textContent =
+            'Held outside the schedule: ' + held.join(', ');
+          document.getElementById('schedOverrideNext').textContent =
+            s.ovrsecs > 0 ? 'Reverts to the schedule in ' + fmtDuration(s.ovrsecs) : '';
+        }
+      }
+
       // schedclock is false until NTP has actually synced. Windows still save,
       // but nothing runs, so say so plainly instead of looking silently broken.
       const clockOk = s.schedclock !== false;
@@ -2351,20 +2413,75 @@
     }
 
     /* ---------- Tooltips ---------- */
+    var tipPop = null;      // the shared bubble, created on first use
+    var tipAnchor = null;   // .tip it currently describes, null while hidden
+    var tipPinned = false;  // opened by tap/click rather than hover
+
+    // Places the bubble in viewport coordinates and clamps it inside the screen.
+    // Preferred position is above the label; it flips below when there isn't room.
+    function positionTip(anchor) {
+      const r = anchor.getBoundingClientRect();
+      const M = 8;  // clearance from every viewport edge
+      const w = tipPop.offsetWidth, h = tipPop.offsetHeight;
+
+      let left = Math.min(r.left, window.innerWidth - w - M);
+      if (left < M) left = M;
+
+      let top = r.top - h - 6;
+      if (top < M) {
+        top = r.bottom + 6;
+        if (top + h > window.innerHeight - M) top = Math.max(M, window.innerHeight - h - M);
+      }
+
+      tipPop.style.left = left + 'px';
+      tipPop.style.top = top + 'px';
+    }
+
+    function showTip(anchor, pinned) {
+      const text = anchor.getAttribute('data-tip');
+      if (!text) return;
+      if (!tipPop) {
+        tipPop = document.createElement('div');
+        tipPop.className = 'tip-pop';
+        tipPop.setAttribute('role', 'tooltip');
+        document.body.appendChild(tipPop);
+      }
+      tipPop.textContent = text;   // measured below, so set the text first
+      tipPop.classList.add('show');
+      tipAnchor = anchor;
+      tipPinned = !!pinned;
+      positionTip(anchor);
+    }
+
+    function hideTip() {
+      if (!tipPop || !tipAnchor) return;
+      tipPop.classList.remove('show');
+      tipAnchor = null;
+      tipPinned = false;
+    }
+
     // Delegated so tooltips work on touch, where :hover never fires.
     function initTooltips() {
       document.addEventListener('click', function(e) {
         const tip = e.target.closest ? e.target.closest('.tip') : null;
-        document.querySelectorAll('.tip.open').forEach(function(t) {
-          if (t !== tip) t.classList.remove('open');
-        });
-        if (tip) { tip.classList.toggle('open'); e.preventDefault(); }
+        if (!tip) { hideTip(); return; }
+        e.preventDefault();
+        if (tipAnchor === tip && tipPinned) hideTip();
+        else showTip(tip, true);
+      });
+      document.addEventListener('mouseover', function(e) {
+        if (tipPinned) return;   // a tapped tooltip stays until dismissed
+        const tip = e.target.closest ? e.target.closest('.tip') : null;
+        if (tip === tipAnchor) return;   // still over the same label
+        if (tip) showTip(tip, false);
+        else if (tipAnchor) hideTip();
       });
       document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') {
-          document.querySelectorAll('.tip.open').forEach(function(t) { t.classList.remove('open'); });
-        }
+        if (e.key === 'Escape') hideTip();
       });
+      // A fixed bubble does not travel with its anchor, so drop it on any movement.
+      window.addEventListener('scroll', hideTip, true);
+      window.addEventListener('resize', hideTip);
     }
 
     function SendJSONUpdate(fieldId) {
@@ -2464,6 +2581,7 @@
       if(obj.hasOwnProperty('BMS') && obj.BMS) {
         ['chargevoltage','minchargecurr','adjuststep','smartinterval','overvoltage',
          'dischargevoltage','maxchargecurrent','maxdischargecurrent','batterycapacity',
+         'floatvoltage','floatcurrent',
          'lowsoclimit','highsoclimit','velooptime'].forEach(function(f) {
           if(obj[f] !== undefined) SetFieldValue(f, obj[f]);
         });
@@ -2594,7 +2712,7 @@
         if(obj.hasOwnProperty('chargephase')) {
           let phaseElem = document.getElementById('chargephaseStatus');
           if(phaseElem) {
-            const PHASE_CLASS = { Bulk: 'v-ok', Absorption: 'v-warn', Complete: 'v-info' };
+            const PHASE_CLASS = { Bulk: 'v-ok', Absorption: 'v-warn', Float: 'v-ok', Complete: 'v-info' };
             phaseElem.textContent = obj.chargephase;
             phaseElem.className = 'stat-value sm ' + (PHASE_CLASS[obj.chargephase] || 'v-accent');
           }
@@ -2605,7 +2723,8 @@
          'absorbelapsed','absorbmax','tailheld','tailneed','tailactive','tailthreshold',
          'tailvoltok','tailvoltmin',
          'schedactive','schedsource','schedmqttcount','scheduicount','schednext','schedclock',
-         'schednextin','schedendsin'
+         'schednextin','schedendsin',
+         'ovrcharge','ovrdischarge','ovrforce','ovrsecs'
         ].forEach(function(k) {
           if (obj.hasOwnProperty(k)) latestState[k] = obj[k];
         });
@@ -2645,7 +2764,7 @@
        'tailduration','maxabsorptiontime','rechargesoc',
        'chargehightemp','chargelowtemp','dischargehightemp','dischargelowtemp',
        'mqttbatttopic','mqttinvtopic','fanofftemp','fanfulltemp',
-       'ntpserver','timezone','syslogserver','syslogport',
+       'ntpserver','timezone','syslogserver','syslogport','overridetimeout',
        'tailcurrent','rechargevoltageoffset'].forEach(function(f) {
         if(obj[f] !== undefined) { SetFieldValue(f, obj[f]); configDirty = true; }
       });
@@ -2799,7 +2918,7 @@
                 'maxabsorptiontime','rechargesoc','chargehightemp','chargelowtemp',
                 'dischargehightemp','dischargelowtemp','fanofftemp','fanfulltemp',
                 'slowchargesoc1','slowchargesoc2','slowchargesoc1div','slowchargesoc2div',
-                'velooptime','mqttport','syslogport'],
+                'velooptime','mqttport','syslogport','overridetimeout'],
       // Exported in display units (V/A/Ah); import re-scales on send
       converted: UNIT_CONVERT_FIELDS,
       strings: ['ntpserver','timezone','syslogserver','mqttserverip','mqttclientid','mqtttopic','mqttuser',
@@ -3026,6 +3145,12 @@
     // Track current charge/discharge enable states
     let chargeEnabled = false;
     let dischargeEnabled = false;
+
+    // Give the schedule its levers back now rather than waiting out the timeout
+    function clearOverride() {
+      websocket.send('{"clearoverride" : true}');
+      showFeedback('Returning control to the schedule…');
+    }
 
     function toggleChargeEnable() {
       chargeEnabled = !chargeEnabled;
@@ -3513,6 +3638,7 @@
       { a: 'dischargevoltage',  b: 'chargevoltage',      cmp: '<',  msg: 'Discharge voltage must be below the charge voltage.' },
       { a: 'lowsoclimit',       b: 'highsoclimit',       cmp: '<',  msg: 'Low SOC limit must be below the high SOC limit.' },
       { a: 'minchargecurr',     b: 'maxchargecurrent',   cmp: '<=', msg: 'Min charge current cannot exceed max charge current.' },
+      { a: 'floatvoltage',      b: 'chargevoltage',      cmp: '<',  msg: 'Float voltage must be below the charge voltage, or the float stage is ignored.' },
       { a: 'chargelowtemp',     b: 'chargehightemp',     cmp: '<',  msg: 'Charge low temp must be below charge high temp.' },
       { a: 'dischargelowtemp',  b: 'dischargehightemp',  cmp: '<',  msg: 'Discharge low temp must be below discharge high temp.' },
       { a: 'fanofftemp',        b: 'fanfulltemp',        cmp: '<',  msg: 'Fan off temp must be below fan full-speed temp.' }
@@ -3569,6 +3695,22 @@
         advise('rechargevoltageoffset', 'Below 0.10 V leaves too little margin against the phase-change threshold. The firmware will clamp it to 0.06 V.');
       }
 
+      // --- Float advisories ---
+      // A float stage that allows no current is the same instruction the Complete
+      // phase gives, which is what the float stage exists to avoid.
+      const fv = numField('floatvoltage');
+      const fc = numField('floatcurrent');
+      const dv = numField('dischargevoltage');
+
+      if (fv !== null && fv > 0) {
+        if (fc === 0) {
+          advise('floatcurrent', 'At 0 A the inverter is told to hold a voltage it may not charge towards. Some inverters discharge the pack to obey that. Allow at least 1-2 A.');
+        }
+        if (dv !== null && fv <= dv) {
+          advise('floatvoltage', 'At or below the discharge voltage, so the pack would float at its cutoff. Set it between the discharge and charge voltages.');
+        }
+      }
+
       // A malformed POSIX TZ string doesn't error - the C library just falls back
       // to UTC - so catch the common mistake of entering an IANA zone name.
       const tzEl = document.getElementById('timezone');
@@ -3605,7 +3747,8 @@
     }
 
     function initValidation() {
-      const ids = { syslogserver: 1, rechargesoc: 1, rechargevoltageoffset: 1, timezone: 1 };
+      const ids = { syslogserver: 1, rechargesoc: 1, rechargevoltageoffset: 1, timezone: 1,
+                    floatvoltage: 1, floatcurrent: 1, dischargevoltage: 1 };
       FIELD_RULES.forEach(function(r) { ids[r.a] = 1; ids[r.b] = 1; });
       Object.keys(ids).forEach(function(id) {
         const el = document.getElementById(id);

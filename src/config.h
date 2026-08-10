@@ -29,7 +29,7 @@
 
 #define SYSLOG 1
 
-#define FW_VERSION "2.8.0-BETA5"
+#define FW_VERSION "2.8.0-BETA6"
 
 #if defined(ESPCAN_C3)
   #define FW_BUILD "ESP32-C3 TWAI"
@@ -66,6 +66,17 @@
 #define initMaxAbsorptionTime 120         // 120 minutes max absorption phase
 #define initRechargeSOC 90                // Restart charging below 90% SOC
 #define initRechargeVoltageOffset 200     // 200mV (0.2V) drop to restart charging
+
+// Float stage. Off by default: a firmware update must not silently change how an
+// existing pack terminates its charge. Set a float voltage below the charge
+// voltage to enable it - see the PHASE_FLOAT notes in CANBUS.cpp.
+#define initFloatVoltage 0                // mV, 0 = no float stage (go straight to Complete)
+#define initFloatCurrentmA 2000           // 2A held during float, must stay above zero
+
+// How long a charge/discharge/force command from outside holds the scheduler off
+// before control reverts to the saved schedule. 0 disables the latch, so the
+// scheduler always wins. See RemoteOverride.h.
+#define initOverrideTimeout 300           // seconds
 
 #define initCAN16Mhz false                // This is the default MCP2515 8mhz Crystal speed, use 16mhz if true
 // To use strict PYLONTECH Protocol enable below

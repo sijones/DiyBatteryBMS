@@ -348,6 +348,7 @@ bool CANBUS::SendAllUpdates()
 
     // Unit conversions: mV -> centivolts, mA -> deciamps
     uint16_t chargeVCentiV = (uint16_t)(_chargeVoltage * 0.1);
+    uint16_t floatVCentiV = (uint16_t)(_floatVoltage * 0.1);
     uint16_t overVCentiV = (uint16_t)(_overVoltage * 0.1);
     uint16_t dischargeVCentiV = (uint16_t)(_dischargeVoltage * 0.1);
     int32_t tailDA = (int32_t)(_tailCurrentmA / 100);
@@ -361,9 +362,12 @@ bool CANBUS::SendAllUpdates()
     // minimum so the two thresholds cannot cross, whatever is configured.
     if (rechargeOffCentiV > 0 && rechargeOffCentiV <= 5) rechargeOffCentiV = 6;
 
-    // If SOC=100 but voltage hasn't reached target, use 99 to keep charging
+    // If SOC=100 but voltage hasn't reached target, use 99 to keep charging.
+    // Not in float: the pack is held below the charge target there by design, so
+    // this would read a deliberate float as an unfinished charge and never stop
+    // pushing the current back up.
     uint8_t workingSOC = _battSOC;
-    if (workingSOC >= 100 && _battVoltage < chargeVCentiV) {
+    if (workingSOC >= 100 && _battVoltage < chargeVCentiV && _chargePhase != PHASE_FLOAT) {
       workingSOC = 99;
       if (!_socOverrideLogged) {
         _socOverrideLogged = true;
@@ -449,8 +453,9 @@ bool CANBUS::SendAllUpdates()
           _tailCurrentStartTime = t;
           WS_LOG_D("Tail current detected: I=%d DA (threshold=%d DA), timer started", _battCurrentmA, tailDA);
         } else if ((uint32_t)(t - _tailCurrentStartTime) >= ((uint32_t)_tailCurrentDuration * 1000UL)) {
-          _chargePhase = PHASE_COMPLETE;
-          WS_LOG_I("CC-CV: ABSORPTION -> COMPLETE (tail current sustained %ds)", _tailCurrentDuration);
+          _chargePhase = FloatEnabled() ? PHASE_FLOAT : PHASE_COMPLETE;
+          WS_LOG_I("CC-CV: ABSORPTION -> %s (tail current sustained %ds)",
+                   GetChargePhaseName(), _tailCurrentDuration);
           break;
         }
       } else {
@@ -465,13 +470,58 @@ bool CANBUS::SendAllUpdates()
       // resets to BULK on boot, so no "is it set" guard is needed with millis().
       if (_maxAbsorptionTime > 0
           && (uint32_t)(t - _absorptionStartTime) >= ((uint32_t)_maxAbsorptionTime * 60000UL)) {
+        _chargePhase = FloatEnabled() ? PHASE_FLOAT : PHASE_COMPLETE;
+        WS_LOG_I("CC-CV: ABSORPTION -> %s (max absorption time %d min)",
+                 GetChargePhaseName(), _maxAbsorptionTime);
+      }
+      break;
+    }
+
+    case PHASE_FLOAT:
+    {
+      // Charging stays enabled here. The pack is full, so the inverter is given a
+      // lower voltage target and a small current allowance rather than a flat
+      // refusal: an inverter told "hold 55.2V, but 0A" has no way to shed the
+      // surplus and some resolve it by discharging the battery instead.
+      if (!FloatEnabled()) {
+        // Float turned off, or its voltage raised above the charge target, while
+        // the pack was sitting in it.
         _chargePhase = PHASE_COMPLETE;
-        WS_LOG_I("CC-CV: ABSORPTION -> COMPLETE (max absorption time %d min)", _maxAbsorptionTime);
+        WS_LOG_I("CC-CV: FLOAT -> COMPLETE (float no longer configured)");
+        break;
+      }
+
+      uint32_t floatCurrent = _floatCurrentmA;
+      if (floatCurrent > baseChargeCurrent) floatCurrent = baseChargeCurrent;
+      if (floatCurrent != GetChargeCurrent())
+        SetChargeCurrent(floatCurrent);
+
+      if (_rechargeSOC > 0 && _battSOC < _rechargeSOC) {
+        _chargePhase = PHASE_BULK;
+        WS_LOG_I("CC-CV: FLOAT -> BULK (SOC %d < recharge %d)", _battSOC, _rechargeSOC);
+      }
+      // Measured against the float target, not the charge target. The pack sits
+      // below the charge target throughout float by design, so comparing against
+      // that would restart bulk on the first cycle in the phase.
+      else if (rechargeOffCentiV > 0 && floatVCentiV > rechargeOffCentiV
+               && _battVoltage < (floatVCentiV - rechargeOffCentiV)) {
+        _chargePhase = PHASE_BULK;
+        WS_LOG_I("CC-CV: FLOAT -> BULK (voltage %d < %d)",
+                 _battVoltage, floatVCentiV - rechargeOffCentiV);
       }
       break;
     }
 
     case PHASE_COMPLETE:
+      // Configuring a float voltage takes effect at once rather than waiting for
+      // the next full cycle. That matters because the reason to reach for it is
+      // usually an inverter misbehaving right now, with the pack sitting here.
+      if (FloatEnabled()) {
+        _chargePhase = PHASE_FLOAT;
+        WS_LOG_I("CC-CV: COMPLETE -> FLOAT (float voltage configured)");
+        break;
+      }
+
       _tempChargeEnabled = false;
       SetChargeCurrent(0);
 
@@ -541,6 +591,7 @@ const char* CANBUS::GetChargePhaseName() {
   switch (_chargePhase) {
     case PHASE_BULK:       return "Bulk";
     case PHASE_ABSORPTION: return "Absorption";
+    case PHASE_FLOAT:      return "Float";
     case PHASE_COMPLETE:   return "Complete";
     default:               return "Unknown";
   }
@@ -637,16 +688,20 @@ void inline CANBUS_BuildSOC(uint8_t* msg, uint8_t battSOC, bool enableSOCTrick, 
   uint8_t sent;
   uint8_t reason;
 
+  // Float means the charge finished, same as Complete. Holding 99% through float
+  // would tell the inverter the pack still needs charging while the limits say it
+  // may not - a contradiction some inverters answer by discharging.
+  bool chargeDone = (chargePhase == CANBUS::PHASE_COMPLETE || chargePhase == CANBUS::PHASE_FLOAT);
+
   if (enableSOCTrick && forceCharge) {
     sent = uint8_t(battSOC * 0.1);
     reason = CANBUS::SOC_OVR_TRICK;
   }
-  else if (battSOC >= 100 && (chargePhase != CANBUS::PHASE_COMPLETE || never100SOC)) {
+  else if (battSOC >= 100 && (!chargeDone || never100SOC)) {
     sent = 99;
     // Both conditions can hold at once; the charge-phase hold is the more
     // informative of the two, so report that in preference.
-    reason = (chargePhase != CANBUS::PHASE_COMPLETE) ? CANBUS::SOC_OVR_HOLD99
-                                                     : CANBUS::SOC_OVR_NEVER100;
+    reason = !chargeDone ? CANBUS::SOC_OVR_HOLD99 : CANBUS::SOC_OVR_NEVER100;
   }
   else {
     sent = battSOC;
@@ -663,7 +718,7 @@ bool CANBUS::SendCANData_Pylontech(){
   CAN_SEND_BEGIN();
 
   // Pylontech units: voltage in 0.01V (centivolts), current in 0.1A (deciamps)
-  uint16_t _tempChargeVolt = (_chargeVoltage * 0.01);
+  uint16_t _tempChargeVolt = (ActiveChargeVoltage() * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
   uint16_t _tempDisChargeCurr = (_dischargeCurrentmA * 0.01);
@@ -791,7 +846,7 @@ bool CANBUS::SendCANData_SMA(){
   CAN_SEND_BEGIN();
 
   // SMA units: voltage in 0.1V (decivolts), current in 0.1A (deciamps)
-  uint16_t _tempChargeVolt = (_chargeVoltage * 0.1);
+  uint16_t _tempChargeVolt = (ActiveChargeVoltage() * 0.1);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.1);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
   uint16_t _tempDisChargeCurr = (_dischargeCurrentmA * 0.01);
@@ -849,7 +904,7 @@ bool CANBUS::SendCANData_Victron(){
   CAN_SEND_BEGIN();
 
   // Victron units: same as Pylontech (voltage 0.01V, current 0.1A)
-  uint16_t _tempChargeVolt = (_chargeVoltage * 0.01);
+  uint16_t _tempChargeVolt = (ActiveChargeVoltage() * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
   uint16_t _tempDisChargeCurr = (_dischargeCurrentmA * 0.01);

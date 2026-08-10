@@ -140,6 +140,10 @@ void publishScheduleStatus() {
   snprintf(buf, sizeof(buf), "%u", (unsigned)d.targetSOC); pub("TargetSOC", buf);
   time_t nxt = Schedule.nextMqttStart(now);
   snprintf(buf, sizeof(buf), "%lu", (unsigned long)nxt); pub("NextStart", buf);
+  // What the schedule wants is published above; these say whether it is actually
+  // in charge, or whether something outside has taken a lever off it.
+  pub("Override", RemoteOverride.Any() ? "ON" : "OFF");
+  snprintf(buf, sizeof(buf), "%u", (unsigned)RemoteOverride.SecondsLeft()); pub("OverrideSecs", buf);
 }
 #else
 static inline void publishScheduleStatus() {}
@@ -393,6 +397,14 @@ void publishHADiscovery() {
   haNumber("Discharge Current", "dischargecurrent", "{{ value_json.dischargecurrent | multiply(0.001) | round(0) }}", "DischargeCurrent",
     ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":0",
     base, node, dataTopic, st, deviceJson);
+  // Float stage. 0 V means no float stage, so the minimum has to reach down to 0
+  // rather than stopping at a plausible float voltage.
+  haNumber("Float Voltage", "floatvoltage", "{{ (value_json.floatvoltage * 0.001) | round(1) }}", "FloatVoltage",
+    ",\"unit_of_measurement\":\"V\",\"device_class\":\"voltage\",\"min\":0,\"max\":58.0,\"step\":0.1,\"entity_category\":\"config\"",
+    base, node, dataTopic, st, deviceJson);
+  haNumber("Float Current", "floatcurrent", "{{ (value_json.floatcurrent * 0.001) | round(1) }}", "FloatCurrent",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"min\":0,\"max\":50,\"step\":0.5,\"entity_category\":\"config\"",
+    base, node, dataTopic, st, deviceJson);
 
   log_i("Home Assistant Discovery published successfully.");
   WS_LOG_I("Home Assistant Discovery published successfully.");
@@ -584,22 +596,35 @@ if (false) { }
    log_d("Charge current set to: %.1f A (%d mA)", currentA, currentmA);
     WS_LOG_I("Charge current set to: %.1f A (%d mA)", currentA, currentmA);
   }
+  // The next three latch their lever so the scheduler does not undo them on its
+  // next pass. The latch times out - see RemoteOverride.h.
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ForceCharge") {
     bool forcecharge = (message == "ON") ? true : false;
     Inverter.ForceCharge((message == "ON") ? true : false);
+    RemoteOverride.Arm(OV_FORCE);
     log_d("Force charge set to: %d", forcecharge);
     WS_LOG_I("Force charge set to: %s", (message == "ON") ? "ON" : "OFF");
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/DischargeEnable") {
     Inverter.ManualAllowDischarge((message == "ON") ? true : false);
+    RemoteOverride.Arm(OV_DISCHARGE);
     log_d("Discharge enable set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("Discharge enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ChargeEnable") {
     Inverter.ManualAllowCharge((message == "ON") ? true : false);
+    RemoteOverride.Arm(OV_CHARGE);
     log_d("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
+#ifndef DISABLE_SCHEDULER
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ClearOverride") {
+    // Give the schedule control back now instead of waiting out the latch
+    RemoteOverride.Clear();
+    WS_LOG_I("Remote override cleared, schedule back in control");
+    publishScheduleStatus();
+  }
+#endif
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/SOCTrickEnable") {
     Inverter.EnableSOCTrick((message == "ON") ? true : false);
     log_d("SOC Trick Enable set to: %s", (message == "ON") ? "ON" : "OFF");
@@ -631,6 +656,25 @@ if (false) { }
     pref.putUInt8(ccRechargeSOC, soc);
     log_d("Recharge SOC set to: %u%%", soc);
     WS_LOG_I("Recharge SOC set to: %u%%", soc);
+  }
+  // 0 V turns the float stage off, so unlike the other voltages this one accepts
+  // zero rather than rejecting it as an unset value.
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/FloatVoltage") {
+    float voltageV = message.toFloat();
+    uint32_t voltagemV = (uint32_t)round(voltageV * 1000.0);
+    Inverter.SetFloatVoltage((uint16_t) voltagemV);
+    pref.putUInt32(ccFloatVoltage, voltagemV);
+    log_d("Float voltage set to: %.1f V (%u mV)", voltageV, voltagemV);
+    WS_LOG_I("Float voltage set to: %.1f V%s", voltageV,
+             Inverter.FloatEnabled() ? "" : " (float stage inactive)");
+  }
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/FloatCurrent") {
+    float currentA = message.toFloat();
+    uint32_t currentmA = (uint32_t)round(currentA * 1000.0);
+    Inverter.SetFloatCurrent(currentmA);
+    pref.putUInt32(ccFloatCurrent, currentmA);
+    log_d("Float current set to: %.1f A (%u mA)", currentA, currentmA);
+    WS_LOG_I("Float current set to: %.1f A (%u mA)", currentA, currentmA);
   }
 
 }

@@ -143,6 +143,7 @@ void setup()
     pref.putUInt8(ccVELOOPTIME, VE_LOOP_TIME);
     pref.putString(ccNTPServer,"");
     pref.putString(ccTimeZone, initTimeZone);
+    pref.putUInt16(ccOverrideTime, initOverrideTimeout);
     pref.putString(ccSyslogServer,"");
     pref.putUInt16(ccSyslogPort, 514);
     pref.putBool(ccSyslogEnabled, false);
@@ -270,6 +271,10 @@ void setup()
   applySyslogConfig();
 #ifndef DISABLE_SCHEDULER
   loadUiSchedule();
+  // Nothing is latched at boot, so control starts with the schedule. Deliberate:
+  // a reboot is exactly when you want the locally saved plan back, not whatever
+  // a controller had commanded before the power went.
+  RemoteOverride.SetTimeout(pref.getUInt16(ccOverrideTime, initOverrideTimeout));
 #endif
   Inverter.SetCANProtocol((CANProtocol)pref.getUInt8(ccCANProtocol, PROTO_PYLONTECH_13));
   Inverter.SetSlowChargeDivider(1,pref.getUInt8(ccSlowSOCDivider1,initSlowSOCDivider1));
@@ -285,6 +290,8 @@ void setup()
   Inverter.SetMaxAbsorptionTime(pref.getUInt16(ccMaxAbsTime, initMaxAbsorptionTime));
   Inverter.SetRechargeSOC(pref.getUInt8(ccRechargeSOC, initRechargeSOC));
   Inverter.SetRechargeVoltageOffset(pref.getUInt16(ccRechargeVOff, initRechargeVoltageOffset));
+  Inverter.SetFloatVoltage((uint16_t) pref.getUInt32(ccFloatVoltage, initFloatVoltage));
+  Inverter.SetFloatCurrent(pref.getUInt32(ccFloatCurrent, initFloatCurrentmA));
 
   Inverter.TempProtectionEnabled(pref.getBool(ccTempProtect, false));
   Inverter.SetChargeHighTemp(pref.getInt16(ccChgHighTemp, 45));
@@ -381,11 +388,17 @@ void UpdateWifiScanResults() {
 /*
    Apply the active schedule window.
 
-   Precedence: safety > schedule > default (charge on, discharge on, force off).
+   Precedence: safety > outside override > schedule > default (charge on,
+   discharge on, force off).
+
    Safety is not checked here - it cannot be bypassed from this layer. The CAN
    code emits (_chargeEnabled && _ManualAllowCharge), and _chargeEnabled belongs
    to the protection logic, so writing ManualAllow* can only ever withhold, never
-   grant. Force charge is gated inside evaluate() on the same flag.
+   grant. Force charge is gated inside evaluate() on the same flag, and again
+   below for a force asserted from outside the schedule.
+
+   Levers taken by the web UI, MQTT or a WebSocket supervisor are left alone
+   here until their latch times out - see RemoteOverride.h.
 
    Runs once a second; the setters are no-ops when nothing changed.
 */
@@ -396,6 +409,36 @@ bool lastSchedActive = false;
 void ScheduleApply(time_t now) {
   if ((uint32_t)(millis() - lastScheduleEval) < 1000) return;
   lastScheduleEval = millis();
+
+  /* Retire timed-out overrides first, and say so once rather than on every
+     pass. Deliberately ahead of the clock check below: a latch has to be able
+     to expire even while the clock is unset, or a controller that vanished
+     before NTP synced would keep its levers indefinitely. */
+  uint8_t expired = RemoteOverride.Expired();
+  if (expired) {
+    for (uint8_t i = 0; i < OV_COUNT; i++)
+      if (expired & (1 << i))
+        WS_LOG_I("Remote override on %s timed out, schedule back in control",
+                 RemoteOverrideClass::Name((RemoteLever)i));
+    publishScheduleStatus();
+    notifyWSClients();
+  }
+
+  /* Safety is not something a latch can hold off. evaluate() already refuses to
+     assert force charge when protection has disabled charging; apply the same
+     rule to a force asserted from outside, so a controller cannot leave the
+     inverter being told to charge at maximum while the pack is too cold or too
+     full. Ahead of the clock check, since it depends on neither the clock nor
+     the schedule. Logged on the transition only - the controller will keep
+     re-asserting, and one line a second helps nobody. */
+  static bool forceCutBySafety = false;
+  if (RemoteOverride.Active(OV_FORCE) && !Inverter.ChargeEnable() && Inverter.ForceCharge()) {
+    Inverter.ForceCharge(false);
+    if (!forceCutBySafety) {
+      forceCutBySafety = true;
+      WS_LOG_W("Force charge from an outside override dropped: protection has charging disabled");
+    }
+  } else if (Inverter.ChargeEnable()) forceCutBySafety = false;
 
   // Scheduling is meaningless without a real clock, and actively unsafe: the
   // windows would be evaluated against a 1970 date and could assert force charge
@@ -417,10 +460,14 @@ void ScheduleApply(time_t now) {
 
   SchedDecision d = Schedule.evaluate(now, Inverter.BattSOC(), Inverter.ChargeEnable());
 
-  Inverter.ManualAllowCharge(d.charge);
-  Inverter.ManualAllowDischarge(d.discharge);
-  if (d.force != Inverter.ForceCharge()) Inverter.ForceCharge(d.force);
-
+  /* Leave latched levers alone. Anything not currently held is re-asserted as
+     before, so the schedule takes a lever straight back the moment its latch
+     expires or is cleared - there is no state to restore. */
+  if (!RemoteOverride.Active(OV_CHARGE))    Inverter.ManualAllowCharge(d.charge);
+  if (!RemoteOverride.Active(OV_DISCHARGE)) Inverter.ManualAllowDischarge(d.discharge);
+  if (!RemoteOverride.Active(OV_FORCE)) {
+    if (d.force != Inverter.ForceCharge()) Inverter.ForceCharge(d.force);
+  }
   if (d.active != lastSchedActive) {
     lastSchedActive = d.active;
     if (d.active)

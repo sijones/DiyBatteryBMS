@@ -61,6 +61,8 @@ const char* const ccTailDuration = "TailDuration";
 const char* const ccMaxAbsTime = "MaxAbsTime";
 const char* const ccRechargeSOC = "RechargeSOC";
 const char* const ccRechargeVOff = "RechargeVOff";
+const char* const ccFloatVoltage = "FloatVolt";
+const char* const ccFloatCurrent = "FloatCurr";
 
 const char* const ccTempProtect = "TempProtect";
 const char* const ccChgHighTemp = "ChgHighTemp";
@@ -86,6 +88,7 @@ const char* const ccLcdEnabled = "lcdenabled";
 const char* const ccNTPServer = "NTPServer";
 const char* const ccTimeZone = "TimeZone";
 const char* const ccSchedule = "Schedule";
+const char* const ccOverrideTime = "OvrTimeout";   // remote override latch, seconds. 0 = off
 const char* const ccSyslogServer = "SyslogSrv";
 const char* const ccSyslogPort = "SyslogPort";
 const char* const ccSyslogEnabled = "SyslogEn";

@@ -7,6 +7,7 @@
 #include "embedded_html.h"
 #include "Syslog.h"
 #include "Schedule.h"
+#include "RemoteOverride.h"
 #include "GPIOForbidden.h"
 
 volatile bool otaInProgress = false;
@@ -35,6 +36,7 @@ portMUX_TYPE wifiScanMutex = portMUX_INITIALIZER_UNLOCKED;
 bool wifiScanRequested = false;  // Track if scan was requested to trigger background scan
 
 SyslogSender Syslog;
+RemoteOverrideClass RemoteOverride;
 #ifndef DISABLE_SCHEDULER
 ChargeSchedule Schedule;
 
@@ -312,6 +314,7 @@ String generateDatatoJSON(bool All)
 #ifndef DISABLE_SCHEDULER
     Schedule.uiToJson(doc["schedui"].to<JsonArray>());
     Schedule.mqttToJson(doc["schedmqtt"].to<JsonArray>());
+    doc["overridetimeout"] = RemoteOverride.GetTimeout();
 #endif
     doc["syslogserver"] = pref.getString(ccSyslogServer,"");
     doc["syslogport"] = pref.getUInt16(ccSyslogPort, 514);
@@ -362,6 +365,8 @@ String generateDatatoJSON(bool All)
   doc["serialnumber"] = Inverter.SerialNumber();
   doc["modelstring"] = Inverter.ModelString();
   doc["chargevoltage"] = Inverter.GetChargeVoltage();
+  doc["floatvoltage"] = Inverter.GetFloatVoltage();
+  doc["floatcurrent"] = Inverter.GetFloatCurrent();
   taskEXIT_CRITICAL(&(Inverter.CANMutex));
   
   doc["chargeadjust"] = Inverter.GetChargeAdjust();
@@ -409,6 +414,12 @@ String generateDatatoJSON(bool All)
     doc["schednext"] = (uint32_t)Schedule.nextMqttStart(schedNow);
     doc["schednextin"] = clockOk ? Schedule.secondsUntilNext(schedNow) : -1;
     doc["schedendsin"] = clockOk ? Schedule.secondsUntilEnd(schedNow) : -1;
+    // Which levers a controller (or the UI) currently holds off the scheduler,
+    // and how long is left on the longest of them.
+    doc["ovrcharge"]    = RemoteOverride.Active(OV_CHARGE);
+    doc["ovrdischarge"] = RemoteOverride.Active(OV_DISCHARGE);
+    doc["ovrforce"]     = RemoteOverride.Active(OV_FORCE);
+    doc["ovrsecs"]      = RemoteOverride.SecondsLeft();
   }
 #endif
   // -1 = never synced. -2 = no NTP server configured, so nothing will sync.
@@ -559,6 +570,26 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       bool handled = false;
       deserializeJson(doc,data);
 
+      /*
+         Optional "persist" flag on any set command.
+
+         Defaults to true, so the web UI and every existing client keep saving
+         to NVS exactly as before. A remote supervisor (e.g. PowerPilot) sends
+         "persist":false so its setpoints apply immediately but are never
+         written to flash. Two reasons that matters:
+
+         - Wear. A controller adjusting charge current every few seconds would
+           otherwise rewrite NVS thousands of times a day.
+         - Fail-safe. What survives a reboot or a lost controller is whatever
+           the operator saved locally, not the last value some remote system
+           happened to command before it vanished.
+
+         Only the handlers that write NVS check this; the RAM-only ones
+         (manual allow charge/discharge, force charge, charge current) are
+         unaffected either way.
+      */
+      bool persist = doc["persist"].isNull() ? true : (bool)doc["persist"];
+
       if (!doc["wifiscan"].isNull()) {
         // Trigger WiFi scan in background
         log_d("WiFi scan requested via JSON Set");
@@ -578,35 +609,49 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       }
       
       if (!doc["chargevoltage"].isNull()) {
-        pref.putUInt32(ccChargeVolt,(uint32_t) doc["chargevoltage"]);
-        Inverter.SetChargeVoltage((uint32_t) doc["chargevoltage"]); 
-        WS_LOG_I("Set Charge Voltage to %u", (uint32_t) doc["chargevoltage"]);
+        if (persist) pref.putUInt32(ccChargeVolt,(uint32_t) doc["chargevoltage"]);
+        Inverter.SetChargeVoltage((uint32_t) doc["chargevoltage"]);
+        WS_LOG_I("Set Charge Voltage to %u%s", (uint32_t) doc["chargevoltage"], persist ? "" : " (not saved)");
         handled = true;
         notifyWSClients(); }
       if (!doc["overvoltage"].isNull()) {
-        pref.putUInt32(ccOverVoltage,(uint32_t) doc["overvoltage"]);
-        Inverter.SetOverVoltage((uint32_t) doc["overvoltage"]); 
-        WS_LOG_I("Set Over Voltage to %u", (uint32_t) doc["overvoltage"]);
+        if (persist) pref.putUInt32(ccOverVoltage,(uint32_t) doc["overvoltage"]);
+        Inverter.SetOverVoltage((uint32_t) doc["overvoltage"]);
+        WS_LOG_I("Set Over Voltage to %u%s", (uint32_t) doc["overvoltage"], persist ? "" : " (not saved)");
         handled = true;
         notifyWSClients(); }
       if (!doc["dischargevoltage"].isNull()) {
-        pref.putUInt32(ccDischargeVolt,(uint32_t) doc["dischargevoltage"]);
-        Inverter.SetDischargeVoltage((uint32_t) doc["dischargevoltage"]); 
-        WS_LOG_I("Set Discharge Voltage to %u", (uint32_t) doc["dischargevoltage"]);
+        if (persist) pref.putUInt32(ccDischargeVolt,(uint32_t) doc["dischargevoltage"]);
+        Inverter.SetDischargeVoltage((uint32_t) doc["dischargevoltage"]);
+        WS_LOG_I("Set Discharge Voltage to %u%s", (uint32_t) doc["dischargevoltage"], persist ? "" : " (not saved)");
         handled = true;
         notifyWSClients(); }
       if (!doc["maxchargecurrent"].isNull()) {
-        pref.putUInt32(ccChargeCurrent,(uint32_t) doc["maxchargecurrent"]);
+        if (persist) {
+          pref.putUInt32(ccChargeCurrent,(uint32_t) doc["maxchargecurrent"]);
+          // Re-publish HA discovery so the Charge Current slider max tracks the
+          // new limit. Only for saved changes - a supervisor retuning the limit
+          // every few seconds must not spam discovery messages at the broker.
+          publishHADiscovery();
+        }
         Inverter.SetMaxChargeCurrent((uint32_t) doc["maxchargecurrent"]);
-        WS_LOG_I("Set Max Charge Current to %u", (uint32_t) doc["maxchargecurrent"]);
-        // Re-publish HA discovery so the Charge Current slider max tracks the new limit
-        publishHADiscovery();
+        WS_LOG_I("Set Max Charge Current to %u%s", (uint32_t) doc["maxchargecurrent"], persist ? "" : " (not saved)");
         handled = true;
         notifyWSClients(); }
       if (!doc["maxdischargecurrent"].isNull()) {
-        pref.putUInt32(ccDischargeCurrent,(uint32_t) doc["maxdischargecurrent"]);
-        Inverter.SetMaxDischargeCurrent((uint32_t) doc["maxdischargecurrent"]); 
-        WS_LOG_I("Set Max Discharge Current to %u", (uint32_t) doc["maxdischargecurrent"]);
+        if (persist) pref.putUInt32(ccDischargeCurrent,(uint32_t) doc["maxdischargecurrent"]);
+        Inverter.SetMaxDischargeCurrent((uint32_t) doc["maxdischargecurrent"]);
+        WS_LOG_I("Set Max Discharge Current to %u%s", (uint32_t) doc["maxdischargecurrent"], persist ? "" : " (not saved)");
+        handled = true;
+        notifyWSClients(); }
+      // Force charge - RAM only in the firmware, so nothing to persist. Exposed
+      // over WebSocket as well as MQTT so a controller can assert it without
+      // needing a broker. Latches the lever so the scheduler does not undo it on
+      // its next pass - see RemoteOverride.h.
+      if (!doc["forcecharge"].isNull()) {
+        Inverter.ForceCharge((bool) doc["forcecharge"]);
+        RemoteOverride.Arm(OV_FORCE);
+        WS_LOG_I("Force charge set to: %s", (bool) doc["forcecharge"] ? "ON" : "OFF");
         handled = true;
         notifyWSClients(); }
       if (!doc["chargecurrent"].isNull()) {
@@ -635,28 +680,52 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         WS_LOG_I("Set Discharge Enabled to %s", (bool) doc["dischargeenabled"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
+      // Both latch, so a toggle here or from a controller survives the next
+      // scheduler pass instead of snapping back within the second.
       if (!doc["manualallowcharge"].isNull()) {
         Inverter.ManualAllowCharge((bool) doc["manualallowcharge"]);
+        RemoteOverride.Arm(OV_CHARGE);
         WS_LOG_I("Manual Allow Charge set to %s", (bool) doc["manualallowcharge"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
       if (!doc["manualallowdischarge"].isNull()) {
         Inverter.ManualAllowDischarge((bool) doc["manualallowdischarge"]);
+        RemoteOverride.Arm(OV_DISCHARGE);
         WS_LOG_I("Manual Allow Discharge set to %s", (bool) doc["manualallowdischarge"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
+#ifndef DISABLE_SCHEDULER
+      // Hand control back to the schedule immediately, rather than waiting out
+      // the latch. A controller shutting down cleanly should send this.
+      if (!doc["clearoverride"].isNull()) {
+        if ((bool) doc["clearoverride"]) {
+          RemoteOverride.Clear();
+          WS_LOG_I("Remote override cleared, schedule back in control");
+        }
+        handled = true;
+        notifyWSClients(); }
+      // Seconds a lever stays latched. 0 disables the latch entirely.
+      if (!doc["overridetimeout"].isNull()) {
+        uint16_t secs = (uint16_t) doc["overridetimeout"];
+        if (secs > OVERRIDE_TIMEOUT_MAX) secs = OVERRIDE_TIMEOUT_MAX;
+        if (persist) pref.putUInt16(ccOverrideTime, secs);
+        RemoteOverride.SetTimeout(secs);
+        WS_LOG_I("Remote override timeout set to %u s%s", secs, persist ? "" : " (not saved)");
+        handled = true;
+        notifyWSClients(); }
+#endif
       // Low SOC OFF
       if (!doc["lowsoclimit"].isNull()) {
-        pref.putUInt8(ccLowSOCLimit,(uint8_t) doc["lowsoclimit"]);
+        if (persist) pref.putUInt8(ccLowSOCLimit,(uint8_t) doc["lowsoclimit"]);
         Inverter.SetLowSOCLimit((uint8_t) doc["lowsoclimit"]);
-        WS_LOG_I("Set Low SOC Limit to %u", (uint8_t) doc["lowsoclimit"]);
+        WS_LOG_I("Set Low SOC Limit to %u%s", (uint8_t) doc["lowsoclimit"], persist ? "" : " (not saved)");
         handled = true;
         notifyWSClients(); }
       // High SOC Limit
       if (!doc["highsoclimit"].isNull()) {
-        pref.putUInt8(ccHighSOCLimit,(uint8_t) doc["highsoclimit"]);
+        if (persist) pref.putUInt8(ccHighSOCLimit,(uint8_t) doc["highsoclimit"]);
         Inverter.SetHighSOCLimit((uint8_t) doc["highsoclimit"]);
-        WS_LOG_I("Set High SOC Limit to %u", (uint8_t) doc["highsoclimit"]);
+        WS_LOG_I("Set High SOC Limit to %u%s", (uint8_t) doc["highsoclimit"], persist ? "" : " (not saved)");
         handled = true;
         notifyWSClients(); }
       if (!doc["canbusenabled"].isNull()) {
@@ -972,6 +1041,22 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         WS_LOG_I("Set Recharge Voltage Offset to %u mV", (uint16_t) doc["rechargevoltageoffset"]);
         handled = true;
         notifyWSClients(); }
+      // 0 disables the float stage, so the charge cycle ends at Complete as before.
+      if (!doc["floatvoltage"].isNull()) {
+        uint32_t mv = (uint32_t) doc["floatvoltage"];
+        pref.putUInt32(ccFloatVoltage, mv);
+        Inverter.SetFloatVoltage((uint16_t) mv);
+        WS_LOG_I("Set Float Voltage to %u mV%s", mv,
+                 Inverter.FloatEnabled() ? "" : " (float stage inactive)");
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["floatcurrent"].isNull()) {
+        uint32_t ma = (uint32_t) doc["floatcurrent"];
+        pref.putUInt32(ccFloatCurrent, ma);
+        Inverter.SetFloatCurrent(ma);
+        WS_LOG_I("Set Float Current to %u mA", ma);
+        handled = true;
+        notifyWSClients(); }
 
       if (!doc["tempprotection"].isNull()) {
         bool value = doc["tempprotection"];
@@ -1090,6 +1175,8 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           pref.putUInt16(ccMaxAbsTime,Inverter.GetMaxAbsorptionTime());
           pref.putUInt8(ccRechargeSOC,Inverter.GetRechargeSOC());
           pref.putUInt16(ccRechargeVOff,Inverter.GetRechargeVoltageOffset());
+          pref.putUInt32(ccFloatVoltage,Inverter.GetFloatVoltage());
+          pref.putUInt32(ccFloatCurrent,Inverter.GetFloatCurrent());
           log_d("Save all completed.");
           handled = true;
         }

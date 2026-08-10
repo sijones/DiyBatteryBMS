@@ -69,7 +69,13 @@ uint8_t _canSendDelay = 10;
 
 // CC-CV Charge Phase State Machine (enum is public for protocol helpers)
 public:
-enum ChargePhase { PHASE_BULK, PHASE_ABSORPTION, PHASE_COMPLETE };
+// PHASE_FLOAT sits between absorption and complete and is optional - it only
+// exists when a float voltage is configured. Complete stops charging outright
+// (CVL held at the absorption target, CCL zero, charge-enable cleared), which
+// several hybrid inverters read as an over-voltage condition they can only
+// resolve by discharging the pack. Float instead lowers the target voltage and
+// keeps a small non-zero current allowance, which is what a hardware BMS does.
+enum ChargePhase { PHASE_BULK, PHASE_ABSORPTION, PHASE_FLOAT, PHASE_COMPLETE };
 
 // Why the SOC sent over CAN differs from the real pack SOC.
 // Kept in sync with the reason strings in the web UI.
@@ -144,6 +150,8 @@ uint16_t _maxAbsorptionTime = 120;
 uint8_t  _rechargeSOC = 90;
 uint16_t _rechargeVoltageOffset = 200;
 uint32_t _minDischargeCurrent = 20000;
+uint16_t _floatVoltage = 0;          // mV, 0 = float stage disabled
+uint32_t _floatCurrentmA = 2000;     // charge allowance held during float
 
 // Temperature protection
 int16_t _chargeHighTemp = 45;
@@ -285,6 +293,26 @@ public:
   void SetRechargeSOC(uint8_t value) { _rechargeSOC = value; }
   uint16_t GetRechargeVoltageOffset() { return _rechargeVoltageOffset; }
   void SetRechargeVoltageOffset(uint16_t value) { _rechargeVoltageOffset = value; }
+
+  uint16_t GetFloatVoltage() { return _floatVoltage; }
+  void SetFloatVoltage(uint16_t mV) {
+    if (_floatVoltage != mV) { _floatVoltage = mV; _dataChanged = true; }
+  }
+  uint32_t GetFloatCurrent() { return _floatCurrentmA; }
+  void SetFloatCurrent(uint32_t mA) {
+    if (_floatCurrentmA != mA) { _floatCurrentmA = mA; _dataChanged = true; }
+  }
+
+  // A float target at or above the charge target is not a float stage, it is a
+  // second absorption - treat that as "not configured" rather than acting on it.
+  bool FloatEnabled() { return _floatVoltage > 0 && _floatVoltage < _chargeVoltage; }
+
+  // The voltage limit actually sent to the inverter. Every protocol sender reads
+  // this rather than _chargeVoltage so the float target cannot be applied to one
+  // protocol and missed on another.
+  uint16_t ActiveChargeVoltage() {
+    return (_chargePhase == PHASE_FLOAT && FloatEnabled()) ? _floatVoltage : _chargeVoltage;
+  }
 
   enum Command
   {
