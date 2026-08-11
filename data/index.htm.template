@@ -319,7 +319,41 @@
     /* Advisory: the value is accepted but the resulting behaviour is probably
        not what was intended. Amber rather than red so it reads as a caution. */
     .field-error.warn { color: var(--warn); }
+    /* Neutral guidance: nothing is wrong, this is just what the battery setup
+       above works out for the field. Muted so it never reads as a problem. */
+    .field-error.info { color: var(--text-faint); }
     input.warn { border-color: var(--warn); }
+
+    /* ---------- Battery setup recommender ---------- */
+    .setup-summary {
+      margin: 2px 0 12px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--r-sm);
+      background: var(--raised);
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-dim);
+    }
+    .setup-actions { margin-bottom: 18px; }
+
+    /* An external controller is holding the current below what is configured.
+       Amber because nothing is wrong, but the operator needs to know why the
+       inverter is not using the ceiling they set. */
+    .ctrl-note {
+      margin: -6px 0 16px;
+      padding: 9px 11px;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--warn);
+      border-radius: var(--r-sm);
+      background: var(--raised);
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-dim);
+    }
+    /* The apply dialog lists one change per line, so its newlines have to survive */
+    #modalBody { white-space: pre-line; }
 
     input[type="checkbox"] {
       width: 17px; height: 17px;
@@ -1417,6 +1451,30 @@
       
       <!-- BMS Tab -->
       <section id="bms" class="tab-pane" role="tabpanel" aria-labelledby="tab-bms">
+        <div class="section-title">Battery Setup</div>
+        <div class="form-row col3">
+          <div class="form-group">
+            <label for="batchem"><span class="tip" data-tip="Cell chemistry. Sets the per-cell voltages every recommendation below is derived from, so get this right first.">Chemistry:</span></label>
+            <select id="batchem" onchange="onBatterySetupChange()">
+              <option value="lfp">LiFePO4</option>
+              <option value="nmc">Li-ion (NMC/NCA)</option>
+              <option value="lto">LTO</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="batcells"><span class="tip" data-tip="Number of cells wired in series - 16 for a typical 48V LiFePO4 pack. Parallel strings do not count here; they go into capacity.">Cells in Series (S):</span></label>
+            <input type="number" id="batcells" min="1" max="64" step="1" oninput="onBatterySetupChange()">
+          </div>
+          <div class="form-group">
+            <label for="batterycapacity"><span class="tip" data-tip="Total usable capacity in amp hours, counting all parallel strings. Drives the tail, float and slow-charge currents as well as the slow charge dividers.">Battery Capacity (Ah):</span></label>
+            <input type="number" id="batterycapacity" min="0" max="9999" step="0.1" oninput="onBatterySetupChange()" onchange="EnqueueUpdate('batterycapacity')" onkeypress="HandleEnter(event, 'batterycapacity')">
+          </div>
+        </div>
+        <div class="setup-summary" id="setupSummary"></div>
+        <div class="setup-actions">
+          <button type="button" onclick="applyRecommended()">Apply Recommended Values</button>
+        </div>
+
         <div class="section-title">Voltage Configuration</div>
         <div class="form-row">
           <div class="form-group">
@@ -1451,6 +1509,7 @@
             <input type="number" id="maxdischargecurrent" min="0" max="500" step="0.1" onchange="EnqueueUpdate('maxdischargecurrent')" onkeypress="HandleEnter(event, 'maxdischargecurrent')">
           </div>
         </div>
+        <div class="ctrl-note" id="ctrlRequestBox" hidden></div>
         
         <div class="form-row">
           <div class="form-group">
@@ -1463,14 +1522,7 @@
             <div class="field-error" id="err_minchargecurr"></div>
           </div>
         </div>
-        
-        <div class="form-row full">
-          <div class="form-group">
-            <label for="batterycapacity"><span class="tip" data-tip="Total battery capacity in amp hours. Used to calculate slow charge current limits (capacity / divider).">Battery Capacity (Ah):</span></label>
-            <input type="number" id="batterycapacity" min="0" max="9999" step="0.1" onchange="EnqueueUpdate('batterycapacity')" onkeypress="HandleEnter(event, 'batterycapacity')">
-          </div>
-        </div>
-        
+
         <div class="section-title">SOC Limits</div>
         <div class="form-row">
           <div class="form-group">
@@ -1678,6 +1730,10 @@
           <div class="form-group">
             <label for="overridetimeout"><span class="tip" data-tip="Seconds an outside command holds a lever off the schedule. A supervisor should re-send well inside this. 0 disables the hold entirely, so the schedule always wins.">Override Timeout (s):</span></label>
             <input type="number" id="overridetimeout" min="0" max="3600" onchange="EnqueueUpdate('overridetimeout')" onkeypress="HandleEnter(event, 'overridetimeout')">
+          </div>
+          <div class="form-group">
+            <label for="requesttimeout"><span class="tip" data-tip="Seconds a charge or discharge current request from an outside controller stays in force. When it lapses the configured Max Charge and Max Discharge return. This one cannot be disabled: a request that never expires could leave the battery pinned at 0 A after the controller stopped.">Current Request Timeout (s):</span></label>
+            <input type="number" id="requesttimeout" min="30" max="3600" onchange="EnqueueUpdate('requesttimeout')" onkeypress="HandleEnter(event, 'requesttimeout')">
           </div>
         </div>
       </section>
@@ -2585,6 +2641,8 @@
          'lowsoclimit','highsoclimit','velooptime'].forEach(function(f) {
           if(obj[f] !== undefined) SetFieldValue(f, obj[f]);
         });
+        // Charge voltage has landed, so the pack can now be worked out from it
+        loadBatterySetup();
         if(obj.canbusenabled !== undefined) { document.getElementById('canbusenabled').checked=obj.canbusenabled; AckUpdate('canbusenabled'); }
       }
 
@@ -2724,10 +2782,13 @@
          'tailvoltok','tailvoltmin',
          'schedactive','schedsource','schedmqttcount','scheduicount','schednext','schedclock',
          'schednextin','schedendsin',
-         'ovrcharge','ovrdischarge','ovrforce','ovrsecs'
+         'ovrcharge','ovrdischarge','ovrforce','ovrsecs',
+         'maxchargecurrent','maxdischargecurrent','reqchargecurrent','reqdischargecurrent',
+         'reqchargeage','reqdischargeage','effchargecurrent','effdischargecurrent'
         ].forEach(function(k) {
           if (obj.hasOwnProperty(k)) latestState[k] = obj[k];
         });
+        renderControllerRequest();
         renderSchedStatus();
         updateAbsorption();
         updateSOCOverride();
@@ -2764,7 +2825,7 @@
        'tailduration','maxabsorptiontime','rechargesoc',
        'chargehightemp','chargelowtemp','dischargehightemp','dischargelowtemp',
        'mqttbatttopic','mqttinvtopic','fanofftemp','fanfulltemp',
-       'ntpserver','timezone','syslogserver','syslogport','overridetimeout',
+       'ntpserver','timezone','syslogserver','syslogport','overridetimeout','requesttimeout',
        'tailcurrent','rechargevoltageoffset'].forEach(function(f) {
         if(obj[f] !== undefined) { SetFieldValue(f, obj[f]); configDirty = true; }
       });
@@ -2918,7 +2979,7 @@
                 'maxabsorptiontime','rechargesoc','chargehightemp','chargelowtemp',
                 'dischargehightemp','dischargelowtemp','fanofftemp','fanfulltemp',
                 'slowchargesoc1','slowchargesoc2','slowchargesoc1div','slowchargesoc2div',
-                'velooptime','mqttport','syslogport','overridetimeout'],
+                'velooptime','mqttport','syslogport','overridetimeout','requesttimeout'],
       // Exported in display units (V/A/Ah); import re-scales on send
       converted: UNIT_CONVERT_FIELDS,
       strings: ['ntpserver','timezone','syslogserver','mqttserverip','mqttclientid','mqtttopic','mqttuser',
@@ -3433,6 +3494,247 @@
       return Number.isFinite(n) ? n : null;
     }
 
+    /* ---------- Battery setup recommender ----------
+       Everything on this tab is really a function of three things: chemistry,
+       cells in series, and capacity. Voltages are per-cell figures multiplied
+       up; currents are C-rates. Each entry is [recommended, low, high] - the
+       band is deliberately wider than the recommendation, so a considered
+       choice is not nagged at and only a genuinely odd value is flagged. */
+    const CHEM = {
+      // The cutoff lows are operating limits, not cell datasheet minimums. 2.50 V
+      // is where a LiFePO4 cell is empty and being damaged, so a cutoff set there
+      // has to be flagged rather than accepted as the bottom of a normal range.
+      lfp: { name: 'LiFePO4',          charge: [3.45,  3.35, 3.60], flt: [3.40,  3.30, 3.45],
+             ovp: [3.60,  3.50, 3.70], cut: [2.90, 2.80, 3.10] },
+      nmc: { name: 'Li-ion (NMC/NCA)', charge: [4.10,  3.95, 4.20], flt: [4.05,  3.90, 4.15],
+             ovp: [4.25,  4.15, 4.30], cut: [3.00, 2.90, 3.30] },
+      lto: { name: 'LTO',              charge: [2.70,  2.60, 2.80], flt: [2.65,  2.55, 2.75],
+             ovp: [2.80,  2.75, 2.90], cut: [1.80, 1.75, 2.00] }
+    };
+
+    function batterySetup() {
+      const el = document.getElementById('batchem');
+      const chem = (el && CHEM[el.value]) ? el.value : 'lfp';
+      return { chem: chem, c: CHEM[chem], cells: numField('batcells'), cap: numField('batterycapacity') };
+    }
+
+    // id -> {v: recommended, lo/hi: usual band, d: decimals, opt: 0 means "off"}
+    // Entries without v are band-only: warned about, never filled in.
+    function recommendations() {
+      const s = batterySetup(), r = {};
+      const scale = function(t, n, d) { return { v: t[0]*n, lo: t[1]*n, hi: t[2]*n, d: d }; };
+
+      if (s.cells > 0) {
+        r.chargevoltage         = scale(s.c.charge, s.cells, 1);
+        r.floatvoltage          = scale(s.c.flt,    s.cells, 1); r.floatvoltage.opt = true;
+        r.overvoltage           = scale(s.c.ovp,    s.cells, 1);
+        r.dischargevoltage      = scale(s.c.cut,    s.cells, 1);
+        r.rechargevoltageoffset = { v: 0.09*s.cells, lo: 0.04*s.cells, hi: 0.20*s.cells, d: 1 };
+      }
+      if (s.cap > 0) {
+        r.tailcurrent   = { v: 0.01*s.cap,  lo: 0.004*s.cap, hi: 0.05*s.cap, d: 1 };
+        r.floatcurrent  = { v: 0.01*s.cap,  lo: 0.002*s.cap, hi: 0.10*s.cap, d: 1, opt: true };
+        r.minchargecurr = { v: Math.max(5, 0.005*s.cap), lo: 0.002*s.cap, hi: 0.05*s.cap, d: 1 };
+        r.adjuststep    = { v: Math.max(1, s.cap/500),   lo: 0.2,         hi: 0.02*s.cap, d: 1 };
+        // Charge and discharge ceilings are inverter limits, not battery ones -
+        // flag an implausible C-rate but never fill them in.
+        r.maxchargecurrent    = { lo: 0.05*s.cap, hi: 0.5*s.cap, d: 1 };
+        r.maxdischargecurrent = { lo: 0.05*s.cap, hi: 1.0*s.cap, d: 1 };
+      }
+      r.tailduration      = { v: 240, lo: 60, hi: 900, d: 0 };
+      r.maxabsorptiontime = { v: 90,  lo: 15, hi: 360, d: 0 };
+      r.rechargesoc       = { v: 90,  lo: 70, hi: 95,  d: 0 };
+      r.lowsoclimit       = { v: 15,  lo: 5,  hi: 40,  d: 0 };
+      r.highsoclimit      = { v: 100, lo: 80, hi: 100, d: 0 };
+      r.slowchargesoc1    = { v: 90,  lo: 70, hi: 97,  d: 0 };
+      r.slowchargesoc1div = { v: 12,  lo: 2,  hi: 50,  d: 0 };
+      r.slowchargesoc2    = { v: 95,  lo: 85, hi: 99,  d: 0 };
+      r.slowchargesoc2div = { v: 24,  lo: 4,  hi: 100, d: 0 };
+      return r;
+    }
+
+    function fmtRec(n, d) { return d ? n.toFixed(d) : String(Math.round(n)); }
+
+    // Not every field was built with a message slot; make one rather than
+    // adding a dozen empty divs to the markup.
+    function hintSlot(id) {
+      let slot = document.getElementById('err_' + id);
+      if (slot) return slot;
+      const el = document.getElementById(id);
+      if (!el || !el.parentNode) return null;
+      slot = document.createElement('div');
+      slot.className = 'field-error';
+      slot.id = 'err_' + id;
+      el.parentNode.appendChild(slot);
+      return slot;
+    }
+
+    // Runs last in validateFields, so a real error or advisory already occupying
+    // a slot always wins over the generic guidance.
+    function renderRecommendations() {
+      const rec = recommendations();
+      Object.keys(rec).forEach(function(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const r = rec[id], slot = hintSlot(id);
+        if (!slot || slot.classList.contains('show')) return;
+
+        const cur = numField(id);
+        let msg = (r.v !== undefined) ? 'Recommended ' + fmtRec(r.v, r.d) : '';
+        let cls = 'info';
+        // 0 means "disabled" for the optional stages, not an out-of-range value
+        const off = r.opt && cur === 0;
+        if (cur !== null && !off && r.lo !== undefined && (cur < r.lo || cur > r.hi)) {
+          msg = 'Unusual - most setups are between ' + fmtRec(r.lo, r.d) + ' and ' + fmtRec(r.hi, r.d) +
+                (r.v !== undefined ? ', typically ' + fmtRec(r.v, r.d) : '');
+          cls = 'warn';
+        }
+        if (!msg) return;
+        slot.textContent = msg;
+        slot.className = 'field-error show ' + cls;
+      });
+    }
+
+    /* An external controller can ask for less current than is configured. Say so
+       plainly, because the symptom that prompted this was operators watching
+       their own Max Charge setting apparently change by itself. */
+    function renderControllerRequest() {
+      const box = document.getElementById('ctrlRequestBox');
+      if (!box) return;
+      const s = latestState;
+      const parts = [];
+      const line = function(what, req, age, cfg) {
+        if (req === undefined || req === null || req < 0) return;
+        const a = (age === undefined || age === null) ? '' : ' (' + age + 's ago)';
+        let t = 'limiting ' + what + ' to ' + (req * 0.001).toFixed(1) + ' A' + a;
+        if (cfg !== undefined && cfg !== null) t += ', your configured ' + (cfg * 0.001).toFixed(1) + ' A is unchanged';
+        parts.push(t);
+      };
+      line('charge', s.reqchargecurrent, s.reqchargeage, s.maxchargecurrent);
+      line('discharge', s.reqdischargecurrent, s.reqdischargeage, s.maxdischargecurrent);
+
+      if (!parts.length) { box.hidden = true; return; }
+      box.hidden = false;
+      box.textContent = 'An external controller is ' + parts.join('; ') +
+        '. Nothing here has been overwritten - if the controller stops, the configured values return on their own.';
+    }
+
+    function renderSetupSummary() {
+      const box = document.getElementById('setupSummary');
+      if (!box) return;
+      const s = batterySetup();
+      if (!(s.cells > 0)) {
+        box.textContent = 'Set the chemistry and cells in series, and every field below gets a recommended value.';
+        return;
+      }
+      const at = function(t) { return (t[0] * s.cells).toFixed(1); };
+      let txt = s.cells + 'S ' + s.c.name + ' at ' + s.c.charge[0] + ' V/cell: charge ' + at(s.c.charge) +
+                ' V, float ' + at(s.c.flt) + ' V, over-voltage ' + at(s.c.ovp) +
+                ' V, discharge cutoff ' + at(s.c.cut) + ' V.';
+      if (s.cap > 0) {
+        txt += ' At ' + s.cap + ' Ah: tail and float current ' + (0.01 * s.cap).toFixed(1) +
+               ' A, slow charge ' + (s.cap / 12).toFixed(0) + ' A then ' + (s.cap / 24).toFixed(0) + ' A.';
+      } else {
+        txt += ' Add the capacity for the current recommendations.';
+      }
+      box.textContent = txt;
+    }
+
+    // Chemistry and cell count are not stored on the device - they describe the
+    // pack rather than change its behaviour. Remember them per browser, and fall
+    // back to working them out from the charge voltage already configured.
+    // A pack voltage on its own is ambiguous - 57.0 V is 16S LiFePO4 at 3.56 V/cell
+    // but equally 14S NMC at 4.07, and on pure closeness the NMC reading wins. So
+    // the chemistries are tried in order of how likely they are on this device and
+    // the first one that fits at all is taken, rather than the arithmetically
+    // nearest. It is a starting point the summary shows back for checking, not a
+    // detection - anything the user picks is remembered instead.
+    const CHEM_LIKELIHOOD = ['lfp', 'nmc', 'lto'];
+    // Series counts people actually build, most common first. Picking purely on
+    // closeness reads 57.0 V as 17S at 3.353 V/cell, because that is nearer 3.45
+    // than 16S at 3.5625 - arithmetically true, and not a pack anyone owns.
+    const COMMON_CELLS = [16, 8, 15, 4, 24, 20, 14, 13, 12, 10, 7, 6];
+
+    function inferSetup() {
+      const cv = numField('chargevoltage');
+      if (!(cv > 0)) return null;
+      for (let i = 0; i < CHEM_LIKELIHOOD.length; i++) {
+        const k = CHEM_LIKELIHOOD[i], per = CHEM[k].charge;
+        const fits = function(n) { const v = cv / n; return v >= per[1] && v <= per[2]; };
+        for (let j = 0; j < COMMON_CELLS.length; j++) {
+          if (fits(COMMON_CELLS[j])) return { chem: k, cells: COMMON_CELLS[j] };
+        }
+        let best = null;
+        for (let n = 3; n <= 32; n++) {
+          if (!fits(n)) continue;
+          const err = Math.abs(cv / n - per[0]);
+          if (!best || err < best.err) best = { chem: k, cells: n, err: err };
+        }
+        if (best) return best;
+      }
+      return null;
+    }
+
+    function loadBatterySetup() {
+      let chem = null, cells = null;
+      try { chem = localStorage.getItem('bmsChem'); cells = localStorage.getItem('bmsCells'); } catch (e) {}
+      if (!chem || !cells) {
+        const guess = inferSetup();
+        if (guess) { chem = guess.chem; cells = guess.cells; }
+      }
+      const ce = document.getElementById('batchem'), ne = document.getElementById('batcells');
+      if (ce && chem && CHEM[chem]) ce.value = chem;
+      if (ne && cells && !ne.value) ne.value = cells;
+      renderSetupSummary();
+      validateFields();
+    }
+
+    function onBatterySetupChange() {
+      try {
+        localStorage.setItem('bmsChem', document.getElementById('batchem').value);
+        localStorage.setItem('bmsCells', document.getElementById('batcells').value);
+      } catch (e) {}
+      renderSetupSummary();
+      validateFields();
+    }
+
+    function applyRecommended() {
+      const rec = recommendations(), changes = [];
+      Object.keys(rec).forEach(function(id) {
+        const r = rec[id], el = document.getElementById(id);
+        if (!el || r.v === undefined) return;
+        const want = r.d ? Number(r.v.toFixed(r.d)) : Math.round(r.v);
+        const cur = numField(id);
+        if (cur !== null && Math.abs(cur - want) < (r.d ? 0.05 : 0.5)) return;
+        changes.push({ id: id, from: (cur === null ? 'empty' : cur), to: want, d: r.d });
+      });
+
+      if (!changes.length) {
+        showToast('Everything already matches the recommendations', 'success');
+        return;
+      }
+      const label = function(id) {
+        const l = document.querySelector('label[for="' + id + '"]');
+        return l ? l.textContent.replace(/:\s*$/, '') : id;
+      };
+      askConfirm({
+        title: 'Apply Recommended Values',
+        body: changes.length + ' settings will change:\n\n' +
+              changes.map(function(c) { return '• ' + label(c.id) + ':  ' + c.from + '  →  ' + c.to; }).join('\n') +
+              '\n\nMax charge and discharge currents are left alone - those are inverter limits, not battery ones.',
+        okLabel: 'Apply'
+      }).then(function(ok) {
+        if (!ok) return;
+        changes.forEach(function(c) {
+          const el = document.getElementById(c.id);
+          el.value = c.d ? c.to.toFixed(c.d) : c.to;
+          EnqueueUpdate(c.id);
+        });
+        validateFields();
+        showToast('Applied ' + changes.length + ' values - Save to EEPROM to keep them', 'success', 5000);
+      });
+    }
+
     // Work out WHY charge or discharge is inhibited. The device reports the outcome;
     // this reconstructs the most likely cause from the configured limits so the user
     // isn't left guessing. Ordered most-specific first.
@@ -3646,7 +3948,7 @@
 
     function validateFields() {
       document.querySelectorAll('.field-error').forEach(function(e) {
-        e.classList.remove('show', 'warn'); e.textContent = '';
+        e.classList.remove('show', 'warn', 'info'); e.textContent = '';
       });
       document.querySelectorAll('input.invalid, input.warn').forEach(function(e) {
         e.classList.remove('invalid', 'warn');
@@ -3743,6 +4045,9 @@
         }
       }
 
+      // Last, so anything above has already claimed the slots it needs
+      renderRecommendations();
+
       return bad === 0;
     }
 
@@ -3750,6 +4055,8 @@
       const ids = { syslogserver: 1, rechargesoc: 1, rechargevoltageoffset: 1, timezone: 1,
                     floatvoltage: 1, floatcurrent: 1, dischargevoltage: 1 };
       FIELD_RULES.forEach(function(r) { ids[r.a] = 1; ids[r.b] = 1; });
+      // Every field the recommender has an opinion on re-checks as it is typed
+      Object.keys(recommendations()).forEach(function(id) { ids[id] = 1; });
       Object.keys(ids).forEach(function(id) {
         const el = document.getElementById(id);
         if (el) el.addEventListener('input', validateFields);
