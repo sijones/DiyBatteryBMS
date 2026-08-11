@@ -29,7 +29,7 @@
 
 #define SYSLOG 1
 
-#define FW_VERSION "2.8.0-BETA6"
+#define FW_VERSION "2.8.0-BETA7"
 
 #if defined(ESPCAN_C3)
   #define FW_BUILD "ESP32-C3 TWAI"
@@ -77,6 +77,12 @@
 // before control reverts to the saved schedule. 0 disables the latch, so the
 // scheduler always wins. See RemoteOverride.h.
 #define initOverrideTimeout 300           // seconds
+
+// How long a charge/discharge current request from an external controller stays
+// in force before it goes stale and the configured ceiling returns. Unlike the
+// override latch this cannot be disabled - a request that never expires is the
+// failure it exists to prevent. See CANBUS.h REQUEST_TIMEOUT_MIN/MAX.
+#define initRequestTimeout 120            // seconds
 
 #define initCAN16Mhz false                // This is the default MCP2515 8mhz Crystal speed, use 16mhz if true
 // To use strict PYLONTECH Protocol enable below

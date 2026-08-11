@@ -292,6 +292,9 @@ void setup()
   Inverter.SetRechargeVoltageOffset(pref.getUInt16(ccRechargeVOff, initRechargeVoltageOffset));
   Inverter.SetFloatVoltage((uint16_t) pref.getUInt32(ccFloatVoltage, initFloatVoltage));
   Inverter.SetFloatCurrent(pref.getUInt32(ccFloatCurrent, initFloatCurrentmA));
+  // Requests themselves are never restored - nothing is in force at boot, so the
+  // configured ceilings apply until a controller asks for something.
+  Inverter.SetRequestTimeout(pref.getUInt16(ccReqTimeout, initRequestTimeout));
 
   Inverter.TempProtectionEnabled(pref.getBool(ccTempProtect, false));
   Inverter.SetChargeHighTemp(pref.getInt16(ccChgHighTemp, 45));

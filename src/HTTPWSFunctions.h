@@ -316,6 +316,7 @@ String generateDatatoJSON(bool All)
     Schedule.mqttToJson(doc["schedmqtt"].to<JsonArray>());
     doc["overridetimeout"] = RemoteOverride.GetTimeout();
 #endif
+    doc["requesttimeout"] = Inverter.GetRequestTimeout();
     doc["syslogserver"] = pref.getString(ccSyslogServer,"");
     doc["syslogport"] = pref.getUInt16(ccSyslogPort, 514);
     doc["syslogenabled"] = pref.getBool(ccSyslogEnabled, false);
@@ -377,6 +378,19 @@ String generateDatatoJSON(bool All)
   doc["chargecurrent"] = Inverter.GetChargeCurrent();
   doc["dischargecurrent"] = Inverter.GetDischargeCurrent();
   doc["maxdischargecurrent"] = Inverter.GetMaxDischargeCurrent();
+  /* Configured ceiling, what a controller is asking for, and what is actually in
+     force - a supervisor needs all three to tell "my request was accepted" from
+     "my request was capped". -1 means no request is live, which is distinct from
+     a genuine request of 0. */
+  doc["maxchargecurrent"] = Inverter.GetMaxChargeCurrent();
+  doc["reqchargecurrent"] = Inverter.ChargeRequestActive()
+                              ? (int32_t)Inverter.GetRequestedChargeCurrent() : -1;
+  doc["reqdischargecurrent"] = Inverter.DischargeRequestActive()
+                              ? (int32_t)Inverter.GetRequestedDischargeCurrent() : -1;
+  doc["reqchargeage"] = Inverter.ChargeRequestAge();
+  doc["reqdischargeage"] = Inverter.DischargeRequestAge();
+  doc["effchargecurrent"] = Inverter.EffectiveMaxChargeCurrent();
+  doc["effdischargecurrent"] = Inverter.EffectiveDischargeCurrent();
   doc["chargephase"] = Inverter.GetChargePhaseName();
   // Absorption progress: the two races that can end the phase
   doc["absorbelapsed"] = Inverter.GetAbsorptionElapsed();
@@ -1041,6 +1055,48 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         WS_LOG_I("Set Recharge Voltage Offset to %u mV", (uint16_t) doc["rechargevoltageoffset"]);
         handled = true;
         notifyWSClients(); }
+      /* Live current setpoints from an external controller. These are commands,
+         not settings: deliberately no pref.put* on any path, whatever `persist`
+         says, because they arrive as often as every 30 seconds and NVS has a
+         finite write budget. They are also not bound by Min Charge - 0 is a
+         valid instruction meaning "do not charge now", not a broken config. */
+      if (!doc["requestedchargecurrent"].isNull()) {
+        uint32_t mA = (uint32_t) doc["requestedchargecurrent"];
+        Inverter.RequestChargeCurrent(mA);
+        WS_LOG_I("Charge current request %u mA (effective %u mA of %u configured)",
+                 mA, Inverter.EffectiveMaxChargeCurrent(), Inverter.GetMaxChargeCurrent());
+        // Worth saying out loud: this is the combination that makes some hybrid
+        // inverters discharge the pack to shed power they cannot put anywhere.
+        if (Inverter.EffectiveMaxChargeCurrent() == 0 &&
+            Inverter.ChargeEnable() && Inverter.ManualAllowCharge())
+          WS_LOG_W("Charge limit is 0 A but charging is still enabled - send "
+                   "manualallowcharge:false as well to stop cleanly");
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["requesteddischargecurrent"].isNull()) {
+        uint32_t mA = (uint32_t) doc["requesteddischargecurrent"];
+        Inverter.RequestDischargeCurrent(mA);
+        WS_LOG_I("Discharge current request %u mA (effective %u mA of %u configured)",
+                 mA, Inverter.EffectiveDischargeCurrent(), Inverter.GetMaxDischargeCurrent());
+        handled = true;
+        notifyWSClients(); }
+      // Hand both back to the configured ceilings now rather than waiting out the timeout
+      if (!doc["clearcurrentrequests"].isNull()) {
+        if (doc["clearcurrentrequests"]) {
+          Inverter.ClearCurrentRequests();
+          WS_LOG_I("Current requests cleared, configured ceilings back in force");
+        }
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["requesttimeout"].isNull()) {
+        uint16_t secs = (uint16_t) doc["requesttimeout"];
+        Inverter.SetRequestTimeout(secs);
+        if (persist) pref.putUInt16(ccReqTimeout, Inverter.GetRequestTimeout());
+        WS_LOG_I("Current request timeout set to %u s%s", Inverter.GetRequestTimeout(),
+                 persist ? "" : " (not saved)");
+        handled = true;
+        notifyWSClients(); }
+
       // 0 disables the float stage, so the charge cycle ends at Complete as before.
       if (!doc["floatvoltage"].isNull()) {
         uint32_t mv = (uint32_t) doc["floatvoltage"];
@@ -1177,6 +1233,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           pref.putUInt16(ccRechargeVOff,Inverter.GetRechargeVoltageOffset());
           pref.putUInt32(ccFloatVoltage,Inverter.GetFloatVoltage());
           pref.putUInt32(ccFloatCurrent,Inverter.GetFloatCurrent());
+          pref.putUInt16(ccReqTimeout,Inverter.GetRequestTimeout());
           log_d("Save all completed.");
           handled = true;
         }

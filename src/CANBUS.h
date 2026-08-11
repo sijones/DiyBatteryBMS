@@ -190,6 +190,26 @@ int16_t _fanFullTemp = 50;   // Fan 100% at this (C)
 uint32_t _maxChargeCurrentmA = 0;
 uint32_t _maxDischargeCurrentmA = 0;
 
+/* Live current setpoints from an external controller (PowerPilot and similar).
+
+   Deliberately separate from the two above. Those are commissioning values:
+   validated against Min Charge, persisted, set once. A supervisor rewriting them
+   every 30 seconds destroyed whatever the operator had configured, made a
+   perfectly valid "0 A, stop charging now" command show up as an invalid
+   configuration, and could leave 0 A saved as the standing ceiling when the
+   controller stopped - after which the battery could not charge at all.
+
+   A request is only ever an upper bound applied on top of the configured
+   ceiling, so a controller fault cannot exceed what was commissioned. Requests
+   are never written to NVS, and they expire. */
+uint32_t _reqChargeCurrentmA = 0;
+uint32_t _reqDischargeCurrentmA = 0;
+bool     _reqChargeSet = false;
+bool     _reqDischargeSet = false;
+uint32_t _reqChargeAtMs = 0;
+uint32_t _reqDischargeAtMs = 0;
+uint16_t _reqTimeoutSecs = 120;
+
 // Override charging, used by MQTT/Web.
 bool _ManualAllowCharge = true;
 bool _ManualAllowDischarge = true;
@@ -373,6 +393,71 @@ public:
   uint32_t GetFailedTotalCount() { return _failedCanSendTotal; }
   uint32_t GetMaxChargeCurrent() { return _maxChargeCurrentmA; }
   uint32_t GetMaxDischargeCurrent() { return _maxDischargeCurrentmA; }
+
+  /* ---- Live current requests from an external controller ----
+     Unlike the remote override latch, a timeout of 0 is NOT offered here. There
+     the timeout expiring hands control back to the local schedule, so disabling
+     it fails safe; here the request is what is holding the pack down, so a
+     request that never expires is precisely the failure this exists to prevent. */
+  static const uint16_t REQUEST_TIMEOUT_MIN = 30;
+  static const uint16_t REQUEST_TIMEOUT_MAX = 3600;
+
+  void SetRequestTimeout(uint16_t secs) {
+    if (secs < REQUEST_TIMEOUT_MIN) secs = REQUEST_TIMEOUT_MIN;
+    if (secs > REQUEST_TIMEOUT_MAX) secs = REQUEST_TIMEOUT_MAX;
+    _reqTimeoutSecs = secs;
+  }
+  uint16_t GetRequestTimeout() { return _reqTimeoutSecs; }
+
+  void RequestChargeCurrent(uint32_t mA) {
+    if (!_reqChargeSet || _reqChargeCurrentmA != mA) _dataChanged = true;
+    _reqChargeCurrentmA = mA;
+    _reqChargeSet = true;
+    _reqChargeAtMs = millis();
+  }
+  void RequestDischargeCurrent(uint32_t mA) {
+    if (!_reqDischargeSet || _reqDischargeCurrentmA != mA) _dataChanged = true;
+    _reqDischargeCurrentmA = mA;
+    _reqDischargeSet = true;
+    _reqDischargeAtMs = millis();
+  }
+  void ClearCurrentRequests() {
+    if (_reqChargeSet || _reqDischargeSet) _dataChanged = true;
+    _reqChargeSet = false;
+    _reqDischargeSet = false;
+  }
+
+  // Derived from the timestamp rather than a flag some sweep has to clear, so the
+  // answer stays correct between passes.
+  bool ChargeRequestActive() {
+    return _reqChargeSet &&
+           (uint32_t)(millis() - _reqChargeAtMs) < (uint32_t)_reqTimeoutSecs * 1000UL;
+  }
+  bool DischargeRequestActive() {
+    return _reqDischargeSet &&
+           (uint32_t)(millis() - _reqDischargeAtMs) < (uint32_t)_reqTimeoutSecs * 1000UL;
+  }
+  uint32_t GetRequestedChargeCurrent() { return _reqChargeCurrentmA; }
+  uint32_t GetRequestedDischargeCurrent() { return _reqDischargeCurrentmA; }
+  uint16_t ChargeRequestAge() {
+    return _reqChargeSet ? (uint16_t)((millis() - _reqChargeAtMs) / 1000) : 0;
+  }
+  uint16_t DischargeRequestAge() {
+    return _reqDischargeSet ? (uint16_t)((millis() - _reqDischargeAtMs) / 1000) : 0;
+  }
+
+  // min(request, configured). The commissioned ceiling always wins.
+  uint32_t EffectiveMaxChargeCurrent() {
+    uint32_t v = _maxChargeCurrentmA;
+    if (ChargeRequestActive() && _reqChargeCurrentmA < v) v = _reqChargeCurrentmA;
+    return v;
+  }
+  uint32_t EffectiveDischargeCurrent() {
+    uint32_t v = _dischargeCurrentmA;
+    if (v > _maxDischargeCurrentmA) v = _maxDischargeCurrentmA;
+    if (DischargeRequestActive() && _reqDischargeCurrentmA < v) v = _reqDischargeCurrentmA;
+    return v;
+  }
   uint8_t GetLowSOCLimit() { return _lowSOCLimit; }
   void SetLowSOCLimit(uint8_t Limit) { _lowSOCLimit = Limit; }
   uint8_t GetHighSOCLimit() { return _highSOCLimit; }

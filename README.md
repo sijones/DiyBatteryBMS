@@ -202,9 +202,52 @@ rather than clicking a setting occasionally:
   waiting out the timeout. One thing a latch cannot hold off is safety: if protection disables
   charging, an externally forced charge is dropped regardless, exactly as a scheduled one would be.
 
-Note that the device's own CC-CV logic recomputes its live charge current from
-`maxchargecurrent` on each pass, so a supervisor should steer the max limits rather than setting
-`chargecurrent` directly.
+### Live current requests
+
+*New in 2.8.0-BETA7.*
+
+`maxchargecurrent` and `maxdischargecurrent` are **commissioning settings** — validated against
+Min Charge, persisted to NVS, meant to be set once. A supervisor rewriting them every 30 seconds
+destroyed whatever the operator had configured, made a perfectly valid "0 A, stop charging now"
+command appear as an invalid configuration, and could leave 0 A saved as the standing ceiling
+once the controller stopped — after which the battery could not charge at all.
+
+Use **`requestedchargecurrent`** and **`requesteddischargecurrent`** instead (milliamps, as with
+every other current on this interface):
+
+```json
+{"manualallowcharge": true,  "requestedchargecurrent": 100000}
+{"manualallowcharge": false, "requestedchargecurrent": 0}
+```
+
+| | |
+|---|---|
+| Effective limit | `min(request, configured max)` — a request can only ever ask for **less**, so a controller fault cannot exceed what was commissioned |
+| Persistence | **Never.** No NVS write on any path, whatever `persist` says |
+| Min Charge | Does not apply. `0` is a valid instruction, not a broken configuration |
+| Expiry | Requests go stale after **Current Request Timeout** (default 120 s, Schedule → Outside Control) and the configured ceilings return |
+| Cancel early | `{"clearcurrentrequests": true}` |
+| Read back | `maxchargecurrent` (configured), `reqchargecurrent` (`-1` when nothing is live, distinct from a request of `0`), `effchargecurrent` (in force), plus `reqchargeage` in seconds — and the same four for discharge |
+
+Unlike the override latch, this timeout **cannot be disabled**. There, expiry hands control back to
+the local schedule, so switching it off fails safe; here the request is what is holding the pack
+down, and one that never expires is exactly the failure the timeout exists to prevent. Values
+below 30 s are clamped.
+
+The BMS page shows the configured ceilings unchanged and, when a request is in force, a note
+naming the requested value and how long ago it arrived. Operators previously saw their own
+setting apparently changing by itself.
+
+Setting `maxchargecurrent` still behaves exactly as before, so an existing controller keeps
+working untouched until it is updated.
+
+One caveat worth knowing: a request of `0` sets the charge current limit to zero while charging
+remains *enabled*, and some hybrid inverters answer that combination by discharging the pack to
+shed power. Send `manualallowcharge: false` alongside it to stop cleanly — the device logs a
+warning if you do not.
+
+Note that the device's own CC-CV logic recomputes its live charge current on each pass, so a
+supervisor should steer the request or the max limits rather than setting `chargecurrent` directly.
 
 > **There is no authentication on this interface.** Anything on the same network can change your
 > charge limits. Keep the device off guest and untrusted networks — that applies to PowerPilot

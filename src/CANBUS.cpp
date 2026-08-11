@@ -390,6 +390,29 @@ bool CANBUS::SendAllUpdates()
       }
     }
 
+    /* Retire a stale request once, so the transition is logged and published
+       rather than repeating every pass. A controller that dies must not leave
+       the pack pinned at whatever it last asked for. */
+    if (_reqChargeSet && !ChargeRequestActive()) {
+      _reqChargeSet = false;
+      _dataChanged = true;
+      WS_LOG_W("Charge current request expired after %us, back to configured %u mA",
+               _reqTimeoutSecs, _maxChargeCurrentmA);
+    }
+    if (_reqDischargeSet && !DischargeRequestActive()) {
+      _reqDischargeSet = false;
+      _dataChanged = true;
+      WS_LOG_W("Discharge current request expired after %us, back to configured %u mA",
+               _reqTimeoutSecs, _maxDischargeCurrentmA);
+    }
+
+    /* A live request caps whatever the phase logic works out. Applied after the
+       slow-charge tapers because those replace the base value outright, and a
+       taper computed from capacity would otherwise hand back more current than
+       the controller asked for. */
+    if (ChargeRequestActive() && _reqChargeCurrentmA < baseChargeCurrent)
+      baseChargeCurrent = _reqChargeCurrentmA;
+
     ChargePhase prevPhase = _chargePhase;
 
     switch (_chargePhase) {
@@ -433,6 +456,11 @@ bool CANBUS::SendAllUpdates()
       uint32_t absorptionCurrent = baseChargeCurrent - _chargeAdjust;
       if (absorptionCurrent < _minChargeCurrent)
         absorptionCurrent = _minChargeCurrent;
+      // Min Charge is a floor under the configured ceiling, not a licence to
+      // exceed it. Without this a live request of 0 would still charge at the
+      // minimum, and 0 has to mean 0.
+      if (absorptionCurrent > baseChargeCurrent)
+        absorptionCurrent = baseChargeCurrent;
 
       if (absorptionCurrent != GetChargeCurrent())
         SetChargeCurrent(absorptionCurrent);
@@ -721,8 +749,8 @@ bool CANBUS::SendCANData_Pylontech(){
   uint16_t _tempChargeVolt = (ActiveChargeVoltage() * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
-  uint16_t _tempDisChargeCurr = (_dischargeCurrentmA * 0.01);
-  u_int16_t _tempMaxDisChargeCurr = (_maxDischargeCurrentmA * 0.01);
+  // Already min(live, configured max, controller request) - see CANBUS.h
+  uint16_t _tempDisChargeCurr = (EffectiveDischargeCurrent() * 0.01);
   int16_t _tempBattTemp = (_battTemp * 10);
 
   // 0x351 - Battery charge and discharge parameters
@@ -737,8 +765,6 @@ bool CANBUS::SendCANData_Pylontech(){
     CAN_MSG[3] = 0;
   }
   if((_dischargeEnabled && _ManualAllowDischarge)){
-    if(_dischargeCurrentmA > _maxDischargeCurrentmA)
-      _tempDisChargeCurr = _tempMaxDisChargeCurr;
     CAN_MSG[4] = lowByte(_tempDisChargeCurr);
     CAN_MSG[5] = highByte(_tempDisChargeCurr);
   } else {
@@ -849,8 +875,8 @@ bool CANBUS::SendCANData_SMA(){
   uint16_t _tempChargeVolt = (ActiveChargeVoltage() * 0.1);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.1);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
-  uint16_t _tempDisChargeCurr = (_dischargeCurrentmA * 0.01);
-  u_int16_t _tempMaxDisChargeCurr = (_maxDischargeCurrentmA * 0.01);
+  // Already min(live, configured max, controller request) - see CANBUS.h
+  uint16_t _tempDisChargeCurr = (EffectiveDischargeCurrent() * 0.01);
   int16_t _tempBattTemp = (_battTemp * 10);
 
   // 0x351 - Battery charge and discharge parameters
@@ -865,8 +891,6 @@ bool CANBUS::SendCANData_SMA(){
     CAN_MSG[3] = 0;
   }
   if((_dischargeEnabled && _ManualAllowDischarge)){
-    if(_dischargeCurrentmA > _maxDischargeCurrentmA)
-      _tempDisChargeCurr = _tempMaxDisChargeCurr;
     CAN_MSG[4] = lowByte(_tempDisChargeCurr);
     CAN_MSG[5] = highByte(_tempDisChargeCurr);
   } else {
@@ -907,8 +931,8 @@ bool CANBUS::SendCANData_Victron(){
   uint16_t _tempChargeVolt = (ActiveChargeVoltage() * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
-  uint16_t _tempDisChargeCurr = (_dischargeCurrentmA * 0.01);
-  u_int16_t _tempMaxDisChargeCurr = (_maxDischargeCurrentmA * 0.01);
+  // Already min(live, configured max, controller request) - see CANBUS.h
+  uint16_t _tempDisChargeCurr = (EffectiveDischargeCurrent() * 0.01);
   int16_t _tempBattTemp = (_battTemp * 10);
 
   // 0x351 - Battery charge and discharge parameters
@@ -923,8 +947,6 @@ bool CANBUS::SendCANData_Victron(){
     CAN_MSG[3] = 0;
   }
   if((_dischargeEnabled && _ManualAllowDischarge)){
-    if(_dischargeCurrentmA > _maxDischargeCurrentmA)
-      _tempDisChargeCurr = _tempMaxDisChargeCurr;
     CAN_MSG[4] = lowByte(_tempDisChargeCurr);
     CAN_MSG[5] = highByte(_tempDisChargeCurr);
   } else {
