@@ -374,6 +374,11 @@ String generateDatatoJSON(bool All)
   doc["chargeenabled"] = (Inverter.ChargeEnable() && Inverter.ManualAllowCharge()) ? true : false;
   doc["dischargeenabled"] = (Inverter.DischargeEnable() && Inverter.ManualAllowDischarge()) ? true : false;
   doc["forcecharge"] = Inverter.ForceCharge();
+  doc["requestfullcharge"] = Inverter.RequestFullCharge();
+  /* Both of the above ride on 0x35C. False here means they are not being sent
+     at all - see CANBUS::RequestFlagsActive(). */
+  doc["requestflagsactive"] = Inverter.RequestFlagsActive();
+  doc["soctrickactive"] = Inverter.EnableSOCTrick() && Inverter.ForceCharge();
   doc["autocharge"] = Inverter.AutoCharge();  // smart-charge state for HA "Smart Charge Status" binary sensor
   doc["chargecurrent"] = Inverter.GetChargeCurrent();
   doc["dischargecurrent"] = Inverter.GetDischargeCurrent();
@@ -666,6 +671,20 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         Inverter.ForceCharge((bool) doc["forcecharge"]);
         RemoteOverride.Arm(OV_FORCE);
         WS_LOG_I("Force charge set to: %s", (bool) doc["forcecharge"] ? "ON" : "OFF");
+        if ((bool) doc["forcecharge"] && !Inverter.RequestFlagsActive())
+          WS_LOG_W("Force charge set but 0x35C flags are not being sent - the "
+                   "inverter will not see it. Enable Request Flags on a "
+                   "Pylontech 1.2 or Growatt protocol.");
+        handled = true;
+        notifyWSClients(); }
+      /* Request full charge - a different ask to force charge, and RAM only for
+         the same reasons. It tells the inverter to run its next charge all the
+         way to 100% rather than stopping at its own SOC limit, which is how you
+         let a pack rebalance and reset its SOC. It does not start a charge, so
+         it is not a scheduler lever and takes no override latch. */
+      if (!doc["requestfullcharge"].isNull()) {
+        Inverter.RequestFullCharge((bool) doc["requestfullcharge"]);
+        WS_LOG_I("Request full charge set to: %s", (bool) doc["requestfullcharge"] ? "ON" : "OFF");
         handled = true;
         notifyWSClients(); }
       if (!doc["chargecurrent"].isNull()) {

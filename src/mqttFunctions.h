@@ -164,6 +164,7 @@ bool sendUpdateMQTTData()
   pub("SOCTrickEnable", Inverter.EnableSOCTrick() ? "ON" : "OFF");
   pub("RequestFlagsEnable", Inverter.EnableRequestFlags() ? "ON" : "OFF");
   pub("ForceCharge", Inverter.ForceCharge() ? "ON" : "OFF");
+  pub("RequestFullCharge", Inverter.RequestFullCharge() ? "ON" : "OFF");
   pub("DischargeEnable", (Inverter.DischargeEnable() && Inverter.ManualAllowDischarge()) ? "ON" : "OFF");
   pub("ChargeEnable", (Inverter.ChargeEnable() && Inverter.ManualAllowCharge()) ? "ON" : "OFF");
   pub("SmartCharge", Inverter.AutoCharge() ? "ON" : "OFF");
@@ -376,6 +377,7 @@ void publishHADiscovery() {
   haSwitch("Charge Enable", "charge", "ChargeEnable", base, node, st, deviceJson);
   haSwitch("Discharge Enable", "discharge", "DischargeEnable", base, node, st, deviceJson);
   haSwitch("Force Charge", "forcecharge", "ForceCharge", base, node, st, deviceJson);
+  haSwitch("Request Full Charge", "requestfullcharge", "RequestFullCharge", base, node, st, deviceJson);
   haSwitch("SOC Trick Enable", "soctrick", "SOCTrickEnable", base, node, st, deviceJson);
   haSwitch("Request Flags Enable", "requestflags", "RequestFlagsEnable", base, node, st, deviceJson);
   haSwitch("Smart Charge", "smartcharge", "SmartCharge", base, node, st, deviceJson);
@@ -604,6 +606,13 @@ if (false) { }
     RemoteOverride.Arm(OV_FORCE);
     log_d("Force charge set to: %d", forcecharge);
     WS_LOG_I("Force charge set to: %s", (message == "ON") ? "ON" : "OFF");
+  }
+  // Not a scheduler lever - it changes how a charge finishes, not whether one
+  // starts - so no override latch here.
+  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/RequestFullCharge") {
+    Inverter.RequestFullCharge((message == "ON") ? true : false);
+    log_d("Request full charge set to: %s", (message == "ON") ? "ON" : "OFF");
+    WS_LOG_I("Request full charge set to: %s", (message == "ON") ? "ON" : "OFF");
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/DischargeEnable") {
     Inverter.ManualAllowDischarge((message == "ON") ? true : false);

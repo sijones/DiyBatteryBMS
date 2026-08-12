@@ -30,9 +30,19 @@ Pylontech v1.3 only (replaces 0x359/0x35C):
 
 #include <mEEPROM.h>
 
+/* 0x35C byte 0. The two force-charge bits and the full-charge bit are three
+   different asks, and sending the wrong one is silently ignored by the inverter:
+     Force charge I/II - "start charging the pack now", from the grid if that is
+       what it takes. I is the high-priority variant a hardware BMS raises when
+       the pack is close to shutdown; II is the ordinary request. Most inverters
+       act on II, so that is what ForceCharge() sends.
+     Request full charge - "when you next charge, take it all the way to 100%
+       instead of stopping at your configured limit", for SOC calibration. It
+       does not start a charge on its own. */
 #define flagChargeEnable 7      // Bit 7
 #define flagDischargeEnable 6   // Bit 6
-#define flagForceCharge 4       // Bit 4
+#define flagForceChargeI 5      // Bit 5
+#define flagForceCharge 4       // Bit 4 - force charge II
 #define flagRequestFullCharge 3 // Bit 3
 
 enum CANProtocol : uint8_t {
@@ -60,6 +70,7 @@ bool _initialised = false;
 bool _enableSOCTrick = false;
 bool _enableRequestFlags = false;
 bool _forceCharge = false;
+bool _requestFullCharge = false;
 bool _chargeEnabled = true;
 bool _dischargeEnabled = true;
 bool _dataChanged = false;
@@ -475,6 +486,12 @@ public:
   void DischargeEnable(bool);
   bool AllReady();
   void ForceCharge(bool);
+  void RequestFullCharge(bool);
+  /* The request is satisfied once the charge it asked about has finished, so it
+     clears itself rather than quietly sending every later charge to 100% as
+     well - a hardware BMS drops the bit the same way. A supervisor watching
+     requestfullcharge go false is reading "your calibration charge is done". */
+  void ClearFullChargeRequest();
   bool Initialised(){return _initialised;}
   bool Configured();
 
@@ -492,6 +509,7 @@ public:
   int32_t BattCurrentmA(){return _battCurrentmA;}
   int16_t BattTemp(){return _battTemp;}
   bool ForceCharge(){return _forceCharge;}
+  bool RequestFullCharge(){return _requestFullCharge;}
   bool ChargeEnable(){return _chargeEnabled;}
   bool DischargeEnable(){return _dischargeEnabled;}
   bool EnableSOCTrick(){return _enableSOCTrick;}
@@ -538,6 +556,15 @@ public:
   uint8_t GetSOCOverride() { return _socOverride; }
   void ClearSOCOverride() { _socOverride = SOC_OVR_NONE; _reportedSOC = _battSOC; }
   CANProtocol GetCANProtocol() { return _canProtocol; }
+  /* Whether the 0x35C request flags are actually reaching the inverter. Force
+     charge and full charge are carried by that message alone, so on any other
+     protocol - or with the flags switched off - setting them changes nothing on
+     the wire. A supervisor needs to know that before it trusts force charge to
+     do the work; when this is false, the SOC trick is the only lever left. */
+  bool RequestFlagsActive() {
+    return _enableRequestFlags &&
+           (_canProtocol == PROTO_PYLONTECH_12 || _canProtocol == PROTO_GROWATT);
+  }
   void SetCANProtocol(CANProtocol p) { _canProtocol = p; }
   bool InverterPresent() { return _lastInverterSeen > 0 && (millis() - _lastInverterSeen) < INVERTER_TIMEOUT_MS; }
   void InverterSeen() { _lastInverterSeen = millis(); }

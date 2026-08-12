@@ -36,6 +36,16 @@ switch:
     retain: true # or false if you want to wait for changes
 
   - platform: mqtt # Again, it's an MQTT device
+    name: "Request Full Charge" # Asks the inverter to charge to 100% next time, rather than starting a charge
+    unique_id: "RequestFullCharge"
+    state_topic: "SMARTBMS/Param/RequestFullCharge" # Topic to read the current state
+    command_topic: "SMARTBMS/set/RequestFullCharge" # Topic to publish commands
+    qos: 1
+    payload_on: "ON" # or "on", depending on your MQTT device
+    payload_off: "OFF" # or "off", depending on your MQTT device
+    retain: true # or false if you want to wait for changes
+
+  - platform: mqtt # Again, it's an MQTT device
     name: "Discharge Enable" # Choose an easy-to-recognize name
     unique_id: "DischargeEnable"
     state_topic: "SMARTBMS/Param/DischargeEnable" # Topic to read the current state

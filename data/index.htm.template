@@ -1789,6 +1789,10 @@
             <input type="checkbox" id="never100soc" onchange="SendJSONUpdate('never100soc')">
             <label for="never100soc"><span class="tip" data-tip="Some inverters shut down solar export when 100% SOC is received. Enable this to always send 99% max over CAN bus. Internal SOC tracking and charge control still uses the real value.">Never Send 100% SOC</span></label>
           </div>
+          <div class="checkbox-row">
+            <input type="checkbox" id="requestfullcharge" onchange="toggleRequestFullCharge(this.checked)">
+            <label for="requestfullcharge"><span class="tip" data-tip="Asks the inverter to take its next charge all the way to 100% instead of stopping at its own SOC limit, so the pack can rebalance and reset SOC. This does not start a charge - use force charge for that. Not saved: it clears on reboot. Needs Request Flags enabled.">Request Full Charge</span></label>
+          </div>
         </div>
         
         <div class="section-title">Fan Control</div>
@@ -2777,7 +2781,8 @@
           latestState.chargephase = obj.chargephase;
         }
 
-        ['forcecharge','battvoltage','battcurrent','reportedsoc','socoverride',
+        ['forcecharge','requestfullcharge','requestflagsactive','soctrickactive',
+         'battvoltage','battcurrent','reportedsoc','socoverride',
          'absorbelapsed','absorbmax','tailheld','tailneed','tailactive','tailthreshold',
          'tailvoltok','tailvoltmin',
          'schedactive','schedsource','schedmqttcount','scheduicount','schednext','schedclock',
@@ -2802,6 +2807,11 @@
       ['soctrickenabled','requestflagsenabled','never100soc','autocharge'].forEach(function(f) {
         if(obj[f] !== undefined) { document.getElementById(f).checked=obj[f]; AckUpdate(f); }
       });
+      // Live state rather than a saved setting, so it is mirrored without an ack
+      if(obj.requestfullcharge !== undefined) {
+        const rfc = document.getElementById('requestfullcharge');
+        if(rfc) rfc.checked = obj.requestfullcharge;
+      }
       if(obj.hasOwnProperty('wifissid')) { 
         // Save the SSID as the current saved network
         savedWifiSSID = obj.wifissid;
@@ -3225,6 +3235,13 @@
       console.log('Toggling Discharge Enable to: ' + dischargeEnabled);
       showFeedback(dischargeEnabled ? 'Enabling discharge...' : 'Disabling discharge...');
       websocket.send(JSON.stringify({"manualallowdischarge": dischargeEnabled}));
+    }
+
+    /* Not a saved setting, so it does not go through the update queue - the
+       "Saved" toast that queue shows would be a lie. It clears on reboot. */
+    function toggleRequestFullCharge(on) {
+      showFeedback(on ? 'Requesting full charge...' : 'Clearing full charge request...');
+      websocket.send(JSON.stringify({"requestfullcharge": on}));
     }
 
     function showFeedback(message) {
@@ -3905,8 +3922,24 @@
         warnings.push(['Discharge disabled', inhibitReason('discharge')]);
         critical = critical || (soc !== undefined && soc > 20);
       }
+      /* Force charge and the full charge request both travel in 0x35C. With that
+         message switched off, or on a protocol that does not carry it, setting
+         them changes nothing on the wire - a silent no-op that used to leave
+         people watching a battery that never charged. The SOC trick is a
+         separate lever, so force charge still does something without the flags. */
       if (s.forcecharge) {
-        warnings.push(['Force charge active', 'the inverter is being told to charge at maximum']);
+        if (s.requestflagsactive === false && !s.soctrickactive) {
+          warnings.push(['Force charge is not reaching the inverter',
+                         'the 0x35C request flags are off, or this CAN protocol does not send them']);
+        } else {
+          warnings.push(['Force charge active', 'the inverter is being told to charge at maximum']);
+        }
+      }
+      if (s.requestfullcharge) {
+        warnings.push(s.requestflagsactive === false
+          ? ['Full charge request is not reaching the inverter',
+             'it is only sent with Request Flags enabled on Pylontech 1.2 or Growatt']
+          : ['Full charge requested', 'the inverter has been asked to charge to 100% next time']);
       }
       if (s.victrondata === false) {
         warnings.push(['No shunt data', 'voltage, current and SOC are not being updated']);

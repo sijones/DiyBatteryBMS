@@ -484,6 +484,7 @@ bool CANBUS::SendAllUpdates()
           _chargePhase = FloatEnabled() ? PHASE_FLOAT : PHASE_COMPLETE;
           WS_LOG_I("CC-CV: ABSORPTION -> %s (tail current sustained %ds)",
                    GetChargePhaseName(), _tailCurrentDuration);
+          ClearFullChargeRequest();
           break;
         }
       } else {
@@ -501,6 +502,7 @@ bool CANBUS::SendAllUpdates()
         _chargePhase = FloatEnabled() ? PHASE_FLOAT : PHASE_COMPLETE;
         WS_LOG_I("CC-CV: ABSORPTION -> %s (max absorption time %d min)",
                  GetChargePhaseName(), _maxAbsorptionTime);
+        ClearFullChargeRequest();
       }
       break;
     }
@@ -658,6 +660,18 @@ void CANBUS::ForceCharge(bool State) {
   _forceCharge = State;
   }
 
+void CANBUS::RequestFullCharge(bool State) {
+  if (State != _requestFullCharge) _dataChanged = true;
+  _requestFullCharge = State;
+  }
+
+void CANBUS::ClearFullChargeRequest() {
+  if (!_requestFullCharge) return;
+  _requestFullCharge = false;
+  _dataChanged = true;
+  WS_LOG_I("Full charge request cleared - charge complete");
+  }
+
 void CANBUS::ChargeEnable(bool State) {
   if (State != _chargeEnabled) _dataChanged = true;
   _chargeEnabled = State;
@@ -806,7 +820,12 @@ bool CANBUS::SendCANData_Pylontech(){
     CAN_MSG[0] = 0xC0;
     CAN_MSG[1] = 0x00;
     if(_enableRequestFlags) {
-      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagRequestFullCharge,_forceCharge);
+      // Force charge is bit 4, not bit 3 - see the flag comments in CANBUS.h.
+      // This previously sent bit 3, which asks an inverter to finish a charge it
+      // is already doing rather than to start one, so force charge did nothing
+      // on inverters that read the flags (EG4 6000XP among them).
+      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagForceCharge,_forceCharge);
+      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagRequestFullCharge,_requestFullCharge);
       CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
       CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
     }

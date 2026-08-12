@@ -51,7 +51,8 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 - Backup and restore all settings to a JSON file
 - **PowerPilot integration** - PowerPilot can use a DiyBatteryBMS device as a networked hardware node -
   battery telemetry, inverter control, or both - over WiFi with no CAN HAT on the Pi and no MQTT broker.
-  See [PowerPilot Integration](#powerpilot-integration-websocket-api) below.
+  See [PowerPilot.md](PowerPilot.md) for the WebSocket interface, or the summary
+  [below](#powerpilot-integration-websocket-api).
 
 > **Version note:** everything below marked *New in 2.8.0-BETA5* requires firmware **2.8.0-BETA5 or later**.
 > The version is shown in the top right of the web interface and on the Firmware tab.
@@ -93,7 +94,7 @@ The dashboard now shows what the firmware is actually doing rather than leaving 
 The device now supports **MQTT Discovery** which automatically creates all entities when connected:
 - **Sensors**: Battery SOC (%), Voltage (V), Current (A), Power (W), Temperature, Charge/Discharge Current Limits, Charge Phase, Time To Go, Fan PWM, Free Heap
 - **Binary Sensors**: Charge/Discharge/Force Charge status indicators  
-- **Switches**: Charge Enable, Discharge Enable, Force Charge, SOC Trick Enable, Request Flags Enable
+- **Switches**: Charge Enable, Discharge Enable, Force Charge, Request Full Charge, SOC Trick Enable, Request Flags Enable
 - **Number Controls**: Charge Voltage, Charge Current (with 0.1 precision), Float Voltage, Float Current
 - **New in 2.8.0-BETA5 — Charging detail**: SOC Sent To Inverter, SOC Override Reason, SOC Override Active, Absorption Elapsed, Absorption Remaining, Tail Current Held, Tail Current Remaining, Tail Current Active
 - All entities are grouped under one "DIY Battery BMS" device
@@ -139,119 +140,25 @@ boundary while the voltage limit stays high, which produces the same symptom by 
 
 *New in 2.8.0-BETA6.*
 
-PowerPilot is a home energy manager that plans battery
-charge and discharge cycles against solar forecasts and tariff prices. It can use a
-DiyBatteryBMS device as a networked hardware interface: because the node already reads a Victron
-Smart Shunt over VE.Direct and speaks Pylontech to an inverter over CAN, pointing PowerPilot at one
-gives it battery telemetry, inverter control, or both, without wiring a CAN HAT or a VE.Direct cable
-to the Pi.
+PowerPilot is a home energy manager that plans battery charge and discharge cycles against solar
+forecasts and tariff prices. It can use a DiyBatteryBMS device as a networked hardware interface,
+over the web UI's own WebSocket at `ws://<device>/ws` — an interface open to any external energy
+manager, not just PowerPilot.
 
-Add the node under **Settings → Hardware Comms Devices** in PowerPilot, by hostname
-(e.g. `diy-batterybms.local`) or IP. Nothing needs enabling on this side — a node on the network is
-ready.
+**See [PowerPilot.md](PowerPilot.md)** for the full interface: non-persisting set-commands, the
+override latch, force charge versus full charge, and live current requests.
 
-The interface it uses is the web UI's own WebSocket at `ws://<device>/ws`, which is open to any
-system, not just PowerPilot. It pushes the full state as JSON on every loop and accepts JSON
-set-commands using the same keys, so any external energy manager can do the same thing.
-
-Three additions in 2.8.0-BETA6 make that practical for a supervisor that is steering continuously
-rather than clicking a setting occasionally:
-
-- **`"persist": false`** — add this to any set-command and the value applies immediately but is
-  **not** written to NVS. Defaults to `true`, so the web UI and existing clients are unaffected.
-  A supervisor adjusting charge current every few seconds should always use it: it keeps flash out
-  of the control loop, and it means a reboot or a lost controller falls back to the limits *you*
-  saved locally, rather than whatever some remote system last commanded.
-
-  ```json
-  {"maxchargecurrent": 40000, "persist": false}
-  ```
-
-  PowerPilot sends everything this way while it is running, and only uses `"persist": true` when it
-  is deliberately (re)writing the node's saved fallback — the limits the node runs on by itself once
-  PowerPilot is gone.
-
-- **`forcecharge`** — force charge can now be set over the WebSocket as well as MQTT:
-
-  ```json
-  {"forcecharge": true}
-  ```
-
-  It is RAM-only in the firmware either way, so there is nothing to persist.
-
-- **The override latch** — the charge scheduler re-asserts its decision once a second, so without
-  this anything an outside system set would be undone within the second. Setting `forcecharge`,
-  `manualallowcharge` or `manualallowdischarge` now takes that *one* lever off the scheduler until
-  the override times out. Nothing else is affected: a controller holding force charge does not stop
-  the schedule managing discharge.
-
-  The timeout is the safety net, not an inconvenience. A supervisor that crashes, loses the network
-  or is simply switched off stops refreshing its latch, and the device falls back to the schedule
-  you configured locally instead of sitting indefinitely on the last thing it was told. **Re-send
-  well inside the timeout** — treat it as a watchdog, not a lease to renew at the last moment.
-
-  | | |
-  |---|---|
-  | Default | 300 seconds |
-  | Set it | Schedule tab → Outside Control, or `{"overridetimeout": 300}` (accepts `persist`) |
-  | Disable it | Set to `0` — the scheduler then always wins, as before |
-  | Hand control back early | `{"clearoverride": true}`, or MQTT `<topic>/set/ClearOverride`, or the **Return to Schedule** button |
-  | Read the state | `ovrcharge` / `ovrdischarge` / `ovrforce` / `ovrsecs` in the pushed JSON, and MQTT `<topic>/Schedule/Override` and `/Schedule/OverrideSecs` |
-
-  A controller shutting down cleanly should send `clearoverride` rather than leaving the schedule
-  waiting out the timeout. One thing a latch cannot hold off is safety: if protection disables
-  charging, an externally forced charge is dropped regardless, exactly as a scheduled one would be.
-
-### Live current requests
-
-*New in 2.8.0-BETA7.*
-
-`maxchargecurrent` and `maxdischargecurrent` are **commissioning settings** — validated against
-Min Charge, persisted to NVS, meant to be set once. A supervisor rewriting them every 30 seconds
-destroyed whatever the operator had configured, made a perfectly valid "0 A, stop charging now"
-command appear as an invalid configuration, and could leave 0 A saved as the standing ceiling
-once the controller stopped — after which the battery could not charge at all.
-
-Use **`requestedchargecurrent`** and **`requesteddischargecurrent`** instead (milliamps, as with
-every other current on this interface):
-
-```json
-{"manualallowcharge": true,  "requestedchargecurrent": 100000}
-{"manualallowcharge": false, "requestedchargecurrent": 0}
-```
-
-| | |
-|---|---|
-| Effective limit | `min(request, configured max)` — a request can only ever ask for **less**, so a controller fault cannot exceed what was commissioned |
-| Persistence | **Never.** No NVS write on any path, whatever `persist` says |
-| Min Charge | Does not apply. `0` is a valid instruction, not a broken configuration |
-| Expiry | Requests go stale after **Current Request Timeout** (default 120 s, Schedule → Outside Control) and the configured ceilings return |
-| Cancel early | `{"clearcurrentrequests": true}` |
-| Read back | `maxchargecurrent` (configured), `reqchargecurrent` (`-1` when nothing is live, distinct from a request of `0`), `effchargecurrent` (in force), plus `reqchargeage` in seconds — and the same four for discharge |
-
-Unlike the override latch, this timeout **cannot be disabled**. There, expiry hands control back to
-the local schedule, so switching it off fails safe; here the request is what is holding the pack
-down, and one that never expires is exactly the failure the timeout exists to prevent. Values
-below 30 s are clamped.
-
-The BMS page shows the configured ceilings unchanged and, when a request is in force, a note
-naming the requested value and how long ago it arrived. Operators previously saw their own
-setting apparently changing by itself.
-
-Setting `maxchargecurrent` still behaves exactly as before, so an existing controller keeps
-working untouched until it is updated.
-
-One caveat worth knowing: a request of `0` sets the charge current limit to zero while charging
-remains *enabled*, and some hybrid inverters answer that combination by discharging the pack to
-shed power. Send `manualallowcharge: false` alongside it to stop cleanly — the device logs a
-warning if you do not.
-
-Note that the device's own CC-CV logic recomputes its live charge current on each pass, so a
-supervisor should steer the request or the max limits rather than setting `chargecurrent` directly.
-
-> **There is no authentication on this interface.** Anything on the same network can change your
-> charge limits. Keep the device off guest and untrusted networks — that applies to PowerPilot
-> reaching the device as much as to anything else.
+## Upgrading to 2.8.0-BETA8
+- **Force charge now sends the CAN bit inverters actually act on.** It set *request full charge*
+  (0x35C bit 3) rather than *force charge* (bit 4), so on an inverter that reads those flags it
+  asked for a charge to be finished rather than started, and force charge appeared to do nothing —
+  reported on an EG4 6000XP. If you worked around this with the SOC trick, nothing changes: that
+  path never used these bits, and you can now turn it off if you would rather not misreport SOC.
+- **Request Full Charge is now its own control** — a switch on the BMS tab, a Home Assistant
+  switch, `<topic>/set/RequestFullCharge`, and `{"requestfullcharge": true}` on the WebSocket. Use
+  it to let a pack rebalance and reset SOC; it clears itself once that charge completes.
+- Both flags only reach the inverter on **Pylontech 1.2** or **Growatt** with **Request Flags**
+  enabled. The dashboard now says so rather than leaving you waiting on a charge that is not coming.
 
 ## Upgrading to 2.8.0-BETA6
 - **Charge, discharge and force charge now hold for 5 minutes once set from outside the schedule.**
