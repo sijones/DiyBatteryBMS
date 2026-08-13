@@ -6,6 +6,9 @@ You can now sponsor and donate to me, the link is on here to buy me a coffee ;)
 
 The new UI means no coding knowledge is required, just flash and set up.
 
+A lot of people use it from Diy Solar Forum, support from community users is also available:
+https://diysolarforum.com/threads/diy-battery-via-smart-shunt-to-inverter-integration-solis-etc.44750/
+
 DiyBatteryBMS takes data from a Victron Smart Shunt and sends it to a inverter over CAN using Pylontech protocol allowing for "DIY LifePO4" Batteries to be integrated.
 
 The Victron Smart Shunt provides the actual monitoring data, this software translates it to Pylontech protocol that most Inverters understand, the part that you need to configure is the charging voltage, current that is also sent to the Inverter.
