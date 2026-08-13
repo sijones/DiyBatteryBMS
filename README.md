@@ -101,6 +101,10 @@ The device now supports **MQTT Discovery** which automatically creates all entit
 - No manual YAML configuration required (HomeAssistant.yaml is now optional for reference only)
 - Discovery messages published automatically on MQTT connect
 
+**See [MQTT.md](MQTT.md)** for the whole MQTT interface: every topic published, every `set/` command
+accepted with its units and whether it persists, the schedule payload format, and the traps worth
+knowing before you automate against it.
+
 **Protocol Control Features:**
 - **SOC Trick Enable**: Sends 1/10 of the actual SOC to trick the inverter into force charging
 - **Request Flags Enable**: Controls charge/discharge request flags sent to inverter (allows different ways to control inverter response)
