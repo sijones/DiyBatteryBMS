@@ -674,7 +674,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         if ((bool) doc["forcecharge"] && !Inverter.RequestFlagsActive())
           WS_LOG_W("Force charge set but 0x35C flags are not being sent - the "
                    "inverter will not see it. Enable Request Flags on a "
-                   "Pylontech 1.2 or Growatt protocol.");
+                   "Pylontech 1.2, Pylontech 1.3 or Growatt protocol.");
         handled = true;
         notifyWSClients(); }
       /* Request full charge - a different ask to force charge, and RAM only for

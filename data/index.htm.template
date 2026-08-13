@@ -487,7 +487,7 @@
     .v-accent{ color: var(--accent) !important; }
     .v-dim   { color: var(--text-faint) !important; }
 
-    /* ---------- Toggle switch (charge / discharge) ---------- */
+    /* ---------- Toggle switch (charge / discharge / force charge) ---------- */
     .toggle-box {
       background: var(--panel-2);
       border: 1px solid var(--line-soft);
@@ -509,6 +509,7 @@
     .toggle-box:focus-visible { outline: none; box-shadow: var(--focus); }
     .toggle-box[aria-pressed="true"].tg-charge    { border-left-color: var(--charge); }
     .toggle-box[aria-pressed="true"].tg-discharge { border-left-color: var(--discharge); }
+    .toggle-box[aria-pressed="true"].tg-force     { border-left-color: var(--err); }
 
     .toggle-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
     .toggle-state {
@@ -539,6 +540,12 @@
     }
     .toggle-box[aria-pressed="true"] .switch { background: color-mix(in srgb, var(--ok) 40%, var(--line)); }
     .toggle-box[aria-pressed="true"] .switch::after { transform: translateX(18px); background: var(--ok); }
+
+    /* Force charge is an intervention rather than a healthy running state, so it
+       goes on in the alarm colour instead of the usual green. */
+    .toggle-box[aria-pressed="true"].tg-force .toggle-state { color: var(--err); }
+    .toggle-box[aria-pressed="true"].tg-force .switch { background: color-mix(in srgb, var(--err) 40%, var(--line)); }
+    .toggle-box[aria-pressed="true"].tg-force .switch::after { background: var(--err); }
 
     /* ---------- Battery visual ---------- */
     .battery-visual {
@@ -1253,6 +1260,7 @@
       .btn-danger { border-color: var(--err); }
       .dot.connected { box-shadow: none; }
       .toggle-box[aria-pressed="true"] .switch { background: var(--ok); }
+      .toggle-box[aria-pressed="true"].tg-force .switch { background: var(--err); }
       input:focus, select:focus { box-shadow: 0 0 0 3px var(--accent-dim); }
     }
   </style>
@@ -1439,6 +1447,14 @@
             <span class="toggle-text">
               <span class="stat-label">Discharge</span>
               <span class="toggle-state" id="dischargeenabledStatus">OFF</span>
+            </span>
+            <span class="switch" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="toggle-box tg-force" id="forceToggle"
+                  aria-pressed="false" onclick="toggleForceCharge()">
+            <span class="toggle-text">
+              <span class="stat-label">Force Charge</span>
+              <span class="toggle-state" id="forcechargeStatus">OFF</span>
             </span>
             <span class="switch" aria-hidden="true"></span>
           </button>
@@ -1747,7 +1763,7 @@
             <label for="canbusenabled"><span class="tip" data-tip="Enable CAN bus communication with the inverter. Disable if no inverter is connected.">CAN Bus Enabled</span></label>
           </div>
           <div class="form-group">
-            <label for="canprotocol"><span class="tip" data-tip="Select the CAN protocol for your inverter. Pylontech 1.2 sends 0x359/0x35C request flags (most compatible). Pylontech 1.3 sends 0x35A/0x35F per official spec. SMA uses different voltage scaling. Victron adds alarm messages. Growatt/SolArk uses Pylontech 1.2 format.">Inverter Protocol:</span></label>
+            <label for="canprotocol"><span class="tip" data-tip="Select the CAN protocol for your inverter. Pylontech 1.2 sends 0x359/0x35C request flags (most compatible). Pylontech 1.3 sends 0x35A/0x35F per official spec, plus 0x35C if Request Flags is enabled. SMA uses different voltage scaling. Victron adds alarm messages. Growatt/SolArk uses Pylontech 1.2 format.">Inverter Protocol:</span></label>
             <select id="canprotocol" onchange="SendJSONUpdate('canprotocol')">
               <option value="0">Pylontech 1.2</option>
               <option value="1">Pylontech 1.3</option>
@@ -1781,7 +1797,7 @@
           </div>
           <div class="checkbox-row">
             <input type="checkbox" id="requestflagsenabled" onchange="SendJSONUpdate('requestflagsenabled')">
-            <label for="requestflagsenabled"><span class="tip" data-tip="Send charge/discharge enable and force charge flags in the 0x35C CAN message. Required for some inverters.">Request Flags (0x35C Status)</span></label>
+            <label for="requestflagsenabled"><span class="tip" data-tip="Send charge/discharge enable and force charge flags in the 0x35C CAN message. Required for some inverters. On Pylontech 1.3 this also adds 0x35C to the messages sent, since the 1.3 spec drops it.">Request Flags (0x35C Status)</span></label>
           </div>
         </div>
         <div class="form-row">
@@ -2770,6 +2786,12 @@
           latestState.dischargeenabled = obj.dischargeenabled;
           setToggleState('dischargeToggle', 'dischargeenabledStatus', obj.dischargeenabled);
         }
+        /* Force charge is driven from MQTT, the schedule and the safety cut as
+           well as from here, so the toggle only ever follows the device - it is
+           never set locally on click. */
+        if(obj.hasOwnProperty('forcecharge')) {
+          setToggleState('forceToggle', 'forcechargeStatus', obj.forcecharge);
+        }
 
         if(obj.hasOwnProperty('chargephase')) {
           let phaseElem = document.getElementById('chargephaseStatus');
@@ -3235,6 +3257,20 @@
       console.log('Toggling Discharge Enable to: ' + dischargeEnabled);
       showFeedback(dischargeEnabled ? 'Enabling discharge...' : 'Disabling discharge...');
       websocket.send(JSON.stringify({"manualallowdischarge": dischargeEnabled}));
+    }
+
+    /* Live state rather than a saved setting, so no update queue here either.
+       Flips from the last state the device reported rather than a local mirror:
+       MQTT, the schedule and the safety cut all move this lever, and a mirror
+       kept here would send the wrong value after any of them. */
+    function toggleForceCharge() {
+      const btn = document.getElementById('forceToggle');
+      const now = latestState.forcecharge !== undefined
+                  ? latestState.forcecharge
+                  : (btn && btn.getAttribute('aria-pressed') === 'true');
+      const on = !now;
+      showFeedback(on ? 'Forcing charge...' : 'Clearing force charge...');
+      websocket.send(JSON.stringify({"forcecharge": on}));
     }
 
     /* Not a saved setting, so it does not go through the update queue - the

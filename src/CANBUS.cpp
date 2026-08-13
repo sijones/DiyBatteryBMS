@@ -814,22 +814,6 @@ bool CANBUS::SendCANData_Pylontech(){
     CAN_MSG[5] = 0x50;
     CAN_MSG[6] = 0x4E;
     CAN_SEND_MSG(0x359, 8, CAN_MSG);
-
-    // v1.2: 0x35C - Battery charge request flags
-    memset(CAN_MSG,0x00,sizeof(CAN_MSG));
-    CAN_MSG[0] = 0xC0;
-    CAN_MSG[1] = 0x00;
-    if(_enableRequestFlags) {
-      // Force charge is bit 4, not bit 3 - see the flag comments in CANBUS.h.
-      // This previously sent bit 3, which asks an inverter to finish a charge it
-      // is already doing rather than to start one, so force charge did nothing
-      // on inverters that read the flags (EG4 6000XP among them).
-      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagForceCharge,_forceCharge);
-      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagRequestFullCharge,_requestFullCharge);
-      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
-      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
-    }
-    CAN_SEND_MSG(0x35C, 2, CAN_MSG);
   }
   else if (_canProtocol == PROTO_PYLONTECH_13) {
     // v1.3: 0x35A - Alarms & Warnings (bit-pair alarm/clear format)
@@ -879,6 +863,29 @@ bool CANBUS::SendCANData_Pylontech(){
     CAN_MSG[6] = 0x00;  // Manufacturer ID
     CAN_MSG[7] = 0x00;
     CAN_SEND_MSG(0x35F, 8, CAN_MSG);
+  }
+
+  /* 0x35C - Battery charge request flags. v1.2 and Growatt always send the
+     message, with the flag bits filled in only when Request Flags is on. The
+     v1.3 spec replaces it with 0x35A/0x35F, but inverters that read the flags
+     still act on 0x35C when it arrives, and force charge has no other carrier -
+     so send it on v1.3 too when Request Flags is enabled. Left off there by
+     default, since the spec does not ask for it. */
+  if (_canProtocol != PROTO_PYLONTECH_13 || _enableRequestFlags) {
+    memset(CAN_MSG,0x00,sizeof(CAN_MSG));
+    CAN_MSG[0] = 0xC0;
+    CAN_MSG[1] = 0x00;
+    if(_enableRequestFlags) {
+      // Force charge is bit 4, not bit 3 - see the flag comments in CANBUS.h.
+      // This previously sent bit 3, which asks an inverter to finish a charge it
+      // is already doing rather than to start one, so force charge did nothing
+      // on inverters that read the flags (EG4 6000XP among them).
+      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagForceCharge,_forceCharge);
+      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagRequestFullCharge,_requestFullCharge);
+      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagChargeEnable,(_chargeEnabled && _ManualAllowCharge) ? true : false);
+      CAN_MSG[0] = bit_set_to(CAN_MSG[0],flagDischargeEnable,(_dischargeEnabled && _ManualAllowDischarge) ? true : false);
+    }
+    CAN_SEND_MSG(0x35C, 2, CAN_MSG);
   }
 
   // 0x35E - Manufacturer name

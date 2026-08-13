@@ -154,11 +154,16 @@ override latch, force charge versus full charge, and live current requests.
   asked for a charge to be finished rather than started, and force charge appeared to do nothing —
   reported on an EG4 6000XP. If you worked around this with the SOC trick, nothing changes: that
   path never used these bits, and you can now turn it off if you would rather not misreport SOC.
+- **Force Charge is now a switch on the dashboard**, alongside Charge and Discharge. It follows the
+  device rather than the click, so a force charge set or cleared over MQTT, by the schedule or by
+  the temperature cut shows up on the dashboard within a second.
 - **Request Full Charge is now its own control** — a switch on the BMS tab, a Home Assistant
   switch, `<topic>/set/RequestFullCharge`, and `{"requestfullcharge": true}` on the WebSocket. Use
   it to let a pack rebalance and reset SOC; it clears itself once that charge completes.
-- Both flags only reach the inverter on **Pylontech 1.2** or **Growatt** with **Request Flags**
-  enabled. The dashboard now says so rather than leaving you waiting on a charge that is not coming.
+- Both flags only reach the inverter on **Pylontech 1.2**, **Pylontech 1.3** or **Growatt** with
+  **Request Flags** enabled — on 1.3 that setting is also what puts 0x35C on the bus, since the 1.3
+  spec drops the message. The dashboard now says so rather than leaving you waiting on a charge that
+  is not coming.
 
 ## Upgrading to 2.8.0-BETA6
 - **Charge, discharge and force charge now hold for 5 minutes once set from outside the schedule.**

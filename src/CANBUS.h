@@ -10,11 +10,13 @@ Common to v1.2 and v1.3:
 
 Pylontech v1.2 only:
 0x359 – Protection & Alarm flags (8 bytes)
-0x35C – Battery charge request flags (2 bytes)
 
-Pylontech v1.3 only (replaces 0x359/0x35C):
+Pylontech v1.3 only (replaces 0x359):
 0x35A – Alarms & Warnings (8 bytes, bit-pair alarm/clear format)
 0x35F – Battery type & BMS info (8 bytes)
+
+0x35C – Battery charge request flags (2 bytes). Always sent on v1.2/Growatt;
+        on v1.3 only when Request Flags is enabled, as the spec drops it.
 
 */
 
@@ -563,7 +565,8 @@ public:
      do the work; when this is false, the SOC trick is the only lever left. */
   bool RequestFlagsActive() {
     return _enableRequestFlags &&
-           (_canProtocol == PROTO_PYLONTECH_12 || _canProtocol == PROTO_GROWATT);
+           (_canProtocol == PROTO_PYLONTECH_12 || _canProtocol == PROTO_GROWATT ||
+            _canProtocol == PROTO_PYLONTECH_13);
   }
   void SetCANProtocol(CANProtocol p) { _canProtocol = p; }
   bool InverterPresent() { return _lastInverterSeen > 0 && (millis() - _lastInverterSeen) < INVERTER_TIMEOUT_MS; }

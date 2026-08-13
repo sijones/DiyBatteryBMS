@@ -113,10 +113,12 @@ therefore treat `requestfullcharge` going `false` as **"the calibration charge y
 done"**, and does not need to clear it itself. `forcecharge` is *not* one-shot: it holds until
 something clears it or the override times out.
 
-**Check `requestflagsactive` before trusting either.** 0x35C is only transmitted on the **Pylontech
-1.2** and **Growatt** protocols, and only when **Request Flags** is enabled under Settings →
-Inverter Tricks. On Pylontech 1.3, SMA or Victron the message is not sent at all. The device
-therefore publishes a read-only flag saying whether the bits are actually reaching the inverter:
+**Check `requestflagsactive` before trusting either.** The flag bits only go out when **Request
+Flags** is enabled under Settings → Inverter Tricks, and only on the **Pylontech 1.2**, **Pylontech
+1.3** and **Growatt** protocols. 1.2 and Growatt send 0x35C either way and fill the bits in when the
+setting is on; 1.3 drops the message per spec, so enabling the setting is what adds it back. On SMA
+or Victron the message is never sent. The device publishes a read-only flag saying whether the bits
+are actually reaching the inverter:
 
 | Key | Meaning |
 |---|---|
