@@ -125,9 +125,9 @@ open. The firmware can now do the same:
 
 | | |
 |---|---|
-| Enable it | Settings → CC-CV Charging Configuration → **Float Voltage**. `0` disables the stage |
+| Setting it | Settings → CC-CV Charging Configuration → **Float Voltage**. `0` works the target out from the charge voltage; a value at or above the charge voltage turns the stage off |
 | Typical value | 3.375–3.40 V per cell — 54.0–54.4 V on a 16S LiFePO4 pack |
-| **Float Current** | Charge allowance held during float, default 2 A. **Do not set this to zero** — that recreates the instruction the float stage exists to avoid |
+| **Float Current** | Charge allowance held during float, default 2 A. Never drops below **Min Charge Current** — an allowance the inverter cannot act on recreates the instruction the float stage exists to avoid |
 | Leaving float | Same as Complete: SOC below Recharge SOC, or voltage below the float target minus Recharge V Offset |
 | Over MQTT | `<topic>/set/FloatVoltage` (V) and `<topic>/set/FloatCurrent` (A), or the matching Home Assistant number entities |
 
@@ -136,8 +136,9 @@ the real 100% SOC is sent to the inverter rather than being held at 99%, because
 is full — telling an inverter "99%, and you may not charge" is the contradiction that provoked the
 forced discharge in the first place.
 
-**The stage is off by default**, including after an update, so an existing installation keeps
-terminating its charge exactly as before until you configure a float voltage.
+**Since 2.8.0-BETA10 every charge ends in float**, with the target worked out for you if you have
+not set one. See [Upgrading to 2.8.0-BETA10](#upgrading-to-280-beta10) — in BETA6 to BETA9 the stage
+was off unless you configured a float voltage.
 
 If you are seeing a forced discharge at 100% SOC and have not enabled float, also check **High SOC
 (Stop Charge)** and the **Slow Charge** thresholds — both cut the charge current limit at an SOC
@@ -154,6 +155,44 @@ manager, not just PowerPilot.
 
 **See [PowerPilot.md](PowerPilot.md)** for the full interface: non-persisting set-commands, the
 override latch, force charge versus full charge, and live current requests.
+
+## Upgrading to 2.8.0-BETA10
+- **Every charge now ends in float, and the target is worked out if you have not set one.** Resting
+  a full pack at the charge voltage with a 0 A limit asks the inverter for a target and forbids it
+  the current to reach it. A zero charge current limit is a *prohibition* in these protocols — the
+  same signal a BMS sends for over-voltage or over-temperature — not a description of a battery
+  that is simply full, and inverters resolve the contradiction however they see fit. A Solis
+  S6-EH1P was reported shutting its PV down and importing the whole house load from the grid; Deye
+  answers the same frame by discharging the pack.
+- **Float Voltage `0` now means "work it out"**, not "no float stage". The target is 1.5% below the
+  charge voltage, which suits every chemistry the setup wizard knows — LiFePO4, NMC and LTO all
+  float between 1.2% and 1.9% below their charge target — so it needs neither the chemistry nor the
+  cell count. A 16S LiFePO4 pack charging at 55.2 V floats at 54.37 V. The BMS tab shows the figure
+  under the field. To keep the old hard stop, set Float Voltage at or above your charge voltage.
+- **Min Charge Current is a floor under the float allowance**, as it already was during absorption.
+  A current the inverter cannot act on rounds back to the 0 A that float exists to avoid. Your
+  configured maximum still wins, so a max of 0 or an energy manager requesting 0 still means 0.
+- This mattered less before BETA5. Complete used to bounce straight back to Bulk on a pack with
+  Recharge SOC at 100, so the contradictory frame was never held for long. Fixing that made
+  Complete a stable resting state and exposed what it had been sending all along.
+
+## Upgrading to 2.8.0-BETA9
+- **Slow charge dividers round to the nearest 0.1 A and can no longer exceed your charge current
+  limit.** The taper truncated twice — once dividing capacity, once converting to the deciamps the
+  CAN frames carry — so it always rounded down: the recommended divider of 24 on a 280 Ah pack
+  asked for 11.7 A and sent 11.6 A. It was also applied in place of your configured maximum rather
+  than against it, so a large pack on a small divider could have "slow charge" *raise* the limit.
+  Both date back to the first 2.x release.
+- **Factory Reset now actually erases everything.** WiFi and MQTT settings live in their own NVS
+  namespace, and the reset only cleared the other one — so credentials survived a full reset, and
+  "Keep WiFi" only kept them by accident. Both options now erase the whole NVS partition, with
+  Keep WiFi saving and restoring the SSID, password and hostname. **Keep WiFi now clears your MQTT
+  settings**, which it previously left untouched.
+- **The Logs tab shows the most recent entries, not the oldest.** It replayed the first 50 of the
+  100-entry buffer, so on a device that had been running a while you got the boot sequence and
+  nothing since. Replayed lines also took the time they arrived in the browser rather than the time
+  they were logged, which collapsed a long backlog onto a single second and made it read as a
+  reboot that never happened.
 
 ## Upgrading to 2.8.0-BETA8
 - **Force charge now sends the CAN bit inverters actually act on.** It set *request full charge*
