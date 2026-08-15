@@ -336,15 +336,34 @@ public:
     if (_floatCurrentmA != mA) { _floatCurrentmA = mA; _dataChanged = true; }
   }
 
-  // A float target at or above the charge target is not a float stage, it is a
-  // second absorption - treat that as "not configured" rather than acting on it.
-  bool FloatEnabled() { return _floatVoltage > 0 && _floatVoltage < _chargeVoltage; }
+  /* Float target when none is configured, as a permille of the charge target.
+     Every chemistry the setup wizard knows about floats between 1.2% and 1.9%
+     below its charge voltage - LFP 3.40/3.45, NMC 4.05/4.10, LTO 2.65/2.70 - so
+     one ratio lands within a few tens of mV of the right answer for all three
+     without needing to know the chemistry or the cell count. On a 16S LFP pack
+     charging at 55.2V this gives 54.37V, against the wizard's own 54.4V. */
+  static const uint32_t FLOAT_AUTO_PERMILLE = 985;
+
+  /* Resting the pack at the charge target with a 0A limit asks the inverter for a
+     voltage and forbids it the current to get there. Some answer by discharging
+     the pack, others by shutting down their PV and importing instead. So the
+     charge always ends in float, and the voltage is worked out if it was never
+     set. 0 means automatic; a value at or above the charge target is not a float
+     stage but a second absorption, and turns it off. */
+  uint16_t ActiveFloatVoltage() {
+    if (_chargeVoltage == 0) return 0;
+    if (_floatVoltage > 0) return (_floatVoltage < _chargeVoltage) ? _floatVoltage : 0;
+    return (uint16_t)(((uint32_t)_chargeVoltage * FLOAT_AUTO_PERMILLE) / 1000);
+  }
+  bool FloatUsingAutoVoltage() { return _floatVoltage == 0 && _chargeVoltage > 0; }
+
+  bool FloatEnabled() { return ActiveFloatVoltage() > 0; }
 
   // The voltage limit actually sent to the inverter. Every protocol sender reads
   // this rather than _chargeVoltage so the float target cannot be applied to one
   // protocol and missed on another.
   uint16_t ActiveChargeVoltage() {
-    return (_chargePhase == PHASE_FLOAT && FloatEnabled()) ? _floatVoltage : _chargeVoltage;
+    return (_chargePhase == PHASE_FLOAT && FloatEnabled()) ? ActiveFloatVoltage() : _chargeVoltage;
   }
 
   enum Command

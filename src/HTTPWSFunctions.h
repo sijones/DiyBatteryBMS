@@ -377,6 +377,9 @@ String generateDatatoJSON(bool All)
   doc["chargevoltage"] = Inverter.GetChargeVoltage();
   doc["floatvoltage"] = Inverter.GetFloatVoltage();
   doc["floatcurrent"] = Inverter.GetFloatCurrent();
+  // What float will actually hold at, so a configured 0 does not read as "none"
+  doc["floatvoltageactive"] = Inverter.ActiveFloatVoltage();
+  doc["floatvoltageauto"] = Inverter.FloatUsingAutoVoltage();
   taskEXIT_CRITICAL(&(Inverter.CANMutex));
   
   doc["chargeadjust"] = Inverter.GetChargeAdjust();
@@ -1140,13 +1143,16 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         notifyWSClients(); }
 
-      // 0 disables the float stage, so the charge cycle ends at Complete as before.
+      // 0 asks for the automatic target; at or above the charge voltage turns the
+      // float stage off and the cycle ends at Complete.
       if (!doc["floatvoltage"].isNull()) {
         uint32_t mv = (uint32_t) doc["floatvoltage"];
         pref.putUInt32(ccFloatVoltage, mv);
         Inverter.SetFloatVoltage((uint16_t) mv);
-        WS_LOG_I("Set Float Voltage to %u mV%s", mv,
-                 Inverter.FloatEnabled() ? "" : " (float stage inactive)");
+        WS_LOG_I("Set Float Voltage to %u mV - holding %u mV%s", mv,
+                 Inverter.ActiveFloatVoltage(),
+                 !Inverter.FloatEnabled()      ? " (float stage off)"
+                 : Inverter.FloatUsingAutoVoltage() ? " (automatic)" : "");
         handled = true;
         notifyWSClients(); }
       if (!doc["floatcurrent"].isNull()) {

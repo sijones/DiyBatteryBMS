@@ -67,11 +67,12 @@
 #define initRechargeSOC 90                // Restart charging below 90% SOC
 #define initRechargeVoltageOffset 200     // 200mV (0.2V) drop to restart charging
 
-// Float stage. Off by default: a firmware update must not silently change how an
-// existing pack terminates its charge. Set a float voltage below the charge
-// voltage to enable it - see the PHASE_FLOAT notes in CANBUS.cpp.
-#define initFloatVoltage 0                // mV, 0 = no float stage (go straight to Complete)
-#define initFloatCurrentmA 2000           // 2A held during float, must stay above zero
+// Float stage. Every charge now ends here rather than at Complete: holding the
+// full charge voltage with a 0A limit asks the inverter for a target and forbids
+// it the current to reach it, and they resolve that contradiction in their own
+// ways - see the PHASE_FLOAT notes in CANBUS.cpp.
+#define initFloatVoltage 0                // mV, 0 = work it out from the charge voltage
+#define initFloatCurrentmA 2000           // 2A held during float, floored at Min Charge
 
 // How long a charge/discharge/force command from outside holds the scheduler off
 // before control reverts to the saved schedule. 0 disables the latch, so the

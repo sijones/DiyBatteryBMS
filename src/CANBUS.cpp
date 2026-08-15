@@ -348,7 +348,7 @@ bool CANBUS::SendAllUpdates()
 
     // Unit conversions: mV -> centivolts, mA -> deciamps
     uint16_t chargeVCentiV = (uint16_t)(_chargeVoltage * 0.1);
-    uint16_t floatVCentiV = (uint16_t)(_floatVoltage * 0.1);
+    uint16_t floatVCentiV = (uint16_t)(ActiveFloatVoltage() * 0.1);
     uint16_t overVCentiV = (uint16_t)(_overVoltage * 0.1);
     uint16_t dischargeVCentiV = (uint16_t)(_dischargeVoltage * 0.1);
     int32_t tailDA = (int32_t)(_tailCurrentmA / 100);
@@ -533,7 +533,13 @@ bool CANBUS::SendAllUpdates()
         break;
       }
 
+      // Min Charge is the smallest current the inverter can actually act on, so it
+      // is a floor here as much as in absorption - a float allowance under it is a
+      // number the inverter cannot honour, and rounds back to the 0A this phase
+      // exists to avoid. The configured ceiling still wins over both, so a max of
+      // 0 or a controller asking for 0 still means 0.
       uint32_t floatCurrent = _floatCurrentmA;
+      if (floatCurrent < _minChargeCurrent) floatCurrent = _minChargeCurrent;
       if (floatCurrent > baseChargeCurrent) floatCurrent = baseChargeCurrent;
       if (floatCurrent != GetChargeCurrent())
         SetChargeCurrent(floatCurrent);
@@ -560,7 +566,8 @@ bool CANBUS::SendAllUpdates()
       // usually an inverter misbehaving right now, with the pack sitting here.
       if (FloatEnabled()) {
         _chargePhase = PHASE_FLOAT;
-        WS_LOG_I("CC-CV: COMPLETE -> FLOAT (float voltage configured)");
+        WS_LOG_I("CC-CV: COMPLETE -> FLOAT (float target %u mV%s)",
+                 ActiveFloatVoltage(), FloatUsingAutoVoltage() ? ", automatic" : "");
         break;
       }
 

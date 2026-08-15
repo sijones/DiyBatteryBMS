@@ -399,8 +399,9 @@ void publishHADiscovery() {
   haNumber("Discharge Current", "dischargecurrent", "{{ value_json.dischargecurrent | multiply(0.001) | round(0) }}", "DischargeCurrent",
     ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":0",
     base, node, dataTopic, st, deviceJson);
-  // Float stage. 0 V means no float stage, so the minimum has to reach down to 0
-  // rather than stopping at a plausible float voltage.
+  // Float stage. 0 V asks for the automatic target rather than turning float off,
+  // so the minimum still has to reach down to 0 rather than stopping at a
+  // plausible float voltage.
   haNumber("Float Voltage", "floatvoltage", "{{ (value_json.floatvoltage * 0.001) | round(1) }}", "FloatVoltage",
     ",\"unit_of_measurement\":\"V\",\"device_class\":\"voltage\",\"min\":0,\"max\":58.0,\"step\":0.1,\"entity_category\":\"config\"",
     base, node, dataTopic, st, deviceJson);
@@ -674,8 +675,10 @@ if (false) { }
     Inverter.SetFloatVoltage((uint16_t) voltagemV);
     pref.putUInt32(ccFloatVoltage, voltagemV);
     log_d("Float voltage set to: %.1f V (%u mV)", voltageV, voltagemV);
-    WS_LOG_I("Float voltage set to: %.1f V%s", voltageV,
-             Inverter.FloatEnabled() ? "" : " (float stage inactive)");
+    WS_LOG_I("Float voltage set to: %.1f V - holding %u mV%s", voltageV,
+             Inverter.ActiveFloatVoltage(),
+             !Inverter.FloatEnabled()           ? " (float stage off)"
+             : Inverter.FloatUsingAutoVoltage() ? " (automatic)" : "");
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/FloatCurrent") {
     float currentA = message.toFloat();

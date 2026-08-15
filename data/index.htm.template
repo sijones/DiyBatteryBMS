@@ -322,6 +322,14 @@
     /* Neutral guidance: nothing is wrong, this is just what the battery setup
        above works out for the field. Muted so it never reads as a problem. */
     .field-error.info { color: var(--text-faint); }
+    /* Always-on hint for a field the firmware fills in for itself. Same muted
+       treatment as .field-error.info, but not driven by validation. */
+    .field-note {
+      margin-top: 4px;
+      font-size: 11.5px;
+      color: var(--text-faint);
+      line-height: 1.35;
+    }
     input.warn { border-color: var(--warn); }
 
     /* ---------- Battery setup recommender ---------- */
@@ -1604,12 +1612,13 @@
 
         <div class="form-row">
           <div class="form-group">
-            <label for="floatvoltage"><span class="tip" data-tip="Voltage held after absorption finishes, instead of stopping the charge outright. Set 0 to disable the float stage and end the cycle at Complete as before. Typical LiFePO4 float is 3.375-3.40 V per cell (54.0-54.4 V for 16S).">Float Voltage (V):</span></label>
+            <label for="floatvoltage"><span class="tip" data-tip="Voltage held after absorption finishes, instead of stopping the charge outright. Leave at 0 and it is worked out from the charge voltage (1.5% below, which suits LiFePO4, NMC and LTO alike). Setting it at or above the charge voltage turns the float stage off, and the cycle ends at Complete with a 0 A limit - some inverters answer that by discharging the pack or shutting down their PV.">Float Voltage (V):</span></label>
             <input type="number" id="floatvoltage" min="0" max="65" step="0.1" onchange="EnqueueUpdate('floatvoltage')" onkeypress="HandleEnter(event, 'floatvoltage')">
+            <div class="field-note" id="note_floatvoltage"></div>
             <div class="field-error" id="err_floatvoltage"></div>
           </div>
           <div class="form-group">
-            <label for="floatcurrent"><span class="tip" data-tip="Charge current allowance sent to the inverter during float. Keep it above zero: an inverter given a voltage target it cannot charge towards has no way to shed surplus power, and some respond by discharging the battery.">Float Current (A):</span></label>
+            <label for="floatcurrent"><span class="tip" data-tip="Charge current allowance sent to the inverter during float. Never drops below Min Charge Current, since an allowance the inverter cannot act on rounds back to the 0 A that float exists to avoid.">Float Current (A):</span></label>
             <input type="number" id="floatcurrent" min="0" max="100" step="0.1" onchange="EnqueueUpdate('floatcurrent')" onkeypress="HandleEnter(event, 'floatcurrent')">
             <div class="field-error" id="err_floatcurrent"></div>
           </div>
@@ -2684,6 +2693,8 @@
          'lowsoclimit','highsoclimit','velooptime'].forEach(function(f) {
           if(obj[f] !== undefined) SetFieldValue(f, obj[f]);
         });
+        if(obj.floatvoltageactive !== undefined)
+          updateFloatNote(obj.floatvoltageactive, obj.floatvoltageauto);
         // Charge voltage has landed, so the pack can now be worked out from it
         loadBatterySetup();
         if(obj.canbusenabled !== undefined) { document.getElementById('canbusenabled').checked=obj.canbusenabled; AckUpdate('canbusenabled'); }
@@ -3588,6 +3599,20 @@
              ovp: [2.80,  2.75, 2.90], cut: [1.80, 1.75, 2.00] }
     };
 
+    // The firmware works a float target out when the field is left at 0, so say
+    // what it settled on - a bare 0 otherwise reads as "no float stage".
+    function updateFloatNote(activeMv, isAuto) {
+      const el = document.getElementById('note_floatvoltage');
+      if (!el) return;
+      if (!activeMv) {
+        el.textContent = 'Float stage off: the charge ends at Complete with a 0 A limit.';
+      } else if (isAuto) {
+        el.textContent = 'Automatic: holding ' + (activeMv / 1000).toFixed(2) + ' V.';
+      } else {
+        el.textContent = '';
+      }
+    }
+
     function batterySetup() {
       const el = document.getElementById('batchem');
       const chem = (el && CHEM[el.value]) ? el.value : 'lfp';
@@ -3658,7 +3683,8 @@
         const cur = numField(id);
         let msg = (r.v !== undefined) ? 'Recommended ' + fmtRec(r.v, r.d) : '';
         let cls = 'info';
-        // 0 means "disabled" for the optional stages, not an out-of-range value
+        // 0 is a deliberate special case for these fields - off, or "work it out"
+        // for the float voltage - rather than an out-of-range value
         const off = r.opt && cur === 0;
         if (cur !== null && !off && r.lo !== undefined && (cur < r.lo || cur > r.hi)) {
           msg = 'Unusual - most setups are between ' + fmtRec(r.lo, r.d) + ' and ' + fmtRec(r.hi, r.d) +
