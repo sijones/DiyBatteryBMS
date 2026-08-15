@@ -21,6 +21,7 @@ void publishHADiscovery();
 
 // Log buffer for web UI
 #define LOG_BUFFER_SIZE 100
+#define LOG_SEND_MAX 50      // how many of those a GetLogs() replay hands over
 struct LogEntry {
   char message[201];  // max 200 chars + null terminator
   char level[10];
@@ -70,6 +71,21 @@ void applySyslogConfig() {
                    wifiManager.GetWifiHostName().c_str());
 }
 
+// Make a log message safe to sit inside a JSON string. Quotes become apostrophes
+// rather than \" - lossy, but it keeps the line short and readable, and it is what
+// the UI has always displayed. Shared by the live and replayed paths so the two
+// cannot drift: an unescaped replay emitted broken JSON, and the client parses
+// every frame without a net.
+String jsonEscapeLog(const char* message) {
+  String msg = String(message).substring(0, 200);  // Limit message length
+  msg.replace("\\", "\\\\");
+  msg.replace("\"", "'");
+  msg.replace("\n", "\\n");
+  msg.replace("\r", "\\r");
+  msg.replace("\t", "\\t");
+  return msg;
+}
+
 // Function to send log to WebSocket clients
 void sendLogToWS(const char* message, const char* level) {
   // Every WS_LOG_* macro funnels through here, so syslog picks up all of them
@@ -79,14 +95,7 @@ void sendLogToWS(const char* message, const char* level) {
   // Only send if WebSocket is initialized and has connected clients
   if(ws.count() > 0 && ws.availableForWriteAll()) {
     String json = "{\"log\":\"";
-    String msg = String(message).substring(0, 200);  // Limit message length
-    // Escape characters that break JSON strings
-    msg.replace("\\", "\\\\");
-    msg.replace("\"", "'");
-    msg.replace("\n", "\\n");
-    msg.replace("\r", "\\r");
-    msg.replace("\t", "\\t");
-    json += msg;
+    json += jsonEscapeLog(message);
     json += "\",\"level\":\"";
     json += level;
     json += "\"}";
@@ -485,31 +494,46 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
     if (strncmp(data,"GetAll()",len)==0)
       notifyWSClients();
     else if (strncmp(data,"GetLogs()",len)==0) {
-      // Send buffered logs to requesting client (last 50 entries)
+      // Send the most recent buffered logs to the requesting client.
       // Copy logs out of critical section first to avoid blocking
       // static to avoid ~10KB on stack; struct copy is safe (no heap alloc with char arrays)
-      static LogEntry tempLogs[50];
+      static LogEntry tempLogs[LOG_SEND_MAX];
       int count = 0;
 
       taskENTER_CRITICAL(&logMutex);
-      for(int i = 0; i < LOG_BUFFER_SIZE && count < 50; i++) {
-        int idx = (logBufferIndex + i) % LOG_BUFFER_SIZE;
-        if(logBuffer[idx].message[0] != '\0') {
-          tempLogs[count] = logBuffer[idx];
-          count++;
-        }
+      // Walk back from the newest entry. Reading forward from logBufferIndex took
+      // the OLDEST LOG_SEND_MAX of the ring instead, so on a device that had been
+      // up a while the tab showed the boot sequence and nothing since.
+      for(int i = 1; i <= LOG_BUFFER_SIZE && count < LOG_SEND_MAX; i++) {
+        int idx = (logBufferIndex - i + LOG_BUFFER_SIZE) % LOG_BUFFER_SIZE;
+        if(logBuffer[idx].message[0] == '\0') break;   // not wrapped yet, nothing older
+        tempLogs[count] = logBuffer[idx];
+        count++;
       }
       taskEXIT_CRITICAL(&logMutex);
 
-      // Send logs outside critical section
-      for(int i = 0; i < count; i++) {
+      // Send logs outside critical section. Collected newest-first above, so walk
+      // back down to hand the viewer chronological order.
+      uint32_t nowMs = millis();
+      for(int i = count - 1; i >= 0; i--) {
         if(wsclient->status() == WS_CONNECTED) {
-          char json[256];
-          snprintf(json, sizeof(json), "{\"log\":\"%s\",\"level\":\"%s\"}", tempLogs[i].message, tempLogs[i].level);
+          // Built as a String, not snprintf into a fixed buffer: a 200 char message
+          // plus level and age already sat within a byte or two of 256, and any
+          // truncation would have cut the JSON off mid-string.
+          // "age" is how long ago the line was logged. The client has no reference
+          // for our millis(), and stamping replayed lines with their arrival time
+          // collapsed a whole backlog onto one second of the browser's clock.
+          String json = "{\"log\":\"";
+          json += jsonEscapeLog(tempLogs[i].message);
+          json += "\",\"level\":\"";
+          json += tempLogs[i].level;
+          json += "\",\"age\":";
+          json += (unsigned long)(nowMs - tempLogs[i].timestamp);
+          json += "}";
           wsclient->text(json);
 
           // Yield every 10 messages to prevent WDT
-          if(i % 10 == 0) {
+          if((count - i) % 10 == 0) {
             yield();
           }
         } else {

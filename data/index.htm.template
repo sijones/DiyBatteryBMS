@@ -2170,7 +2170,11 @@
         history.replaceState(null, '', '#' + tabName);
       }
 
-      if (tabName === 'logs' && websocket && websocket.readyState === WebSocket.OPEN) {
+      // Once per connection, not once per visit to the tab - the backlog overlaps
+      // whatever is already on screen, so re-requesting it just stacks duplicates.
+      if (tabName === 'logs' && !logsRequested
+          && websocket && websocket.readyState === WebSocket.OPEN) {
+        logsRequested = true;
         websocket.send('GetLogs()');
       }
     }
@@ -2586,6 +2590,7 @@
     let reconnectTimer = null;
     let lastDataAt = 0;
     let everConnected = false;
+    let logsRequested = false;   // backlog already pulled on this connection
 
     function initWebSocket() {
       websocket = new WebSocket(gateway);
@@ -2624,6 +2629,16 @@
       reconnectAttempt = 0;
       setConnStatus(true);
       if (wasDown) showToast('Reconnected', 'success');
+
+      // A dropped connection leaves a gap in the viewer, so allow one more backlog
+      // pull. Sitting on the Logs tab through a reconnect never triggers switchTab,
+      // so fetch here rather than waiting for a tab change that may not come.
+      logsRequested = false;
+      const logsPane = document.getElementById('logs');
+      if (logsPane && logsPane.classList.contains('active')) {
+        logsRequested = true;
+        websocket.send('GetLogs()');
+      }
     }
 
     function onError(event) {
@@ -2642,12 +2657,20 @@
     }
 
     function onMessage(event) {
-      const obj = JSON.parse(event.data);
+      // One malformed frame must not take the handler down with it - everything
+      // after this point, dashboard updates included, would stop arriving.
+      let obj;
+      try {
+        obj = JSON.parse(event.data);
+      } catch (e) {
+        console.warn('Discarded unparseable WebSocket frame:', event.data);
+        return;
+      }
       let configDirty = false;   // re-validate once settings land, not only on typing
       
       // Handle log messages
       if(obj.hasOwnProperty('log')) {
-        addLogEntry(obj.log, obj.level || 'info');
+        addLogEntry(obj.log, obj.level || 'info', obj.age);
         return;
       }
       
@@ -4151,7 +4174,10 @@
       });
     }
 
-    function addLogEntry(message, level) {
+    // ageMs, when present, is how long before now the device logged the line -
+    // replayed backlog. Without it every replayed line took the arrival time and
+    // a six-minute history collapsed onto a single second.
+    function addLogEntry(message, level, ageMs) {
       if(document.getElementById('logpause').checked) return;
 
       const logViewer = document.getElementById('logviewer');
@@ -4159,7 +4185,10 @@
       entry.className = 'log-entry ' + level;
       if (!logVisible(level)) entry.classList.add('hidden');
 
-      const timestamp = new Date().toLocaleTimeString('en-GB', { hour12: false });
+      const when = (typeof ageMs === 'number' && ageMs >= 0)
+        ? new Date(Date.now() - ageMs)
+        : new Date();
+      const timestamp = when.toLocaleTimeString('en-GB', { hour12: false });
       entry.textContent = '[' + timestamp + '] ' + message;
 
       logViewer.appendChild(entry);

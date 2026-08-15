@@ -35,31 +35,62 @@ bool mEEPROM::isKey(String key){
   return exists;
 }
 
-bool mEEPROM::clear(bool all = false)
+bool mEEPROM::clear(bool all)
 {
-  bool _cleared;
-  if (all) {
-    _cleared = _preferences.clear();
-    log_d("NVS Full Flash Cleared");
-    end();
-  } else
-  {
-    String _wifissid = getString(ccWifiSSID, String(""));
-    String _wifipass = getString(ccWifiPass, String(""));
-    if(_preferences.clear()) {
-      log_d("NVS Flash Cleared (Wifi Kept)");
-      if(_preferences.begin(PREF_NAME)) {
-        log_d("NVS Flash Initialised");
-        if(putString(ccWifiSSID, _wifissid)) log_d("Wifi SSID Saved to NVS");
-        if(putString(ccWifiSSID, _wifissid)) log_d("Wifi Password Saved to NVS");
-        end();
-      }
-    } else
-      log_d("NVS Flash failed to clear, please do a manual flash erase!");
+  // Preferences::clear() only empties the namespace the handle is open on, and
+  // WiFi/MQTT settings live in their own "network" namespace (see
+  // WifiMQTTManager), so clearing PREF_NAME is not a factory reset. Erase the
+  // whole NVS partition instead and put back only what the caller asked to keep.
+  String _wifissid, _wifipass, _wifihost;
 
+  if (!all) {
+    Preferences net;
+    if (!net.begin("network")) {
+      log_e("Could not read WiFi settings before erase, aborting reset");
+      return false;
+    }
+    _wifissid = net.getString(ccWifiSSID, String(""));
+    _wifipass = net.getString(ccWifiPass, String(""));
+    _wifihost = net.getString(ccWifiHostName, String(""));
+    net.end();
   }
 
-  return _cleared;
+  // Our own handle has to be closed before the partition goes out from under it.
+  end();
+
+  esp_err_t err = nvs_flash_erase();
+  if (err != ESP_OK) {
+    log_e("NVS erase failed (%d), please do a manual flash erase!", err);
+    return false;
+  }
+  err = nvs_flash_init();
+  if (err != ESP_OK) {
+    log_e("NVS re-init after erase failed (%d)", err);
+    return false;
+  }
+
+  if (all) {
+    log_d("NVS fully erased");
+    return true;
+  }
+
+  bool restored = true;
+  {
+    Preferences net;
+    if (!net.begin("network")) {
+      log_e("NVS erased but the WiFi settings could not be written back");
+      return false;
+    }
+    if (_wifissid.length() && !net.putString(ccWifiSSID, _wifissid.c_str())) restored = false;
+    if (_wifipass.length() && !net.putString(ccWifiPass, _wifipass.c_str())) restored = false;
+    if (_wifihost.length() && !net.putString(ccWifiHostName, _wifihost.c_str())) restored = false;
+    net.end();
+  }
+
+  if (restored) log_d("NVS erased (WiFi kept)");
+  else          log_e("NVS erased but some WiFi settings failed to save");
+
+  return restored;
 }
 
 int32_t mEEPROM::getInt32(const char* key, int32_t default_value) {

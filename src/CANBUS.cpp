@@ -382,11 +382,23 @@ bool CANBUS::SendAllUpdates()
 
     uint32_t baseChargeCurrent = _maxChargeCurrentmA;
     if (_battCapacity > 0 && _initialBattData) {
-      if (_slowchargeSOC[1] > 0 && workingSOC >= _slowchargeSOC[1] && _slowchargeSOCdiv[1] > 0) {
-        baseChargeCurrent = (_battCapacity / _slowchargeSOCdiv[1]);
-      }
-      else if (_slowchargeSOC[0] > 0 && workingSOC >= _slowchargeSOC[0] && _slowchargeSOCdiv[0] > 0) {
-        baseChargeCurrent = (_battCapacity / _slowchargeSOCdiv[0]);
+      uint8_t slowDiv = 0;
+      if (_slowchargeSOC[1] > 0 && workingSOC >= _slowchargeSOC[1] && _slowchargeSOCdiv[1] > 0)
+        slowDiv = _slowchargeSOCdiv[1];
+      else if (_slowchargeSOC[0] > 0 && workingSOC >= _slowchargeSOC[0] && _slowchargeSOCdiv[0] > 0)
+        slowDiv = _slowchargeSOCdiv[0];
+
+      if (slowDiv > 0) {
+        // Capacity is mAh, so capacity/divider is the C-rate current in mA. Round
+        // the division, then round again to a whole 0.1A - the CAN frames carry
+        // deciamps and truncate, so C/24 of a 280Ah pack (11666 mA) would otherwise
+        // leave as 11.6A when 11.7A is the nearer answer.
+        uint32_t taperedmA = (_battCapacity + (slowDiv / 2)) / slowDiv;
+        taperedmA = ((taperedmA + 50) / 100) * 100;
+        // A taper only ever slows charging down. Capacity/divider knows nothing of
+        // the configured ceiling, so a big pack on a small divider lands above it -
+        // C/2 of 280Ah is 140A. That must not raise the limit past what is set.
+        if (taperedmA < baseChargeCurrent) baseChargeCurrent = taperedmA;
       }
     }
 
@@ -407,9 +419,9 @@ bool CANBUS::SendAllUpdates()
     }
 
     /* A live request caps whatever the phase logic works out. Applied after the
-       slow-charge tapers because those replace the base value outright, and a
-       taper computed from capacity would otherwise hand back more current than
-       the controller asked for. */
+       slow-charge taper so the lowest of the three - configured max, taper,
+       request - is what goes out; the other order would let a taper computed from
+       capacity hand back more current than the controller asked for. */
     if (ChargeRequestActive() && _reqChargeCurrentmA < baseChargeCurrent)
       baseChargeCurrent = _reqChargeCurrentmA;
 
@@ -857,7 +869,9 @@ bool CANBUS::SendCANData_Pylontech(){
     CAN_MSG[2] = 0x01;  // BMS version major
     CAN_MSG[3] = 0x03;  // BMS version minor (1.3)
     // Bytes 4-5: Battery capacity in Ah * 10
-    uint16_t capAh10 = (_battCapacity > 0) ? (uint16_t)((_battCapacity / 1000) * 10) : 0;
+    // mAh -> 0.1Ah directly. Going via whole Ah first threw away the tenths, so a
+    // 280.5Ah pack reported itself as 280.0.
+    uint16_t capAh10 = (_battCapacity > 0) ? (uint16_t)((_battCapacity + 50) / 100) : 0;
     CAN_MSG[4] = lowByte(capAh10);
     CAN_MSG[5] = highByte(capAh10);
     CAN_MSG[6] = 0x00;  // Manufacturer ID

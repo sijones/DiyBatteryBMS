@@ -130,7 +130,7 @@ void setup()
     pref.putUInt8(ccSlowSOCCharge2,0);
     pref.putUInt8(ccSlowSOCDivider1,0);
     pref.putUInt8(ccSlowSOCDivider2,0);
-    pref.putUInt8(ccBattCapacity, initBattCapacity);
+    pref.putUInt32(ccBattCapacity, initBattCapacity);
     pref.putBool(ccPylonTech, false);
     pref.putBool(ccSOCTrick, false);
     pref.putBool(ccRequestFlags, false);
