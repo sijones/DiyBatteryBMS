@@ -140,9 +140,10 @@ forced discharge in the first place.
 not set one. See [Upgrading to 2.8.0-BETA10](#upgrading-to-280-beta10) — in BETA6 to BETA9 the stage
 was off unless you configured a float voltage.
 
-If you are seeing a forced discharge at 100% SOC and have not enabled float, also check **High SOC
-(Stop Charge)** and the **Slow Charge** thresholds — both cut the charge current limit at an SOC
-boundary while the voltage limit stays high, which produces the same symptom by a different route.
+If you are still seeing a forced discharge at 100% SOC with float running, check **High SOC (Stop
+Charge)** and the **Slow Charge** thresholds — both cut the charge current limit at an SOC boundary
+while the voltage limit stays high, which produces the same symptom by a different route. On BETA9
+and earlier, check first that a float voltage is configured at all.
 
 ### PowerPilot Integration (WebSocket API)
 
