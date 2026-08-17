@@ -70,11 +70,29 @@ bool WifiMQTTManagerClass::begin()
         WiFi.mode(WIFI_MODE_AP);
         // Prevent AP-side modem sleep to reduce idle disconnects
         WiFi.setSleep(false);
-        // Explicit AP network config (gateway = AP IP)
-        WiFi.softAPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0));
-        // Start SoftAP on a non-DFS, common channel (1) to reduce roaming
-        // Set max_connection=4, ssid_hidden=false, and beacon_interval=100ms for stability
-        WiFi.softAP(_wifiHostName.c_str(), NULL, 1, false, 4);
+
+        /* softAP() before softAPConfig(), which is the opposite of the order
+           this used. Arduino core 2.x created the AP interface early enough for
+           softAPConfig() to land first; core 3.x creates it inside softAP(), so
+           configuring first silently did nothing and could leave the AP not
+           started at all - no SSID to be seen anywhere.
+
+           Start SoftAP on a non-DFS, common channel (1) to reduce roaming.
+           max_connection=4, ssid_hidden=false. */
+        const bool apUp = WiFi.softAP(_wifiHostName.c_str(), NULL, 1, false, 4);
+        if (!apUp) {
+          // Logged at error level on purpose: this is the only way back into a
+          // device with no WiFi credentials, so it failing must never be quiet.
+          log_e("SoftAP '%s' FAILED to start - no way to configure this device",
+                _wifiHostName.c_str());
+        }
+
+        // Explicit AP network config (gateway = AP IP), now that it exists
+        if (!WiFi.softAPConfig(IPAddress(192,168,4,1), IPAddress(192,168,4,1), IPAddress(255,255,255,0)))
+          log_e("SoftAP IP config failed");
+
+        if (apUp)
+          log_e("SoftAP '%s' up on %s", _wifiHostName.c_str(), WiFi.softAPIP().toString().c_str());
         
         // Configure AP for better stability during scans
         // Lower DTIM period (2) means clients wake more frequently to check for buffered traffic
