@@ -722,16 +722,32 @@ void mqttsetup() {
       pending_msgs[i].active = false;
   }
 
+  /* Everything that can block is done before the critical section, not inside
+     it. taskENTER_CRITICAL disables interrupts and takes a spinlock, so nothing
+     in here may wait on anything - and reading NVS takes a mutex. Arduino core
+     2.x let that pass; core 3.x calls abort() from lock_acquire_generic when a
+     lock is taken with no way to yield, which boot-looped a fresh board on the
+     first run. The reads themselves are safe out here: this runs once at
+     startup, before anything else touches these values. */
+  String battTopic = pref.getString(ccMQTTBattTopic, "");
+  String invTopic  = pref.getString(ccMQTTInvTopic, "");
+  String server    = String(wifiManager.GetMQTTServerIP().c_str());
+  String user      = String(wifiManager.GetMQTTUser().c_str());
+  String pass      = String(wifiManager.GetMQTTPass().c_str());
+  String topic     = String(wifiManager.GetMQTTTopic().c_str());
+  String clientid  = String(wifiManager.GetMQTTClientID().c_str());
+  uint16_t port    = wifiManager.GetMQTTPort();
+
+  // Only the handover to the shared copies needs guarding
   taskENTER_CRITICAL(&MqttMutex);
-    sServer = String(wifiManager.GetMQTTServerIP().c_str());
-    sUser = String(wifiManager.GetMQTTUser().c_str());
-    sPass = String(wifiManager.GetMQTTPass().c_str());
-    sTopic = String(wifiManager.GetMQTTTopic().c_str());
-    sClientid = String(wifiManager.GetMQTTClientID().c_str());
-    iPort = wifiManager.GetMQTTPort();
-    // Load external MQTT temperature subscription topics
-    sMqttBattTopic = pref.getString(ccMQTTBattTopic, "");
-    sMqttInvTopic = pref.getString(ccMQTTInvTopic, "");
+    sServer = server;
+    sUser = user;
+    sPass = pass;
+    sTopic = topic;
+    sClientid = clientid;
+    iPort = port;
+    sMqttBattTopic = battTopic;
+    sMqttInvTopic = invTopic;
     taskEXIT_CRITICAL(&MqttMutex);
     log_i("MQTT temp topics: batt='%s' inv='%s'", sMqttBattTopic.c_str(), sMqttInvTopic.c_str());
     if (sServer.length() == 0 || iPort < 1) {
