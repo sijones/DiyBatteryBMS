@@ -217,7 +217,7 @@ void VeDirectFrameHandler::startReadTask()
 
 }
 
-volatile bool VeDirectFrameHandler::dataavailable()
+bool VeDirectFrameHandler::dataavailable()
 {
     if (_newdata)
         {
@@ -258,7 +258,9 @@ void VeDirectFrameHandler::frameEndEvent(bool valid) {
 			if ( !nameExists ) {
 				strcpy(veName[veEnd], tempName[i]);				// write new Name to public buffer
 				strcpy(veValue[veEnd], tempValue[i]);			// write new Value to public buffer
-				veEnd++;										// increment end of public buffer
+				// Read-modify-write spelled out: ++ on a volatile is deprecated in
+				// C++20 because the order of the parts is unspecified.
+				veEnd = veEnd + 1;								// increment end of public buffer
 				if ( veEnd >= buffLen ) {						// stop any buffer overrun
 					veEnd = buffLen - 1;
 				}

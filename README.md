@@ -177,6 +177,22 @@ manager, not just PowerPilot.
 **See [PowerPilot.md](PowerPilot.md)** for the full interface: non-persisting set-commands, the
 override latch, force charge versus full charge, and live current requests.
 
+### New in 3.0.0 — Arduino core 3.3.11 (ESP-IDF 5.5.5)
+
+Every board now builds against Arduino core 3.3.11 on ESP-IDF 5.5.5, up from core 2.0.17 on IDF
+4.4. All seven environments share one platform definition in `[common]`, so there is a single line
+to change next time.
+
+The core update is the reason the partition change had to come first: the same source is about
+155KB larger on the new core, which no longer fits the old 1.25MB app slot at all (the ESP32-C3
+build would be at 114% of it).
+
+**Fan control now works on the ESP32-C3.** The fan was driven through MCPWM, a motor-control
+peripheral the C3 does not have — that board had a stub that logged "FAN not supported" and did
+nothing, and the FAN Pin field was hidden from its web interface. It now uses LEDC, which every
+ESP32 variant has, so the C3 gets fan control and the field is shown on all boards. Behaviour on
+the other boards is unchanged: same 25kHz, same 30–100% mapping.
+
 ## Upgrading to 3.0.0 — you must re-flash over USB
 
 3.0 replaces the Arduino `default.csv` partition table. **An over-the-air update cannot replace a

@@ -1,68 +1,85 @@
 #pragma once
 #include <Arduino.h>
+#include "driver/gpio.h"
 
-#if !defined(ESPCAN_C3)
-#include "soc/mcpwm_struct.h"
-#include "driver/mcpwm.h"
+/* Fan PWM on LEDC.
 
-uint8_t FAN_PWM = 0;
+   This drove the fan through MCPWM, which was the wrong peripheral for the job:
+   it is a motor-control block - dead time, fault handling, capture inputs - and
+   none of that is wanted to vary the speed of one 4-pin fan. It also does not
+   exist on the ESP32-C3, so that board carried a stub that logged "FAN not
+   supported" and did nothing. LEDC is on every variant, so the stub is gone and
+   the C3 gets fan control like everything else.
+
+   The move was due anyway: the legacy driver/mcpwm.h this used is deprecated in
+   ESP-IDF 5.x and warns on every build.
+
+   Arduino core 3.x addresses LEDC by pin rather than by channel - ledcAttach()
+   allocates a channel and timer itself, so there is no channel number to track
+   or collide with anything added later. */
+
+#define FANPWMFREQ   25000   // 25kHz - above audible, and what 4-pin fans expect
+#define FANPWMBITS   8       // 0-255 duty. At 25kHz the LEDC clock allows ~11 bits,
+                             // so 8 is comfortable on every variant including the C3.
+
+uint8_t FAN_PWM = 0;         // last duty as a percentage, for MQTT and the web UI
 bool FAN_INIT = false;
-mcpwm_config_t pwm_config = {};
+static uint8_t _fanPin = 0;
 
-#define FANPWMFREQ              25000   // 25kHz
+// Percent to raw duty. Rounded rather than truncated, so 100% reaches full scale.
+static inline uint32_t FanDutyFromPercent(float pct)
+{
+    const uint32_t full = (1u << FANPWMBITS) - 1;
+    if (pct <= 0.0f)   return 0;
+    if (pct >= 100.0f) return full;
+    return (uint32_t)(((pct * full) / 100.0f) + 0.5f);
+}
+
+static inline void FanSet(float pct, uint8_t reportPercent)
+{
+    ledcWrite(_fanPin, FanDutyFromPercent(pct));
+    FAN_PWM = reportPercent;
+}
 
 void FanInit(uint8_t FAN_PIN)
 {
-    if (FAN_PIN > 0 && FAN_INIT == false)
-    {
-        gpio_pulldown_en((gpio_num_t) FAN_PIN); 
-        mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM1A, FAN_PIN); 
-        pwm_config.frequency = FANPWMFREQ;              
-        pwm_config.cmpr_b = 0;                          //duty cycle of PWMxA = 0
-        pwm_config.counter_mode = MCPWM_UP_DOWN_COUNTER;
-        pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
-        FAN_INIT = true;
-        mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_1, &pwm_config);    //Configure PWM1A timer 0 with above settings
-        log_d( "MCPWM complete" );
+    if (FAN_PIN == 0 || FAN_INIT) return;
+
+    // Held low before the peripheral drives it, so the fan does not sit at full
+    // speed during boot on a floating pin. Same order as the MCPWM version.
+    gpio_pulldown_en((gpio_num_t) FAN_PIN);
+
+    if (!ledcAttach(FAN_PIN, FANPWMFREQ, FANPWMBITS)) {
+        log_e("Fan PWM setup failed on GPIO %u", FAN_PIN);
+        return;
     }
+
+    _fanPin = FAN_PIN;
+    FAN_INIT = true;
+    ledcWrite(_fanPin, 0);
+    log_d("Fan PWM on GPIO %u at %u Hz", FAN_PIN, FANPWMFREQ);
 }
 
 void FanUpdate(float Speed)
 {
-    if(FAN_INIT) {
-        if(Speed > 60)
-            Speed = 100;
-        else if(Speed < 30)
-            Speed = 30;
-        mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, Speed);
-        FAN_PWM = Speed;
-    }
+    if (!FAN_INIT) return;
+    if (Speed > 60)      Speed = 100;
+    else if (Speed < 30) Speed = 30;
+    FanSet(Speed, (uint8_t) Speed);
 }
 
 // Temperature-based fan control: allows 0% (off) unlike FanUpdate which clamps to 30%
 void FanUpdateTemp(float dutyPercent)
 {
-    if(FAN_INIT) {
-        if(dutyPercent <= 0.0f) {
-            mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, 0.0f);
-            FAN_PWM = 0;
-        } else if(dutyPercent >= 100.0f) {
-            mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, 100.0f);
-            FAN_PWM = 100;
-        } else {
-            // Map to 30-100% range: most PWM fans stall below ~30%
-            float mapped = 30.0f + (dutyPercent * 0.7f);
-            mcpwm_set_duty(MCPWM_UNIT_0, MCPWM_TIMER_1, MCPWM_OPR_A, mapped);
-            FAN_PWM = (uint8_t)mapped;
-        }
+    if (!FAN_INIT) return;
+
+    if (dutyPercent <= 0.0f) {
+        FanSet(0.0f, 0);
+    } else if (dutyPercent >= 100.0f) {
+        FanSet(100.0f, 100);
+    } else {
+        // Map to 30-100% range: most PWM fans stall below ~30%
+        float mapped = 30.0f + (dutyPercent * 0.7f);
+        FanSet(mapped, (uint8_t) mapped);
     }
 }
-
-#else
-// ESP32-C3 stub (no MCPWM support)
-uint8_t FAN_PWM = 0;
-bool FAN_INIT = false;
-void FanInit(uint8_t FAN_PIN) { log_w("FAN not supported on C3"); }
-void FanUpdate(float Speed) { /* No-op on C3 */ }
-void FanUpdateTemp(float dutyPercent) { /* No-op on C3 */ }
-#endif

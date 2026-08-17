@@ -145,19 +145,15 @@ def generate_embedded_html(source, target, env):
         # Get config for this environment
         config = can_configs.get(env_name, can_configs['esp32dev'])
         
-        # Determine if FAN is hidden (C3 only)
-        hide_fan = 'ESPCAN_C3' in env.get('BUILD_FLAGS', '') or env_name == 'esp32c3-ESPCAN'
-        
-        fan_field = ''
-        fan_handler = ''
-        if not hide_fan:
-            fan_field = '''<div class="form-group">
+        # The fan field used to be hidden on the C3, which has no MCPWM. The fan
+        # now runs on LEDC, which every variant has, so it is shown everywhere.
+        fan_field = '''<div class="form-group">
                 <label for="fanpin"><span class="tip" data-tip="GPIO pin for PWM fan output. Set to 0 to disable.">FAN Pin:</span></label>
                 <input type="number" id="fanpin" onchange="EnqueueUpdate('fanpin')" onkeypress="HandleEnter(event, 'fanpin')">
               </div>'''
-            fan_handler = '''if(obj.hasOwnProperty('fanpin')) document.getElementById('fanpin').value=obj.fanpin;
+        fan_handler = '''if(obj.hasOwnProperty('fanpin')) document.getElementById('fanpin').value=obj.fanpin;
           AckUpdate('fanpin');'''
-        
+
         # Substitute placeholders
         html_content = html_content.replace('{{CAN_CONFIG_TITLE}}', config['title'])
         html_content = html_content.replace('{{CAN_CONFIG_FIELDS}}', config['can_fields'])

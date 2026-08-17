@@ -16,7 +16,10 @@ public:
     
     void rxData(uint8_t inbyte);                // byte of serial data to be passed by the application
     void startReadTask();
-    volatile bool dataavailable();
+    // Not volatile-qualified: that says nothing useful about a returned bool and
+    // C++20 deprecates it. _newdata itself stays volatile, which is the part that
+    // matters - it is written by the read task and read here.
+    bool dataavailable();
     bool OpenSerial(uint8_t rxPin, uint8_t txPin);   // txPin 0 = not wired, receive-only
     char veName[buffLen][nameLen] = { };        // public buffer for received names
     char veValue[buffLen][valueLen] = { };      // public buffer for received values
