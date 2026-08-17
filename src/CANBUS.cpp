@@ -316,7 +316,16 @@ bool CANBUS::Begin(uint8_t _CS_PIN, bool _CAN16Mhz) {
 
   if (CAN != NULL)
     delete(CAN);
-  
+
+  /* Deselect the MCP2515 before the driver object exists. Its constructor
+     writes CS high and only then calls pinMode, which Arduino core 3.x rejects
+     with "IO n is not set as GPIO" - the write is dropped, leaving CS undriven
+     until pinMode lands a line later. Core 2.x allowed the write, so this only
+     showed up on the move to 3.x. Doing it here in the right order costs two
+     lines and keeps CS deselected from the start whatever the library does. */
+  pinMode(_CS_PIN, OUTPUT);
+  digitalWrite(_CS_PIN, HIGH);
+
   CAN = new MCP_CAN(_CS_PIN);
   
   // Initialize MCP2515 running at 8MHz with a baudrate of 500kb/s and the masks and filters disabled.
