@@ -42,6 +42,18 @@ const char* const ccMQTTParam = "MQTTParam";
 
 const char* const ccVictronRX = "VictronRX";
 const char* const ccVictronTX = "VictronTX";
+
+/* Shunt data source. 0 = VE.Direct serial (the default, so nothing changes for
+   an existing install), 1 = Victron BLE. The fallback only applies when BLE is
+   the source: it hands back to serial while BLE data is stale, for a shunt that
+   is at the edge of range rather than absent. */
+const char* const ccShuntSource = "ShuntSrc";
+const char* const ccBLEFallback = "BLEFallback";
+const char* const ccVBLEMac = "VBLEMac";
+const char* const ccVBLEKey = "VBLEKey";
+#define SHUNT_SRC_VEDIRECT 0
+#define SHUNT_SRC_BLE      1
+
 const char* const ccCAN_TX_PIN = "CAN_TX_PIN";
 const char* const ccCAN_RX_PIN = "CAN_RX_PIN";
 const char* const ccCAN_EN_PIN = "CAN_EN_PIN";

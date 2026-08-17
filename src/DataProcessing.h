@@ -1,5 +1,44 @@
 
 
+/* Apply the latest decoded BLE advertisement.
+
+   Deliberately lands on the same setters VEDataProcess() uses, so everything
+   downstream - charge phases, CAN, MQTT, the LCD - cannot tell which source it
+   came from and needs no per-source handling.
+
+   Watch the units. Inverter.BattVoltage() is centivolts and BattCurrentmA() is
+   deciamps despite its name, which is what the VE.Direct path converts to
+   above; BLE carries mV and mA, so both are scaled here rather than anywhere
+   further downstream. */
+void BLEDataProcess()
+{
+  taskENTER_CRITICAL(&(Inverter.CANMutex));
+
+  Inverter.BattVoltage((uint16_t)(VictronBle.VoltagemV / 10));      // mV -> centivolts
+  Inverter.BattCurrentmA((int32_t)(VictronBle.CurrentmA / 100));    // mA -> deciamps
+  Inverter.BattSOC((uint8_t)(VictronBle.SOCPermille / 10));         // 0.1% -> %
+
+  // The shunt sends power as a derived figure over serial but not over BLE, so
+  // it is computed here from the two readings that did arrive.
+  Inverter.BattPower((int32_t)(((int64_t)VictronBle.VoltagemV * (int64_t)VictronBle.CurrentmA) / 1000000LL));
+
+  // Victron sends -1 for "not discharging" on the serial path; match that so
+  // the same downstream check works for both sources.
+  Inverter.TimeToGo(VictronBle.TimeToGoMins ? (int32_t)VictronBle.TimeToGoMins : -1);
+  Inverter.AlarmActive(VictronBle.AlarmReason != 0);
+
+  // Aux mode 2 means the aux input is a temperature sensor, sent in 0.01K
+  if (VictronBle.AuxMode == 2 && Inverter.BattTempSource() == 0) {
+    Inverter.BattTemp((int16_t) lround((VictronBle.AuxRaw / 100.0) - 273.15));
+  }
+
+  Lcd.Data.BattVolts.setValue(Inverter.BattVoltage());
+  Lcd.Data.BattAmps.setValue(Inverter.BattCurrentmA());
+  Lcd.Data.BattSOC.setValue(Inverter.BattSOC());
+
+  taskEXIT_CRITICAL(&(Inverter.CANMutex));
+}
+
 void VEDataProcess()
 {
 

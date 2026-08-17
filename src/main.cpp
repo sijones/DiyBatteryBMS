@@ -48,9 +48,16 @@ mEEPROM pref;
 #include "TimeLib.h"
 #include "CANBUS.h"
 #include "FAN.h"
+#include "VictronBLE.h"
 
 uint32_t SendCanBusMQTTUpdates;
 CANBUS Inverter;
+
+// Shunt source, read once at boot - see the selection logic in loop()
+uint8_t  shuntSource = SHUNT_SRC_VEDIRECT;
+bool     bleFallback = false;
+uint32_t lastBleApplied = 0;
+bool     lastBleFresh = false;
 
 //create an object from the UpdateServer
 ESPAsyncHTTPUpdateServer updateServer;
@@ -330,6 +337,19 @@ void setup()
   } else if (vrx || vtx) {
     log_e("Forbidden or missing GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
   }
+
+  /* Victron BLE. Only brought up when it is the selected source - the radio and
+     its stack cost RAM that an install reading the shunt over the wire has no
+     reason to spend. The serial reader above always starts regardless, because
+     it is the fallback path and costs a task either way. */
+  shuntSource = pref.getUInt8(ccShuntSource, SHUNT_SRC_VEDIRECT);
+  bleFallback = pref.getBool(ccBLEFallback, false);
+  if (shuntSource == SHUNT_SRC_BLE) {
+    VictronBle.SetMac(pref.getString(ccVBLEMac, ""));
+    VictronBle.SetKeyHex(pref.getString(ccVBLEKey, ""));
+    VictronBle.Begin(true);
+    log_i("Shunt source: Victron BLE%s", bleFallback ? " (falls back to serial)" : "");
+  }
   // Start NTP Clock Set Task
 #if defined(BMS_S3) || defined(BMS_C3)
   // ESP32-S3 and ESP32-C3 require more stack space for String operations and NTP
@@ -516,7 +536,35 @@ void loop()
       }
   }
 
-  if (veHandle.dataavailable())
+  /* Which shunt source feeds the charge logic.
+
+     dataavailable() is called unconditionally because it clears the frame flag:
+     skipping it while BLE is in charge would leave serial frames marked pending
+     forever and the flag would be stale the moment fallback did kick in.
+
+     Fallback only applies when BLE is the configured source. It is opt-in
+     because a source changing itself mid-charge is hard to diagnose after the
+     fact, so the switch is logged both ways. */
+  const bool bleFresh  = (shuntSource == SHUNT_SRC_BLE) && VictronBle.DataFresh();
+  const bool haveFrame = veHandle.dataavailable();
+  const bool useSerial = (shuntSource == SHUNT_SRC_VEDIRECT) ||
+                         (shuntSource == SHUNT_SRC_BLE && bleFallback && !bleFresh);
+
+  if (shuntSource == SHUNT_SRC_BLE && bleFallback && bleFresh != lastBleFresh) {
+    lastBleFresh = bleFresh;
+    if (bleFresh) WS_LOG_I("Shunt source: BLE data returned, back on BLE");
+    else          WS_LOG_W("Shunt source: BLE data stale, falling back to VE.Direct serial");
+  }
+
+  if (bleFresh && VictronBle.LastUpdateMs != lastBleApplied)
+  {
+    lastBleApplied = VictronBle.LastUpdateMs;
+    last_vedirect = t;
+    if(!Lcd.Data.VEData._currentValue)
+      Lcd.Data.VEData.setValue(true);
+    BLEDataProcess();
+  }
+  else if (haveFrame && useSerial)
   {
     last_vedirect = t;
     if(!Lcd.Data.VEData._currentValue)
