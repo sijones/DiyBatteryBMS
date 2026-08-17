@@ -6,7 +6,10 @@
 #include <esp_ota_ops.h>   // running partition size, for the legacy-layout warning
 #include "VictronBLE.h"
 
-extern bool bleFallback;   // defined in main.cpp alongside the shunt source
+// Defined in main.cpp. Cached at boot so the status JSON does not read NVS on
+// every broadcast - see the note where the BLE block is built.
+extern bool bleFallback;
+extern uint8_t shuntSource;
 #include "config.h"
 #include "embedded_html.h"
 #include "Syslog.h"
@@ -335,30 +338,52 @@ String generateDatatoJSON(bool All)
     doc["syslogenabled"] = pref.getBool(ccSyslogEnabled, false);
     doc["cansniffer"] = Inverter.CANSniffer();   // runtime only, never persisted
     doc["blesniffer"] = VictronBle.Sniffer();    // ditto
-    doc["shuntsource"] = pref.getUInt8(ccShuntSource, SHUNT_SRC_VEDIRECT);
-    doc["blefallback"] = pref.getBool(ccBLEFallback, false);
-    doc["blemac"] = pref.getString(ccVBLEMac, "");
-    /* The key is never sent back. It is the only credential protecting the
-       shunt's broadcasts, and there is nothing to gain from echoing it into
-       every browser on the network - the UI only needs to know whether one is
-       stored so it can say so. */
-    doc["blekeyset"] = VictronBle.HaveKey();
-    doc["blescanning"] = VictronBle.Scanning();
-    doc["bleadverts"] = VictronBle.AdvertsSeen;
-    doc["blefailures"] = VictronBle.DecryptFailures;
-    doc["blefresh"] = VictronBle.DataFresh();
-    doc["blesoc"] = VictronBle.SOCPermille / 10.0;
-    doc["blelastseen"] = VictronBle.LastUpdateMs ? (int32_t)((millis() - VictronBle.LastUpdateMs) / 1000) : -1;
-    {
-      JsonArray found = doc["blefound"].to<JsonArray>();
-      for (uint8_t i = 0; i < VictronBle.FoundCount(); i++) {
-        const VictronBLEFound* f = VictronBle.Found(i);
-        if (!f) continue;
-        JsonObject o = found.add<JsonObject>();
-        o["mac"] = f->mac;
-        o["name"] = f->name;
-        o["rssi"] = f->rssi;
-        o["shunt"] = (f->recordType == VICTRON_REC_BATTERY_MON);
+    doc["shuntsource"] = shuntSource;   // cached at boot, not re-read per call
+    doc["blefallback"] = bleFallback;
+
+    /* The BLE block is built only when it can matter. This function runs on
+       every notifyWSClients(), many times a second, and each field costs an
+       allocation - the earlier version also read the MAC out of NVS every time,
+       which showed up in the log as VBLEMac being looked up dozens of times a
+       second. Together with the device list that was enough allocation churn to
+       exhaust the heap on a 4MB ESP32: AsyncTCP's tcp_poll eventually could not
+       allocate, and with exceptions disabled a failed operator new is not a
+       thrown bad_alloc but a call to abort(). The board died with the web
+       server unable to accept connections, then panicked.
+
+       An install reading the shunt over the wire now pays nothing for BLE
+       being compiled in. */
+    const bool bleRelevant = (shuntSource == SHUNT_SRC_BLE) ||
+                             VictronBle.Sniffer() || VictronBle.Scanning() ||
+                             VictronBle.FoundCount() > 0;
+    doc["blerelevant"] = bleRelevant;
+    if (bleRelevant) {
+      doc["blemac"] = VictronBle.GetMac();   // held in RAM, no NVS read here
+      /* The key is never sent back. It is the only credential protecting the
+         shunt's broadcasts, and there is nothing to gain from echoing it into
+         every browser on the network - the UI only needs to know whether one is
+         stored so it can say so. */
+      doc["blekeyset"] = VictronBle.HaveKey();
+      doc["blescanning"] = VictronBle.Scanning();
+      doc["bleadverts"] = VictronBle.AdvertsSeen;
+      doc["blefailures"] = VictronBle.DecryptFailures;
+      doc["blefresh"] = VictronBle.DataFresh();
+      doc["blesoc"] = VictronBle.SOCPermille / 10.0;
+      doc["blelastseen"] = VictronBle.LastUpdateMs ? (int32_t)((millis() - VictronBle.LastUpdateMs) / 1000) : -1;
+
+      // Only meaningful for the few seconds after a scan, so it is not built
+      // into every broadcast for the rest of the device's uptime.
+      if (VictronBle.FoundCount() > 0) {
+        JsonArray found = doc["blefound"].to<JsonArray>();
+        for (uint8_t i = 0; i < VictronBle.FoundCount(); i++) {
+          const VictronBLEFound* f = VictronBle.Found(i);
+          if (!f) continue;
+          JsonObject o = found.add<JsonObject>();
+          o["mac"] = f->mac;
+          o["name"] = f->name;
+          o["rssi"] = f->rssi;
+          o["shunt"] = (f->recordType == VICTRON_REC_BATTERY_MON);
+        }
       }
     }
     doc["overvoltage"] = Inverter.GetOverVoltage();
@@ -1097,6 +1122,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         uint8_t value = doc["shuntsource"];
         handled = true;
         pref.putUInt8(ccShuntSource, value);
+        shuntSource = value;   // so the UI reflects what is saved; the radio still needs a reboot
         WS_LOG_I("Shunt source set to %s (reboot to apply)",
                  value == SHUNT_SRC_BLE ? "Victron BLE" : "VE.Direct serial");
         notifyWSClients();

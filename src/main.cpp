@@ -344,9 +344,12 @@ void setup()
      it is the fallback path and costs a task either way. */
   shuntSource = pref.getUInt8(ccShuntSource, SHUNT_SRC_VEDIRECT);
   bleFallback = pref.getBool(ccBLEFallback, false);
+  /* Loaded whatever the source, so the settings page can show them and the
+     status JSON never has to go back to NVS for the address. Holding them costs
+     a few dozen bytes; re-reading them on every broadcast cost the heap. */
+  VictronBle.SetMac(pref.getString(ccVBLEMac, ""));
+  VictronBle.SetKeyHex(pref.getString(ccVBLEKey, ""));
   if (shuntSource == SHUNT_SRC_BLE) {
-    VictronBle.SetMac(pref.getString(ccVBLEMac, ""));
-    VictronBle.SetKeyHex(pref.getString(ccVBLEKey, ""));
     VictronBle.Begin(true);
     log_i("Shunt source: Victron BLE%s", bleFallback ? " (falls back to serial)" : "");
   }
