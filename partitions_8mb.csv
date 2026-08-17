@@ -1,0 +1,24 @@
+# DIY Battery BMS - 8MB flash (esp32s3-ESPCAN, esp32s3-MCP, xiao-esp32s3)
+#
+# These boards carry 8MB but were running the 4MB default.csv, so half the chip
+# was not addressed by any partition at all. Same reasoning as partitions_4mb.csv
+# otherwise: no SPIFFS, because nothing is stored outside NVS, and two OTA app
+# slots so the firmware update page still has somewhere to write.
+#
+# Sized generously on purpose. Changing a partition table costs every user a
+# serial re-flash, so the one forced at 3.0 should be the last one these boards
+# need - app slots of 0x3F0000 (3.9375MB) mean the question does not come back.
+#
+# nvs and otadata keep default.csv's offsets and sizes EXACTLY, so settings
+# survive the re-flash. Do not move them.
+#
+# Ends exactly on 0x800000. The previous version of this file gave both app
+# slots 0x400000, which put the end of coredump at 0x820000 - 128KB past the end
+# of an 8MB chip. It was never usable, which is why nothing referenced it.
+#
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x5000,
+otadata,  data, ota,     0xe000,   0x2000,
+app0,     app,  ota_0,   0x10000,  0x3F0000,
+app1,     app,  ota_1,   0x400000, 0x3F0000,
+coredump, data, coredump,0x7F0000, 0x10000,

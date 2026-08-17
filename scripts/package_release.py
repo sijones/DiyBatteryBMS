@@ -5,6 +5,7 @@ plus a README with flash addresses.
 """
 from __future__ import print_function
 import os
+import re
 import time
 import zipfile
 
@@ -25,6 +26,28 @@ FLASH_ADDR = {
     "firmware": "0x10000",
 }
 
+def read_fw_version():
+    """FW_VERSION from src/config.h - the one place the version is defined.
+
+    Returned already safe to put in a filename. None if it cannot be read, so
+    the caller can fall back rather than failing a build over a zip name.
+    """
+    path = os.path.join(PROJECT_DIR, "src", "config.h")
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            m = re.search(r'^\s*#define\s+FW_VERSION\s+"([^"]+)"', fh.read(), re.M)
+        if not m:
+            print("[PACKAGER] No FW_VERSION found in", path)
+            return None
+        return re.sub(r'[^A-Za-z0-9._-]', '_', m.group(1))
+    except Exception as e:
+        print("[PACKAGER] Could not read FW_VERSION:", e)
+        return None
+
+
+FW_VERSION = read_fw_version()
+
+
 def _to_hex(val):
     try:
         s = str(val).strip()
@@ -37,6 +60,7 @@ def _to_hex(val):
 
 def build_readme_text(env_name, partitions_csv_name):
     csv_note = f"Active partitions CSV: {partitions_csv_name}\n" if partitions_csv_name else ""
+    ver_note = f"Firmware version: {FW_VERSION}\n" if FW_VERSION else ""
 
     # Determine chip and bootloader address recommendation per env
     def chip_for_env(name):
@@ -61,11 +85,21 @@ def build_readme_text(env_name, partitions_csv_name):
 
     return (
         f"DIY Battery BMS - Release Artifacts ({env_name})\n\n"
+        f"{ver_note}"
         f"Files included:\n"
         f"- firmware.bin (app) @ {app_addr}\n"
         f"- partitions.bin @ {part_addr}\n"
         f"- bootloader.bin @ {boot_addr}\n"
-        f"{csv_note}"
+        f"{csv_note}\n"
+        f"UPGRADING FROM 2.x - READ THIS\n"
+        f"- 3.0 changes the partition table. Flash ALL THREE files over USB, as the\n"
+        f"  command below does. An over-the-air update cannot replace the partition\n"
+        f"  table, so updating that way leaves the device on 2.x's smaller app slot\n"
+        f"  and it will refuse a later update with no useful explanation.\n"
+        f"- Your settings are kept. NVS stays at the same offset and size as before,\n"
+        f"  so a full flash does not erase it - do NOT pass erase_flash, which would.\n"
+        f"- The Firmware tab shows the running App Partition size, and warns if the\n"
+        f"  device is still on the old table.\n\n"
         f"Notes:\n"
         f"- Flash addresses above follow Arduino defaults; confirm against your partitions CSV if using a custom layout.\n"
         f"- Use your preferred ESP32 flasher tool and supply addresses accordingly.\n"
@@ -109,14 +143,14 @@ def build_esptool_cmd_sh(env_name):
         f"{boot_addr} bootloader.bin {part_addr} partitions.bin {app_addr} firmware.bin"
     )
 
-README_TEXT = f"""
-DIY Battery BMS - Release Artifacts ({ENV_NAME})\n\nFiles included:\n- firmware.bin (app) @ {FLASH_ADDR['firmware']}\n- partitions.bin @ {FLASH_ADDR['partitions']}\n- bootloader.bin @ {FLASH_ADDR['bootloader']}\n\nNotes:\n- Flash addresses above follow Arduino defaults; confirm against your partitions CSV if using a custom layout.\n- Use your preferred ESP32 flasher tool and supply addresses accordingly.\n\nGenerated on: {time.strftime('%Y-%m-%d %H:%M:%S')}\n"""
-
-
 def package_release(source, target, env):
     try:
-        timestamp = time.strftime("%Y%m%d-%H%M")
-        zip_name = f"DiyBatteryBMS-{ENV_NAME}-{timestamp}.zip"
+        # Named by firmware version, so an artifact says what it is rather than
+        # when it was built - and rebuilding a version replaces its zip instead
+        # of leaving a pile of near-identical timestamped ones to pick through.
+        # Falls back to a timestamp only if config.h could not be read.
+        stamp = FW_VERSION or time.strftime("%Y%m%d-%H%M")
+        zip_name = f"DiyBatteryBMS-{ENV_NAME}-{stamp}.zip"
         zip_path = os.path.join(DIST_DIR, zip_name)
 
         candidates = {

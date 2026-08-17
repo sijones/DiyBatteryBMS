@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <Update.h>
+#include <esp_ota_ops.h>   // running partition size, for the legacy-layout warning
 #include "config.h"
 #include "embedded_html.h"
 #include "Syslog.h"
@@ -354,6 +355,14 @@ String generateDatatoJSON(bool All)
     doc["fanfulltemp"] = Inverter.GetFanFullTemp();
     doc["fwversion_bms"] = FW_VERSION;
     doc["fwbuild"] = FW_BUILD;
+    /* 3.0 moved to app slots of 1.9375MB (4MB flash) or 3.9375MB (8MB). An OTA
+       cannot rewrite the partition table, so a device updated over the air from
+       2.x is running 3.x code inside 2.x's 1.25MB slot and will one day refuse
+       an update for no reason it can explain. Report the running slot so the UI
+       can say so while it is still only a warning. */
+    const esp_partition_t* runningPart = esp_ota_get_running_partition();
+    doc["apppartkb"] = runningPart ? (runningPart->size / 1024) : 0;
+    doc["legacypartitions"] = runningPart && runningPart->size <= 0x140000;
     #ifdef ESPCAN
     doc["can_tx_pin"] = pref.getUInt8(ccCAN_TX_PIN, 0);
     doc["can_rx_pin"] = pref.getUInt8(ccCAN_RX_PIN, 0);

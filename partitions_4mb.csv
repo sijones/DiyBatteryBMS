@@ -1,0 +1,24 @@
+# DIY Battery BMS - 4MB flash (esp32dev, esp32plus, esp32-ESPCAN, esp32c3-ESPCAN)
+#
+# Replaces the Arduino default.csv, which spent 0x160000 (1.375MB) on a SPIFFS
+# partition this project has never used - the web UI is compiled into the
+# firmware and every setting lives in NVS. That space goes to the two app slots
+# instead, taking each from 0x140000 (1.25MB) to 0x1F0000 (1.9375MB).
+#
+# nvs and otadata keep default.csv's offsets and sizes EXACTLY. Everything the
+# user has configured lives in nvs at 0x9000, so an unchanged nvs is what lets
+# settings survive the re-flash this table requires. Do not move them.
+#
+# Two OTA app slots are kept: the firmware update page needs somewhere to write
+# an incoming image, and a single-app layout would trade that away for room
+# this project does not need.
+#
+# Ends exactly on 0x400000. Check the arithmetic when editing - a table that
+# overruns the flash is rejected at build time, and one that overlaps is not.
+#
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x5000,
+otadata,  data, ota,     0xe000,   0x2000,
+app0,     app,  ota_0,   0x10000,  0x1F0000,
+app1,     app,  ota_1,   0x200000, 0x1F0000,
+coredump, data, coredump,0x3F0000, 0x10000,

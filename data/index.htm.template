@@ -2045,6 +2045,20 @@
             <div class="stat-label">Build Target</div>
             <div class="stat-value sm" id="fwBuild">--</div>
           </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">App Partition</div>
+            <div class="stat-value sm" id="fwPartition">--</div>
+          </div>
+        </div>
+
+        <div id="partitionWarn" class="status-warnings error" hidden>
+          <div class="warning-box">
+            <span class="warning-icon">&#9888;</span>
+            <div class="warning-list">
+              <div>Running the pre-3.0 partition table<span class="why"> — this device was updated over the air, which cannot replace the partition table itself</span></div>
+              <div>Over-the-air updates will fail once the firmware outgrows the old 1.25MB slot<span class="why"> — re-flash over USB with bootloader.bin, partitions.bin and firmware.bin to move across. Your settings are held in NVS, which the new layout leaves exactly where it was, so they are kept.</span></div>
+            </div>
+          </div>
         </div>
         <div class="form-group">
           <label for="firmwareFile">Firmware image (.bin or .bin.gz)</label>
@@ -2992,6 +3006,14 @@
       if(obj.hasOwnProperty('fwbuild')) {
         var e=document.getElementById('fwBuild');
         if(e) e.textContent=obj.fwbuild;
+      }
+      if(obj.hasOwnProperty('apppartkb')) {
+        var e=document.getElementById('fwPartition');
+        if(e) e.textContent = obj.apppartkb ? (obj.apppartkb/1024).toFixed(2) + ' MB' : '--';
+      }
+      if(obj.hasOwnProperty('legacypartitions')) {
+        var w=document.getElementById('partitionWarn');
+        if(w) w.hidden = !obj.legacypartitions;
       }
       if(obj.hasOwnProperty('wifihostname') && obj.wifihostname) {
         var h=document.getElementById('hostName');

@@ -177,6 +177,39 @@ manager, not just PowerPilot.
 **See [PowerPilot.md](PowerPilot.md)** for the full interface: non-persisting set-commands, the
 override latch, force charge versus full charge, and live current requests.
 
+## Upgrading to 3.0.0 — you must re-flash over USB
+
+3.0 replaces the Arduino `default.csv` partition table. **An over-the-air update cannot replace a
+partition table**, so this one upgrade has to be done over USB with all three files —
+`bootloader.bin`, `partitions.bin` and `firmware.bin`. The zip in `dist/` contains them along with a
+ready-made `flash_example.cmd` / `flash_example.sh`.
+
+**Your settings are kept.** The new tables leave `nvs` at exactly the offset and size it has always
+had (`0x9000`, `0x5000`), so everything you have configured survives the re-flash untouched. Do not
+pass `erase_flash` — that erases NVS and is what actually loses settings.
+
+If you update over the air anyway, the device runs fine but keeps 2.x's 1.25MB app slot, and will
+refuse a future update once the firmware outgrows it. The Firmware tab shows the running **App
+Partition** size and warns when a device is still on the old table.
+
+### What changed and why
+
+The old layout spent 1.375MB on a SPIFFS partition this project has never used — the web interface
+is compiled into the firmware and every setting lives in NVS. That space now goes to the app:
+
+| | Old (`default.csv`) | New |
+|---|---|---|
+| App slot (4MB boards) | 1.25MB | **1.9375MB** (`partitions_4mb.csv`) |
+| App slot (8MB boards) | 1.25MB | **3.9375MB** (`partitions_8mb.csv`) |
+| SPIFFS | 1.375MB, unused | removed |
+| NVS | 20KB @ `0x9000` | unchanged, deliberately |
+
+8MB boards (`esp32s3-ESPCAN`, `esp32s3-MCP`, `xiao-esp32s3`) were running the 4MB table, so half the
+chip was not addressed at all. They are sized generously now on purpose: a partition change costs
+every user a re-flash, so the one forced at 3.0 should be the last one those boards ever need.
+
+Two OTA app slots are kept throughout, so the firmware update page still works as before.
+
 ## Upgrading to 2.8.0-BETA10
 - **Every charge now ends in float, and the target is worked out if you have not set one.** Resting
   a full pack at the charge voltage with a 0 A limit asks the inverter for a target and forbids it
