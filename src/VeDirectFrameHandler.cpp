@@ -64,9 +64,10 @@ bool VeDirectFrameHandler::OpenSerial(uint8_t _rxPin,uint8_t _txPin)
 {
     Serial1.end();
 
-	// Check if pins are configured via web interface
-	if (_rxPin == 0 || _txPin == 0) {
-		log_e("VE.Direct RX/TX pins not configured. Please configure via web interface.");
+	// RX is the only pin we need - the shunt transmits unprompted and we never
+	// talk back. TX is optional, and 0 means "not wired", giving a receive-only UART.
+	if (_rxPin == 0) {
+		log_e("VE.Direct RX pin not configured. Please configure via web interface.");
 		return false;
 	}
 
@@ -74,8 +75,9 @@ bool VeDirectFrameHandler::OpenSerial(uint8_t _rxPin,uint8_t _txPin)
 	if (_txPin > 33) // ESP32 can't use pins higher than 34 for output.
 		return false;
 	#endif
-    log_d("Opening Serial Port rxPin: %i, txPin %i",_rxPin,_txPin);
-    Serial1.begin(19200, SERIAL_8N1, _rxPin, _txPin);
+    int8_t txArg = _txPin ? (int8_t) _txPin : (int8_t) -1;
+    log_d("Opening Serial Port rxPin: %i, txPin %i",_rxPin,txArg);
+    Serial1.begin(19200, SERIAL_8N1, _rxPin, txArg);
     Serial1.flush();
     return true;
 }

@@ -61,6 +61,63 @@ bool CANBUS::ReadMCP(unsigned long &id, uint8_t &len, uint8_t *buf) {
 }
 #endif
 
+void CANBUS::SetCANSniffer(bool on) {
+  if (_canSniffer == on) return;
+  _canSniffer = on;
+  _sniffCount = 0;   // a new capture starts with no history, so nothing is missed
+  _dataChanged = true;
+  if (on) {
+    _snifferStart = millis();
+    WS_LOG_W("CAN sniffer ON - listening only, NOTHING is being sent to the inverter (auto-off in %u min)",
+             (uint32_t)(SNIFFER_TIMEOUT_MS / 60000UL));
+  } else {
+    WS_LOG_I("CAN sniffer off - sending to the inverter resumed");
+  }
+}
+
+void CANBUS::SnifferCheckTimeout() {
+  if (!_canSniffer) return;
+  if ((uint32_t)(millis() - _snifferStart) < SNIFFER_TIMEOUT_MS) return;
+  _canSniffer = false;
+  _sniffCount = 0;
+  _dataChanged = true;
+  WS_LOG_W("CAN sniffer timed out after %u min - sending to the inverter resumed",
+           (uint32_t)(SNIFFER_TIMEOUT_MS / 60000UL));
+}
+
+void CANBUS::SnifferLogFrame(uint32_t id, uint8_t len, const uint8_t* data) {
+  if (len > 8) len = 8;
+  uint32_t now = millis();
+
+  int8_t slot = -1;
+  for (uint8_t i = 0; i < _sniffCount; i++) {
+    if (_sniffId[i] == (uint16_t) id) { slot = (int8_t) i; break; }
+  }
+
+  bool changed = true;
+  if (slot >= 0) {
+    changed = (_sniffLen[slot] != len) || (memcmp(_sniffData[slot], data, len) != 0);
+    if (!changed && (uint32_t)(now - _sniffSeen[slot]) < SNIFF_REPEAT_MS) return;
+  } else if (_sniffCount < SNIFF_SLOTS) {
+    slot = (int8_t) _sniffCount++;
+    _sniffId[slot] = (uint16_t) id;
+  }
+
+  if (slot >= 0) {
+    _sniffLen[slot] = len;
+    memcpy(_sniffData[slot], data, len);
+    _sniffSeen[slot] = now;
+  }
+
+  char hex[3 * 8];   // "AA " per byte, last space overwritten by the terminator
+  hex[0] = '\0';
+  for (uint8_t i = 0; i < len; i++)
+    snprintf(hex + (i * 3), sizeof(hex) - (i * 3), "%02X ", data[i]);
+  if (len > 0) hex[(len * 3) - 1] = '\0';
+
+  WS_LOG_I("CAN RX 0x%03X [%u] %s%s", (unsigned) id, len, hex, changed ? "" : " (still)");
+}
+
 void canSendTask(void * pointer){
   
   CANBUS *Inverter = (CANBUS *) pointer;
@@ -97,6 +154,8 @@ void canSendTask(void * pointer){
   // Receive CAN frames (non-blocking), check for inverter 0x305 keepalive
   while (twai_receive(&rx_msg, 0) == ESP_OK)
   {
+    if (Inverter->CANSniffer())
+      Inverter->SnifferLogFrame(rx_msg.identifier, rx_msg.data_length_code, rx_msg.data);
     if (rx_msg.identifier == 0x305) {
       Inverter->InverterSeen();
     } else {
@@ -110,15 +169,26 @@ void canSendTask(void * pointer){
     uint8_t rxLen;
     uint8_t rxBuf[8];
     while (Inverter->ReadMCP(rxId, rxLen, rxBuf)) {
+      if (Inverter->CANSniffer())
+        Inverter->SnifferLogFrame(rxId, rxLen, rxBuf);
       if (rxId == 0x305) {
         Inverter->InverterSeen();
       }
     }
   }
 #endif
-        if(!Inverter->SendAllUpdates())
-          log_e("Failure returned from SendAllUpdates");
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
+        Inverter->SnifferCheckTimeout();
+        if (Inverter->CANSniffer()) {
+          /* Listen-only: our own frames share IDs with the BMS whose bus is
+             being watched, so transmitting would corrupt the very capture we
+             are taking. Poll far faster than the 1s send cadence too - the
+             MCP2515 has only two receive buffers and would drop frames. */
+          vTaskDelay(20 / portTICK_PERIOD_MS);
+        } else {
+          if(!Inverter->SendAllUpdates())
+            log_e("Failure returned from SendAllUpdates");
+          vTaskDelay(1000 / portTICK_PERIOD_MS);
+        }
   }
 
   vTaskDelete(nullptr);

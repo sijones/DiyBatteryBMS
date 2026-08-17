@@ -82,6 +82,26 @@ The dashboard now shows what the firmware is actually doing rather than leaving 
 - Enter the collector's IP address - hostnames are deliberately not resolved, so logging can never block on DNS
 - The Logs tab also gained level filtering, plus Copy and Download buttons for reporting problems
 
+### New in 2.8.0-BETA11 — CAN Sniffer
+A **CAN sniffer** checkbox on the Logs tab logs every frame received on the bus, with its data
+bytes, so you can see exactly what another BMS puts on the wire. It exists for the question that
+comes up whenever an inverter misbehaves — *"but my JK/Pace/Seplos works fine"* — which can only
+really be answered by looking at what the other BMS sends at the moment the two differ.
+
+- **The device sends nothing while it is on.** That is deliberate: it means you can clip a spare
+  node onto someone else's BMS-to-inverter bus without the two fighting over the same message IDs.
+  It also means **do not leave it enabled on your own inverter**, which is left without a BMS.
+- Turns itself off after 30 minutes, and a reboot always clears it. The setting is never saved and
+  is not part of settings export/import.
+- Repeated identical frames are logged once and then every 30 seconds, so a long capture stays
+  readable and shows only the bytes that actually moved.
+- Switching it on selects the new **CAN frames only** log level, so the capture is not buried in
+  ordinary log lines; switching it off puts the previous level back. The level is a normal
+  dropdown choice, so you can move off it and back at any time.
+- Use Copy or Download on the Logs tab to get the capture out - both follow the filter, so with
+  CAN frames only selected you get just the capture.
+- Nothing on the Logs tab counts as configuration, so none of it raises the unsaved-changes bar.
+
 ### New in 2.8.0-BETA5 — Clock and Timezone
 - **Timezone support.** Log and syslog timestamps are now in your local time rather than UTC.
   Pick a region from the dropdown under Settings and daylight saving is handled automatically -
@@ -253,36 +273,38 @@ Please use the recommended hardware, as a personal project it's difficult to sup
 - **CAN_BUS_CS_PIN**: 2
 - **CAN0_INT**: 22
 - **VEDIRECT_RX**: 33
-- **VEDIRECT_TX**: 32
+- **VEDIRECT_TX**: 32 (optional)
 
 ### esp32plus Environment
 - **CAN_BUS_CS_PIN**: 5
 - **CAN0_INT**: 13
 - **VEDIRECT_RX**: 33
-- **VEDIRECT_TX**: 32
+- **VEDIRECT_TX**: 32 (optional)
 
 ### esp32-ESPCAN Environment (Built-in CAN)
 - **CAN_TX_PIN**: 27
 - **CAN_RX_PIN**: 26
 - **CAN_EN_PIN**: 23
 - **VEDIRECT_RX**: 33
-- **VEDIRECT_TX**: 32
+- **VEDIRECT_TX**: 32 (optional)
 
 ### esp32s3-ESPCAN Environment (Built-in CAN)
 - **CAN_TX_PIN**: 27
 - **CAN_RX_PIN**: 26
 - **CAN_EN_PIN**: 23
 - **VEDIRECT_RX**: 33
-- **VEDIRECT_TX**: 32
+- **VEDIRECT_TX**: 32 (optional)
 
 ### esp32c3-ESPCAN Environment (Built-in CAN)
 - **CAN_TX_PIN**: 6
 - **CAN_RX_PIN**: 7
 - **CAN_EN_PIN**: 5
 - **VEDIRECT_RX**: 21
-- **VEDIRECT_TX**: 20
+- **VEDIRECT_TX**: 20 (optional)
 
 **Note**: These PINs can be configured through the web interface after flashing. The forbidden GPIO lists for each environment prevent selection of pins that should not be used.
+
+**VEDIRECT_TX is optional.** Nothing is ever sent to the shunt, so only VEDIRECT_RX has to be wired and set. Leave the TX pin blank in the web interface to keep that GPIO free; clearing an existing value unassigns it.
 
 Links:
 

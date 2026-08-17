@@ -329,6 +329,7 @@ String generateDatatoJSON(bool All)
     doc["syslogserver"] = pref.getString(ccSyslogServer,"");
     doc["syslogport"] = pref.getUInt16(ccSyslogPort, 514);
     doc["syslogenabled"] = pref.getBool(ccSyslogEnabled, false);
+    doc["cansniffer"] = Inverter.CANSniffer();   // runtime only, never persisted
     doc["overvoltage"] = Inverter.GetOverVoltage();
     doc["fanpin"] = pref.getUInt8(ccFanPin,0);
     doc["onewirepin"] = pref.getUInt8(ccOneWirePin,0);
@@ -819,21 +820,25 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         notifyWSClients(); }
       
-      #define HANDLE_PIN(field, prefKey) \
+      // allowZero marks an optional pin, where 0 is a deliberate "not wired" rather
+      // than an unset field to be ignored.
+      #define HANDLE_PIN_EX(field, prefKey, allowZero) \
         if (!doc[field].isNull()) { \
           uint8_t _pv = (uint8_t) doc[field]; \
           handled = true; \
-          if (_pv == 0) { log_w("Ignoring %s value 0", field); } \
-          else if (IsForbiddenPin(_pv)) { wsclient->printf("{\"ERROR\" : \"%s %u is forbidden\"}", field, _pv); } \
+          if (_pv == 0 && !(allowZero)) { log_w("Ignoring %s value 0", field); } \
+          else if (_pv != 0 && IsForbiddenPin(_pv)) { wsclient->printf("{\"ERROR\" : \"%s %u is forbidden\"}", field, _pv); } \
           else { pref.putUInt8(prefKey, _pv); notifyWSClients(); } \
         }
+      #define HANDLE_PIN(field, prefKey) HANDLE_PIN_EX(field, prefKey, false)
       HANDLE_PIN("canbuscspin", ccCanCSPin)
       HANDLE_PIN("victronrxpin", ccVictronRX)
-      HANDLE_PIN("victrontxpin", ccVictronTX)
+      HANDLE_PIN_EX("victrontxpin", ccVictronTX, true) // VE.Direct is listen-only, TX need not be wired
       HANDLE_PIN("can_rx_pin", ccCAN_RX_PIN)
       HANDLE_PIN("can_tx_pin", ccCAN_TX_PIN)
       HANDLE_PIN("can_en_pin", ccCAN_EN_PIN)
       #undef HANDLE_PIN
+      #undef HANDLE_PIN_EX
 
       if (!doc["wifissid"].isNull()) {
         String value = doc["wifissid"];
@@ -1015,6 +1020,17 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           WS_LOG_W("Syslog enabled but no valid server IP set - nothing will be sent");
         else
           WS_LOG_I("Syslog %s", value ? "enabled" : "disabled");
+        notifyWSClients();
+      }
+
+      /* Deliberately not persisted and not part of settings export - turning
+         this on stops the inverter being fed, so it must never survive a reboot
+         or arrive with an imported config file. SetCANSniffer does the logging,
+         including the warning about what has just gone quiet. */
+      if (!doc["cansniffer"].isNull()) {
+        bool value = doc["cansniffer"];
+        handled = true;
+        Inverter.SetCANSniffer(value);
         notifyWSClients();
       }
 

@@ -1789,12 +1789,12 @@
         <div class="section-title">Victron Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="victronrxpin"><span class="tip" data-tip="GPIO pin connected to the Victron shunt TX line (VE.Direct data in).">Victron RX Pin:</span></label>
+            <label for="victronrxpin"><span class="tip" data-tip="GPIO pin connected to the Victron shunt TX line (VE.Direct data in). Required - this is the only VE.Direct connection the BMS needs.">Victron RX Pin:</span></label>
             <input type="number" id="victronrxpin" onchange="EnqueueUpdate('victronrxpin')" onkeypress="HandleEnter(event, 'victronrxpin')">
           </div>
           <div class="form-group">
-            <label for="victrontxpin"><span class="tip" data-tip="GPIO pin connected to the Victron shunt RX line. Not currently used (passive listen only).">Victron TX Pin:</span></label>
-            <input type="number" id="victrontxpin" onchange="EnqueueUpdate('victrontxpin')" onkeypress="HandleEnter(event, 'victrontxpin')">
+            <label for="victrontxpin"><span class="tip" data-tip="Optional. GPIO pin connected to the Victron shunt RX line. Nothing is ever sent to the shunt (passive listen only), so leave this blank unless you have a reason to wire it. Clearing it frees the pin.">Victron TX Pin (optional):</span></label>
+            <input type="number" id="victrontxpin" placeholder="Not used" onchange="EnqueueUpdate('victrontxpin')" onkeypress="HandleEnter(event, 'victrontxpin')">
           </div>
         </div>
         
@@ -2020,9 +2020,11 @@
             <option value="info">Info &amp; above</option>
             <option value="warning">Warnings &amp; above</option>
             <option value="error">Errors only</option>
+            <option value="can">CAN frames only</option>
           </select>
           <label><input type="checkbox" id="autoscroll" checked> Auto-scroll</label>
           <label><input type="checkbox" id="logpause"> Pause</label>
+          <label><input type="checkbox" id="cansniffer" onchange="SendJSONUpdate('cansniffer'); syncSnifferFilter()"><span class="tip" data-tip="Log every CAN frame received, with its data bytes, so you can see what another BMS puts on the bus. While this is on the device sends NOTHING to the inverter, so it can be clipped onto someone else's BMS-to-inverter bus without the two fighting over the same message IDs - but do not leave it on for your own inverter. Turns itself off after 30 minutes, and a reboot always clears it. Repeated identical frames are logged once, then every 30s.">CAN sniffer</span></label>
           <span class="log-spacer"></span>
           <button onclick="copyLogs()">Copy</button>
           <button onclick="downloadLogs()">Download</button>
@@ -2117,6 +2119,13 @@
     var gateway = `ws://${window.location.hostname}/ws`; 
     var websocket;
     const PIN_FIELDS = ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin','canbuscspin','fanpin','onewirepin'];
+    // Pins that are allowed to be unset. These show blank rather than 0, and send 0
+    // when cleared so the firmware unassigns the pin instead of ignoring the update.
+    const OPTIONAL_PIN_FIELDS = ['victrontxpin'];
+    /* Sent to the device but never written to NVS, so they must not raise the
+       unsaved-changes bar - there is nothing to save. Controls on the Logs tab
+       are covered separately by where they sit, not by name. */
+    const TRANSIENT_FIELDS = ['manualallowcharge','manualallowdischarge'];
     // Fields displayed in human units (V/A/Ah) but stored internally in mV/mA - multiply by 1000
     // on send, divide by 1000 on receive. Backend storage format is unchanged.
     const UNIT_CONVERT_FIELDS = {
@@ -2132,6 +2141,11 @@
     function SetFieldValue(fieldId, rawValue) {
       const el = document.getElementById(fieldId);
       if (!el) return;
+      if (OPTIONAL_PIN_FIELDS.includes(fieldId) && Number(rawValue) === 0) {
+        el.value = '';   // unassigned, show the "Not used" placeholder
+        AckUpdate(fieldId);
+        return;
+      }
       const scale = UNIT_CONVERT_FIELDS[fieldId];
       el.value = scale ? (rawValue / scale).toFixed(UNIT_DECIMALS) : rawValue;
       AckUpdate(fieldId);
@@ -2904,6 +2918,17 @@
       if(obj.fantempsrc !== undefined) { document.getElementById('fantempsrc').value=obj.fantempsrc; AckUpdate('fantempsrc'); toggleMqttTempTopics(); }
       if(obj.lcdenabled !== undefined) { document.getElementById('lcdenabled').checked=obj.lcdenabled; AckUpdate('lcdenabled'); }
       if(obj.syslogenabled !== undefined) { document.getElementById('syslogenabled').checked=obj.syslogenabled; AckUpdate('syslogenabled'); validateFields(); }
+      // Runtime only - deliberately absent from EXPORT_FIELDS, see the firmware handler.
+      // Only follow the filter on an actual change of state, so the firmware's
+      // 30-minute auto-off restores the log view, but a routine config broadcast
+      // does not keep dragging the dropdown back while a capture is being read.
+      if(obj.cansniffer !== undefined) {
+        const snifBox = document.getElementById('cansniffer');
+        const snifChanged = snifBox.checked !== obj.cansniffer;
+        snifBox.checked = obj.cansniffer;
+        AckUpdate('cansniffer');
+        if (snifChanged) syncSnifferFilter();
+      }
       if(obj.timezone !== undefined) syncTzPreset();
       if(obj.schedui !== undefined) { renderSchedule(obj.schedui); confirmScheduleSaved(obj.schedui); }
       if(obj.schedmqtt !== undefined) renderMqttWindows(obj.schedmqtt);
@@ -3487,6 +3512,7 @@
       const rawValue = element.value;
       const trimmed = (rawValue === undefined || rawValue === null) ? '' : rawValue.toString().trim();
       const isPinField = PIN_FIELDS.includes(fieldId);
+      const isOptionalPin = OPTIONAL_PIN_FIELDS.includes(fieldId);
 
       let payload;
 
@@ -3496,15 +3522,18 @@
         payload = { [fieldId]: element.checked };
       } else {
         if (trimmed === '') {
-          if (element.type === 'number' || isPinField) {
+          if (isOptionalPin) {
+            payload = { [fieldId]: 0 };  // clearing the field unassigns the pin
+          } else if (element.type === 'number' || isPinField) {
             console.log('Ignoring empty value for ' + fieldId);
             return;
+          } else {
+            payload = { [fieldId]: '' };
           }
-          payload = { [fieldId]: '' };
         } else {
           if (isPinField) {
             const parsedPin = Number(trimmed);
-            if (!Number.isFinite(parsedPin) || parsedPin <= 0) {
+            if (!Number.isFinite(parsedPin) || parsedPin < (isOptionalPin ? 0 : 1)) {
               console.log('Ignoring invalid/zero pin value for ' + fieldId);
               return;
             }
@@ -3526,8 +3555,11 @@
         retries: 0
       };
 
-      // Live-but-not-persisted: everything except the transient dashboard toggles
-      if (fieldId !== 'manualallowcharge' && fieldId !== 'manualallowdischarge') markUnsaved();
+      /* Live-but-not-persisted controls have nothing to save, so they must not
+         raise the bar. The Logs tab is matched by where the control sits rather
+         than by name: it is a diagnostics pane, so nothing on it is
+         configuration, and anything added there later is covered by default. */
+      if (!TRANSIENT_FIELDS.includes(fieldId) && !element.closest('#logs')) markUnsaved();
 
       sendQueue.push(item);
       ProcessQueue();
@@ -4186,9 +4218,15 @@
     const LOG_RANK = { debug: 0, info: 1, warning: 2, error: 3 };
     const LOG_CAP = 500;
 
-    function logVisible(level) {
+    // Sniffer frames are the only lines that start this way - SnifferLogFrame()
+    // in CANBUS.cpp owns the format, so keep the two in step.
+    function isCanFrame(message) { return /^CAN RX 0x/.test(message); }
+
+    function logVisible(level, isCan) {
       const sel = document.getElementById('loglevel');
       const want = sel ? sel.value : 'all';
+      // Frames are logged at info level, so they cannot be picked out by rank
+      if (want === 'can') return !!isCan;
       if (want === 'all') return true;
       return (LOG_RANK[level] || 0) >= (LOG_RANK[want] || 0);
     }
@@ -4196,8 +4234,26 @@
     function applyLogFilter() {
       document.querySelectorAll('#logviewer .log-entry').forEach(function(e) {
         const lvl = (e.className.match(/log-entry (\w+)/) || [])[1] || 'info';
-        e.classList.toggle('hidden', !logVisible(lvl));
+        e.classList.toggle('hidden', !logVisible(lvl, e.dataset.can === '1'));
       });
+    }
+
+    /* Ticking the sniffer switches the view to frames only, which is what it was
+       ticked for; unticking restores whatever was selected before. The dropdown
+       stays usable throughout - this only moves it on the transition. */
+    let preSnifferLevel = null;
+    function syncSnifferFilter() {
+      const box = document.getElementById('cansniffer');
+      const sel = document.getElementById('loglevel');
+      if (!box || !sel) return;
+      if (box.checked) {
+        if (sel.value !== 'can') preSnifferLevel = sel.value;
+        sel.value = 'can';
+      } else if (sel.value === 'can') {
+        sel.value = preSnifferLevel || 'all';
+        preSnifferLevel = null;
+      }
+      applyLogFilter();
     }
 
     // ageMs, when present, is how long before now the device logged the line -
@@ -4208,8 +4264,10 @@
 
       const logViewer = document.getElementById('logviewer');
       const entry = document.createElement('div');
+      const canFrame = isCanFrame(message);
       entry.className = 'log-entry ' + level;
-      if (!logVisible(level)) entry.classList.add('hidden');
+      if (canFrame) entry.dataset.can = '1';
+      if (!logVisible(level, canFrame)) entry.classList.add('hidden');
 
       const when = (typeof ageMs === 'number' && ageMs >= 0)
         ? new Date(Date.now() - ageMs)

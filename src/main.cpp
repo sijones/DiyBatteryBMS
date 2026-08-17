@@ -323,12 +323,12 @@ void setup()
 
   // Start VE.Direct Serial Reading if Enabled
   uint8_t vrx = (uint8_t) pref.getUInt8(ccVictronRX, 0);
-  uint8_t vtx = (uint8_t) pref.getUInt8(ccVictronTX, 0);
-  if (vrx && vtx && !IsForbiddenPin(vrx) && !IsForbiddenPin(vtx)) {
+  uint8_t vtx = (uint8_t) pref.getUInt8(ccVictronTX, 0); // 0 = not wired, TX is optional
+  if (vrx && !IsForbiddenPin(vrx) && (vtx == 0 || !IsForbiddenPin(vtx))) {
     if(veHandle.OpenSerial(vrx, vtx))
       veHandle.startReadTask();
   } else if (vrx || vtx) {
-    log_e("Forbidden or zero GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
+    log_e("Forbidden or missing GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
   }
   // Start NTP Clock Set Task
 #if defined(BMS_S3) || defined(BMS_C3)

@@ -17,7 +17,7 @@ public:
     void rxData(uint8_t inbyte);                // byte of serial data to be passed by the application
     void startReadTask();
     volatile bool dataavailable();
-    bool OpenSerial(uint8_t rxPin, uint8_t txPin);
+    bool OpenSerial(uint8_t rxPin, uint8_t txPin);   // txPin 0 = not wired, receive-only
     char veName[buffLen][nameLen] = { };        // public buffer for received names
     char veValue[buffLen][valueLen] = { };      // public buffer for received values
 

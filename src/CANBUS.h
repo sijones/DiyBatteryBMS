@@ -187,6 +187,33 @@ bool SendCANData_Pylontech();
 bool SendCANData_SMA();
 bool SendCANData_Victron();
 
+/* CAN sniffer. Logs every received frame with its payload, so a node can be
+   clipped onto someone else's BMS-to-inverter bus to see what a hardware BMS
+   actually sends at the moments ours behaves differently - which is the only
+   way to settle "but the JK works" reports with data instead of inference.
+
+   Sending while sniffing would put our 0x351 on the wire alongside the real
+   BMS's, so the send task goes listen-only for the duration. That also means
+   our own inverter is left without a BMS, which is why this is runtime-only
+   state: it is never persisted, it times out on its own, and a reboot always
+   comes back up sending normally. */
+static const uint32_t SNIFFER_TIMEOUT_MS = 30UL * 60UL * 1000UL;
+static const uint32_t SNIFF_REPEAT_MS = 30000UL;
+bool _canSniffer = false;
+uint32_t _snifferStart = 0;
+
+/* Last payload seen per ID. A BMS repeats the same frames every second, so
+   logging all of them buries the handful of bytes that actually moved; only
+   changes are logged, plus a periodic repeat so the capture still shows the bus
+   is alive. 16 slots covers every BMS frame set seen in the wild - an unknown
+   ID beyond that still logs, just without change detection. */
+static const uint8_t SNIFF_SLOTS = 16;
+uint16_t _sniffId[SNIFF_SLOTS] = {};
+uint8_t  _sniffData[SNIFF_SLOTS][8] = {};
+uint8_t  _sniffLen[SNIFF_SLOTS] = {};
+uint32_t _sniffSeen[SNIFF_SLOTS] = {};
+uint8_t  _sniffCount = 0;
+
 // Temperature source selection
 uint8_t _battTempSource = 0;      // 0=VE.Direct, 1=MQTT
 uint8_t _fanTempSource = 0;       // 0=Disabled (current-based), 1=MQTT Inverter
@@ -590,6 +617,12 @@ public:
   void SetCANProtocol(CANProtocol p) { _canProtocol = p; }
   bool InverterPresent() { return _lastInverterSeen > 0 && (millis() - _lastInverterSeen) < INVERTER_TIMEOUT_MS; }
   void InverterSeen() { _lastInverterSeen = millis(); }
+
+  // CAN sniffer - see the notes with the members for why this suppresses TX
+  bool CANSniffer() { return _canSniffer; }
+  void SetCANSniffer(bool on);
+  void SnifferLogFrame(uint32_t id, uint8_t len, const uint8_t* data);
+  void SnifferCheckTimeout();
 
   // Temperature source selectors
   uint8_t BattTempSource() { return _battTempSource; }
