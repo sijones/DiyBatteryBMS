@@ -4,6 +4,9 @@
 #include <WiFi.h>
 #include <Update.h>
 #include <esp_ota_ops.h>   // running partition size, for the legacy-layout warning
+#include "VictronBLE.h"
+
+extern bool bleFallback;   // defined in main.cpp alongside the shunt source
 #include "config.h"
 #include "embedded_html.h"
 #include "Syslog.h"
@@ -331,6 +334,33 @@ String generateDatatoJSON(bool All)
     doc["syslogport"] = pref.getUInt16(ccSyslogPort, 514);
     doc["syslogenabled"] = pref.getBool(ccSyslogEnabled, false);
     doc["cansniffer"] = Inverter.CANSniffer();   // runtime only, never persisted
+    doc["blesniffer"] = VictronBle.Sniffer();    // ditto
+    doc["shuntsource"] = pref.getUInt8(ccShuntSource, SHUNT_SRC_VEDIRECT);
+    doc["blefallback"] = pref.getBool(ccBLEFallback, false);
+    doc["blemac"] = pref.getString(ccVBLEMac, "");
+    /* The key is never sent back. It is the only credential protecting the
+       shunt's broadcasts, and there is nothing to gain from echoing it into
+       every browser on the network - the UI only needs to know whether one is
+       stored so it can say so. */
+    doc["blekeyset"] = VictronBle.HaveKey();
+    doc["blescanning"] = VictronBle.Scanning();
+    doc["bleadverts"] = VictronBle.AdvertsSeen;
+    doc["blefailures"] = VictronBle.DecryptFailures;
+    doc["blefresh"] = VictronBle.DataFresh();
+    doc["blesoc"] = VictronBle.SOCPermille / 10.0;
+    doc["blelastseen"] = VictronBle.LastUpdateMs ? (int32_t)((millis() - VictronBle.LastUpdateMs) / 1000) : -1;
+    {
+      JsonArray found = doc["blefound"].to<JsonArray>();
+      for (uint8_t i = 0; i < VictronBle.FoundCount(); i++) {
+        const VictronBLEFound* f = VictronBle.Found(i);
+        if (!f) continue;
+        JsonObject o = found.add<JsonObject>();
+        o["mac"] = f->mac;
+        o["name"] = f->name;
+        o["rssi"] = f->rssi;
+        o["shunt"] = (f->recordType == VICTRON_REC_BATTERY_MON);
+      }
+    }
     doc["overvoltage"] = Inverter.GetOverVoltage();
     doc["fanpin"] = pref.getUInt8(ccFanPin,0);
     doc["onewirepin"] = pref.getUInt8(ccOneWirePin,0);
@@ -1040,6 +1070,67 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         bool value = doc["cansniffer"];
         handled = true;
         Inverter.SetCANSniffer(value);
+        notifyWSClients();
+      }
+
+      // Also runtime only, and also not in settings export
+      if (!doc["blesniffer"].isNull()) {
+        bool value = doc["blesniffer"];
+        handled = true;
+        if (value && !VictronBle.EnsureRunning())
+          wsclient->printf("{\"ERROR\" : \"Could not start Bluetooth\"}");
+        else {
+          VictronBle.SetSniffer(value);
+          WS_LOG_I("Victron BLE sniffer %s", value ? "on - logging every Victron advert" : "off");
+        }
+        notifyWSClients();
+      }
+
+      if (!doc["blescan"].isNull()) {
+        handled = true;
+        if (!VictronBle.StartDiscovery(8))
+          wsclient->printf("{\"ERROR\" : \"Could not start Bluetooth\"}");
+        notifyWSClients();
+      }
+
+      if (!doc["shuntsource"].isNull()) {
+        uint8_t value = doc["shuntsource"];
+        handled = true;
+        pref.putUInt8(ccShuntSource, value);
+        WS_LOG_I("Shunt source set to %s (reboot to apply)",
+                 value == SHUNT_SRC_BLE ? "Victron BLE" : "VE.Direct serial");
+        notifyWSClients();
+      }
+
+      if (!doc["blefallback"].isNull()) {
+        bool value = doc["blefallback"];
+        handled = true;
+        pref.putBool(ccBLEFallback, value);
+        bleFallback = value;   // takes effect immediately, unlike the source itself
+        WS_LOG_I("BLE fallback to VE.Direct %s", value ? "enabled" : "disabled");
+        notifyWSClients();
+      }
+
+      if (!doc["blemac"].isNull()) {
+        String value = doc["blemac"];
+        handled = true;
+        pref.putString(ccVBLEMac, value);
+        VictronBle.SetMac(value);
+        WS_LOG_I("Victron BLE device set to %s", value.c_str());
+        notifyWSClients();
+      }
+
+      if (!doc["blekey"].isNull()) {
+        String value = doc["blekey"];
+        handled = true;
+        VictronBle.SetKeyHex(value);
+        if (VictronBle.HaveKey()) {
+          pref.putString(ccVBLEKey, value);
+          WS_LOG_I("Victron BLE encryption key stored");
+        } else {
+          // Not saved, so a mistyped key cannot quietly replace a working one
+          wsclient->printf("{\"ERROR\" : \"Key must be 32 hex characters\"}");
+        }
         notifyWSClients();
       }
 

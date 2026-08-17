@@ -545,6 +545,10 @@ void loop()
      Fallback only applies when BLE is the configured source. It is opt-in
      because a source changing itself mid-charge is hard to diagnose after the
      fact, so the switch is logged both ways. */
+  // Push the device list to the browser the moment a scan window closes
+  if (VictronBle.DiscoveryTick())
+    notifyWSClients();
+
   const bool bleFresh  = (shuntSource == SHUNT_SRC_BLE) && VictronBle.DataFresh();
   const bool haveFrame = veHandle.dataavailable();
   const bool useSerial = (shuntSource == SHUNT_SRC_VEDIRECT) ||

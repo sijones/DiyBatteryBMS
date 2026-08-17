@@ -1789,6 +1789,64 @@
         <div class="section-title">Victron Configuration</div>
         <div class="form-row">
           <div class="form-group">
+            <label for="shuntsource"><span class="tip" data-tip="Where battery voltage, current and SOC come from. VE.Direct reads the shunt over the wired serial link. Victron BLE listens to the shunt's Bluetooth broadcasts instead, with no wire at all. Takes effect after a reboot, because Bluetooth is only started when it is the selected source.">Shunt Source:</span></label>
+            <select id="shuntsource" onchange="SendJSONUpdate('shuntsource'); toggleBleConfig()">
+              <option value="0">VE.Direct (serial)</option>
+              <option value="1">Victron BLE</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="bleConfigFields" style="display:none">
+          <div class="form-row">
+            <div class="checkbox-row">
+              <input type="checkbox" id="blefallback" onchange="SendJSONUpdate('blefallback')">
+              <label for="blefallback"><span class="tip" data-tip="If no BLE advert decodes for 15 seconds, use the VE.Direct serial input until it comes back. For a shunt at the edge of Bluetooth range where the wire is still connected. Both switches are written to the log, so a source change is never silent. Leave off if nothing is wired to the VE.Direct pins.">Fall back to VE.Direct when BLE goes quiet</span></label>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label><span class="tip" data-tip="Listens for nearby Victron devices for 8 seconds. The advert header is not encrypted, so devices are found before any key is entered.">Find your shunt:</span></label>
+              <button id="bleScanBtn" onclick="startBleScan()">Scan for Victron devices</button>
+              <div id="bleScanStatus" class="field-error"></div>
+              <div id="bleFoundList"></div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="blemac"><span class="tip" data-tip="Bluetooth address of your SmartShunt. Filled in by the Scan button, or type it as aa:bb:cc:dd:ee:ff.">Device Address:</span></label>
+              <input type="textbox" id="blemac" placeholder="aa:bb:cc:dd:ee:ff" onchange="EnqueueUpdate('blemac')" onkeypress="HandleEnter(event, 'blemac')">
+            </div>
+            <div class="form-group">
+              <label for="blekey"><span class="tip" data-tip="32 hex characters, from VictronConnect: connect to the shunt, then Settings > Product info > Instant readout via Bluetooth > Show. This is the only thing protecting the shunt's broadcasts, so it is stored but never sent back to the browser.">Encryption Key:</span></label>
+              <div class="password-wrap">
+                <input type="password" id="blekey" placeholder="32 hex characters" onchange="EnqueueUpdate('blekey')" onkeypress="HandleEnter(event, 'blekey')">
+                <button class="password-toggle" onclick="togglePassword('blekey')">Show</button>
+              </div>
+              <div id="bleKeyState" class="field-error"></div>
+            </div>
+          </div>
+
+          <div class="stat-grid">
+            <div class="stat-box stat-status">
+              <div class="stat-label">BLE Status</div>
+              <div class="stat-value sm" id="bleStatus">--</div>
+            </div>
+            <div class="stat-box stat-status">
+              <div class="stat-label">Adverts Decoded</div>
+              <div class="stat-value sm" id="bleAdverts">--</div>
+            </div>
+            <div class="stat-box stat-status">
+              <div class="stat-label">Rejected</div>
+              <div class="stat-value sm" id="bleFailures">--</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
             <label for="victronrxpin"><span class="tip" data-tip="GPIO pin connected to the Victron shunt TX line (VE.Direct data in). Required - this is the only VE.Direct connection the BMS needs.">Victron RX Pin:</span></label>
             <input type="number" id="victronrxpin" onchange="EnqueueUpdate('victronrxpin')" onkeypress="HandleEnter(event, 'victronrxpin')">
           </div>
@@ -2021,10 +2079,12 @@
             <option value="warning">Warnings &amp; above</option>
             <option value="error">Errors only</option>
             <option value="can">CAN frames only</option>
+            <option value="ble">BLE adverts only</option>
           </select>
           <label><input type="checkbox" id="autoscroll" checked> Auto-scroll</label>
           <label><input type="checkbox" id="logpause"> Pause</label>
           <label><input type="checkbox" id="cansniffer" onchange="SendJSONUpdate('cansniffer'); syncSnifferFilter()"><span class="tip" data-tip="Log every CAN frame received, with its data bytes, so you can see what another BMS puts on the bus. While this is on the device sends NOTHING to the inverter, so it can be clipped onto someone else's BMS-to-inverter bus without the two fighting over the same message IDs - but do not leave it on for your own inverter. Turns itself off after 30 minutes, and a reboot always clears it. Repeated identical frames are logged once, then every 30s.">CAN sniffer</span></label>
+          <label><input type="checkbox" id="blesniffer" onchange="SendJSONUpdate('blesniffer'); syncSnifferFilter('ble')"><span class="tip" data-tip="Log every Victron BLE advertisement seen nearby, with its raw bytes. The advert header is not encrypted, so this works before any key is entered - use it to confirm a shunt is in range and being decoded correctly. Starts Bluetooth if it is not already running. Runtime only: a reboot clears it.">BLE sniffer</span></label>
           <span class="log-spacer"></span>
           <button onclick="copyLogs()">Copy</button>
           <button onclick="downloadLogs()">Download</button>
@@ -2605,6 +2665,62 @@
       SendQueuedUpdate(fieldId);
     }
 
+    /* ---------- Victron BLE ---------- */
+    function toggleBleConfig() {
+      var el = document.getElementById('bleConfigFields');
+      var src = document.getElementById('shuntsource');
+      if (el && src) el.style.display = (src.value === '1') ? '' : 'none';
+    }
+
+    function startBleScan() {
+      var btn = document.getElementById('bleScanBtn');
+      var status = document.getElementById('bleScanStatus');
+      if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
+      if (status) { status.textContent = 'Listening for 8 seconds…'; status.classList.add('show'); }
+      websocket.send('{"blescan" : true}');
+      // The firmware closes the window and pushes results; this is only a
+      // backstop so the button cannot stay stuck if that never arrives.
+      setTimeout(function() { if (btn && btn.disabled) renderBleFound([], true); }, 12000);
+    }
+
+    function renderBleFound(list, timedOut) {
+      var btn = document.getElementById('bleScanBtn');
+      var status = document.getElementById('bleScanStatus');
+      var box = document.getElementById('bleFoundList');
+      if (btn) { btn.disabled = false; btn.textContent = 'Scan for Victron devices'; }
+      if (!box) return;
+      box.textContent = '';
+
+      if (!list || list.length === 0) {
+        if (status) {
+          status.textContent = timedOut
+            ? 'No response from the device — is Bluetooth available on this board?'
+            : 'No Victron devices heard. Move closer to the shunt and scan again.';
+          status.classList.add('show');
+        }
+        return;
+      }
+      if (status) { status.textContent = ''; status.classList.remove('show'); }
+
+      list.forEach(function(d) {
+        var row = document.createElement('div');
+        row.className = 'checkbox-row';
+        var label = document.createElement('span');
+        // Signal strength is the only guide to which of several shunts is yours
+        label.textContent = d.name + '  ' + d.mac + '  ' + d.rssi + ' dBm' +
+                            (d.shunt ? '  (battery monitor)' : '');
+        var use = document.createElement('button');
+        use.textContent = 'Use';
+        use.onclick = function() {
+          var mac = document.getElementById('blemac');
+          if (mac) { mac.value = d.mac; SendQueuedUpdate('blemac'); }
+        };
+        row.appendChild(use);
+        row.appendChild(label);
+        box.appendChild(row);
+      });
+    }
+
     function toggleTempConfig() {
       var el = document.getElementById('tempConfigFields');
       if(el) el.style.display = document.getElementById('tempprotection').checked ? '' : 'none';
@@ -2941,7 +3057,49 @@
         const snifChanged = snifBox.checked !== obj.cansniffer;
         snifBox.checked = obj.cansniffer;
         AckUpdate('cansniffer');
-        if (snifChanged) syncSnifferFilter();
+        if (snifChanged) syncSnifferFilter('can');
+      }
+      if(obj.blesniffer !== undefined) {
+        const bs = document.getElementById('blesniffer');
+        const bsChanged = bs.checked !== obj.blesniffer;
+        bs.checked = obj.blesniffer;
+        AckUpdate('blesniffer');
+        if (bsChanged) syncSnifferFilter('ble');
+      }
+      if(obj.shuntsource !== undefined) {
+        document.getElementById('shuntsource').value = obj.shuntsource;
+        AckUpdate('shuntsource'); toggleBleConfig();
+      }
+      if(obj.blefallback !== undefined) { document.getElementById('blefallback').checked = obj.blefallback; AckUpdate('blefallback'); }
+      if(obj.blemac !== undefined) { document.getElementById('blemac').value = obj.blemac; AckUpdate('blemac'); }
+      if(obj.blekeyset !== undefined) {
+        // The key itself never comes back, so report whether one is held
+        var ks = document.getElementById('bleKeyState');
+        if (ks) {
+          ks.textContent = obj.blekeyset ? 'A key is stored. Type a new one to replace it.'
+                                         : 'No key stored yet — adverts cannot be decoded.';
+          ks.classList.add('show');
+          ks.classList.toggle('warn', !obj.blekeyset);
+        }
+        AckUpdate('blekey');
+      }
+      if(obj.blefound !== undefined && !obj.blescanning) renderBleFound(obj.blefound, false);
+      if(obj.bleadverts !== undefined) {
+        var e = document.getElementById('bleAdverts');
+        if (e) e.textContent = obj.bleadverts;
+      }
+      if(obj.blefailures !== undefined) {
+        var e = document.getElementById('bleFailures');
+        if (e) e.textContent = obj.blefailures;
+      }
+      if(obj.blefresh !== undefined) {
+        var e = document.getElementById('bleStatus');
+        if (e) {
+          var ago = obj.blelastseen;
+          if (obj.blefresh) { e.textContent = 'Receiving (' + obj.blesoc.toFixed(1) + '%)'; e.className = 'stat-value sm v-ok'; }
+          else if (ago >= 0) { e.textContent = 'Stale, ' + ago + 's ago'; e.className = 'stat-value sm v-warn'; }
+          else { e.textContent = 'Nothing received'; e.className = 'stat-value sm v-dim'; }
+        }
       }
       if(obj.timezone !== undefined) syncTzPreset();
       if(obj.schedui !== undefined) { renderSchedule(obj.schedui); confirmScheduleSaved(obj.schedui); }
@@ -3087,7 +3245,8 @@
     // Settings export/import - reads from DOM, sends via existing WebSocket handlers
     const EXPORT_FIELDS = {
       checkboxes: ['canbusenabled','can16mhz','soctrickenabled','requestflagsenabled','never100soc',
-                   'autocharge','tempprotection','showtempdashboard','lcdenabled','syslogenabled'],
+                   'autocharge','tempprotection','showtempdashboard','lcdenabled','syslogenabled',
+                   'blefallback'],
       numbers: ['lowsoclimit','highsoclimit','smartinterval','tailduration',
                 'maxabsorptiontime','rechargesoc','chargehightemp','chargelowtemp',
                 'dischargehightemp','dischargelowtemp','fanofftemp','fanfulltemp',
@@ -3095,9 +3254,13 @@
                 'velooptime','mqttport','syslogport','overridetimeout','requesttimeout'],
       // Exported in display units (V/A/Ah); import re-scales on send
       converted: UNIT_CONVERT_FIELDS,
+      /* blekey is deliberately absent. The firmware never sends it back to the
+         browser, so it could not be exported anyway - and a settings file that
+         quietly carried the shunt's only credential is not something to hand
+         out when asking for help with a config. It is re-entered by hand. */
       strings: ['ntpserver','timezone','syslogserver','mqttserverip','mqttclientid','mqtttopic','mqttuser',
-                'mqttpass','mqttbatttopic','mqttinvtopic','wifihostname'],
-      selects: ['canprotocol','batttempsrc','fantempsrc'],
+                'mqttpass','mqttbatttopic','mqttinvtopic','wifihostname','blemac'],
+      selects: ['canprotocol','batttempsrc','fantempsrc','shuntsource'],
       pins: ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin',
              'canbuscspin','fanpin','onewirepin']
     };
@@ -4240,15 +4403,20 @@
     const LOG_RANK = { debug: 0, info: 1, warning: 2, error: 3 };
     const LOG_CAP = 500;
 
-    // Sniffer frames are the only lines that start this way - SnifferLogFrame()
-    // in CANBUS.cpp owns the format, so keep the two in step.
-    function isCanFrame(message) { return /^CAN RX 0x/.test(message); }
+    /* Sniffer output is picked out by the shape of the message, because both
+       sniffers log at info level and so cannot be separated by rank. The
+       firmware owns these formats - SnifferLogFrame() in CANBUS.cpp and
+       ParseAdvert() in VictronBLE.cpp - so keep the patterns in step with them. */
+    function snifferKind(message) {
+      if (/^CAN RX 0x/.test(message)) return 'can';
+      if (/^Victron BLE [0-9a-f]{2}:/i.test(message)) return 'ble';
+      return '';
+    }
 
-    function logVisible(level, isCan) {
+    function logVisible(level, kind) {
       const sel = document.getElementById('loglevel');
       const want = sel ? sel.value : 'all';
-      // Frames are logged at info level, so they cannot be picked out by rank
-      if (want === 'can') return !!isCan;
+      if (want === 'can' || want === 'ble') return kind === want;
       if (want === 'all') return true;
       return (LOG_RANK[level] || 0) >= (LOG_RANK[want] || 0);
     }
@@ -4256,24 +4424,29 @@
     function applyLogFilter() {
       document.querySelectorAll('#logviewer .log-entry').forEach(function(e) {
         const lvl = (e.className.match(/log-entry (\w+)/) || [])[1] || 'info';
-        e.classList.toggle('hidden', !logVisible(lvl, e.dataset.can === '1'));
+        e.classList.toggle('hidden', !logVisible(lvl, e.dataset.kind || ''));
       });
     }
 
-    /* Ticking the sniffer switches the view to frames only, which is what it was
+    /* Ticking a sniffer switches the view to its output, which is what it was
        ticked for; unticking restores whatever was selected before. The dropdown
        stays usable throughout - this only moves it on the transition. */
     let preSnifferLevel = null;
-    function syncSnifferFilter() {
-      const box = document.getElementById('cansniffer');
+    function syncSnifferFilter(kind) {
+      const box = document.getElementById(kind === 'ble' ? 'blesniffer' : 'cansniffer');
       const sel = document.getElementById('loglevel');
       if (!box || !sel) return;
       if (box.checked) {
-        if (sel.value !== 'can') preSnifferLevel = sel.value;
-        sel.value = 'can';
-      } else if (sel.value === 'can') {
-        sel.value = preSnifferLevel || 'all';
-        preSnifferLevel = null;
+        if (sel.value !== 'can' && sel.value !== 'ble') preSnifferLevel = sel.value;
+        sel.value = kind;
+      } else if (sel.value === kind) {
+        // Hand over to the other sniffer if it is still running, rather than
+        // dropping the user back to a firehose they did not ask for.
+        const other = kind === 'ble' ? 'cansniffer' : 'blesniffer';
+        const otherBox = document.getElementById(other);
+        sel.value = (otherBox && otherBox.checked) ? (kind === 'ble' ? 'can' : 'ble')
+                                                   : (preSnifferLevel || 'all');
+        if (!otherBox || !otherBox.checked) preSnifferLevel = null;
       }
       applyLogFilter();
     }
@@ -4286,10 +4459,10 @@
 
       const logViewer = document.getElementById('logviewer');
       const entry = document.createElement('div');
-      const canFrame = isCanFrame(message);
+      const kind = snifferKind(message);
       entry.className = 'log-entry ' + level;
-      if (canFrame) entry.dataset.can = '1';
-      if (!logVisible(level, canFrame)) entry.classList.add('hidden');
+      if (kind) entry.dataset.kind = kind;
+      if (!logVisible(level, kind)) entry.classList.add('hidden');
 
       const when = (typeof ageMs === 'number' && ageMs >= 0)
         ? new Date(Date.now() - ageMs)

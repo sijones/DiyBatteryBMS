@@ -84,16 +84,33 @@ String VictronBLE::GetMac()
   return String(buf);
 }
 
+bool VictronBLE::EnsureRunning()
+{
+  if (_enabled && _scan && _scan->isScanning()) return true;
+  return Begin(true);
+}
+
 bool VictronBLE::StartDiscovery(uint16_t seconds)
 {
-  if (!_enabled || !_scan) {
-    WS_LOG_W("Victron BLE: cannot scan, BLE is not enabled");
+  if (!EnsureRunning()) {
+    WS_LOG_E("Victron BLE: could not start the radio to scan");
     return false;
   }
   _foundCount = 0;
   _discovering = true;
+  _discoveryEndMs = millis() + ((uint32_t) seconds * 1000UL);
   WS_LOG_I("Victron BLE: scanning %us for nearby Victron devices", seconds);
-  return true;   // the running scan feeds NoteFound; main.cpp ends the window
+  return true;   // the running scan feeds NoteFound until DiscoveryTick closes it
+}
+
+bool VictronBLE::DiscoveryTick()
+{
+  if (!_discovering) return false;
+  if ((int32_t)(millis() - _discoveryEndMs) < 0) return false;
+  _discovering = false;
+  WS_LOG_I("Victron BLE: scan finished, %u Victron device%s found",
+           _foundCount, _foundCount == 1 ? "" : "s");
+  return true;
 }
 
 bool VictronBLE::Decrypt(const uint8_t* cipher, size_t len, uint16_t nonce, uint8_t* out)

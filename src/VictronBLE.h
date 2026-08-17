@@ -94,9 +94,17 @@ class VictronBLE {
     void SetKeyHex(const String& hex);       // 32 hex chars
     void SetMac(const String& mac);          // "aa:bb:cc:dd:ee:ff"
     String GetMac();
+    bool HaveKey() { return _haveKey; }
     bool StartDiscovery(uint16_t seconds);   // populates the Found list for the UI
+    bool DiscoveryTick();                    // true once, on the pass the window closes
     void Stop();
     void ParseAdvert(const NimBLEAdvertisedDevice* dev);
+
+    /* Bring the radio up for a scan or a sniff even when the shunt is being read
+       over the wire. Without this, the two things you need in order to set BLE
+       up - find the device, watch its adverts - would both require BLE to
+       already be selected, which is the wrong way round. */
+    bool EnsureRunning();
 
   private:
     bool _enabled = false;
@@ -104,6 +112,7 @@ class VictronBLE {
     bool _haveKey = false;
     bool _haveMac = false;
     bool _discovering = false;
+    uint32_t _discoveryEndMs = 0;
     uint8_t _key[16] = {};
     uint8_t _mac[6] = {};
     VictronBLEFound _found[VBLE_MAX_FOUND];
