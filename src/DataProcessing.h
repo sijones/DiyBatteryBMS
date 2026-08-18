@@ -138,44 +138,50 @@ void VEDataProcess()
       taskEXIT_CRITICAL(&(Inverter.CANMutex));
     }
 
+    /* The five identity/alarm strings below are assigned OUTSIDE the critical
+       section, unlike the numeric fields above.
+
+       taskENTER_CRITICAL disables interrupts and takes a spinlock. Assigning an
+       Arduino String allocates, and the heap has a lock of its own - so if
+       another core is holding the heap lock at that moment, this core spins for
+       it forever with interrupts off. That is a hard deadlock: no output, no
+       watchdog (its interrupt cannot be delivered either), no reboot. Exactly
+       what was seen on two boards that went silent on serial and off the
+       network at the same time, with no panic to show for it.
+
+       Same rule that mqttsetup() had to learn: nothing that allocates or blocks
+       may happen inside a critical section. These are descriptive fields shown
+       in the UI, so a torn read is worth far less than a hang is worth
+       avoiding - the numeric values the charge logic depends on keep their
+       guard above. */
     else if (strcmp(key, "AR") == 0)
     {
       log_i("Alarm Reason Update: %s", value);
-      taskENTER_CRITICAL(&(Inverter.CANMutex));
       Inverter.AlarmReason(String(value));
-      taskEXIT_CRITICAL(&(Inverter.CANMutex));
     }
 
     else if (strcmp(key, "PID") == 0)
     {
       log_i("Product ID Update: %s", value);
-      taskENTER_CRITICAL(&(Inverter.CANMutex));
       Inverter.PIDString(String(value));
-      taskEXIT_CRITICAL(&(Inverter.CANMutex));
     }
 
     else if (strcmp(key, "FW") == 0)
     {
       log_i("Firmware Version Update: %s", value);
-      taskENTER_CRITICAL(&(Inverter.CANMutex));
       Inverter.FWVersion(String(value));
-      taskEXIT_CRITICAL(&(Inverter.CANMutex));
     }
 
     else if (strcmp(key, "SER#") == 0)
     {
       log_i("Serial Number Update: %s", value);
-      taskENTER_CRITICAL(&(Inverter.CANMutex));
       Inverter.SerialNumber(String(value));
-      taskEXIT_CRITICAL(&(Inverter.CANMutex));
     }
 
     else if (strcmp(key, "BMV") == 0)
     {
       log_i("Model Update: BMV-%s", value);
-      taskENTER_CRITICAL(&(Inverter.CANMutex));
       Inverter.ModelString(String("BMV-") + value);
-      taskEXIT_CRITICAL(&(Inverter.CANMutex));
     }
 
   }
