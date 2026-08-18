@@ -201,7 +201,25 @@ void setup()
     
   // LittleFS removed - HTML now embedded in firmware
   log_d("Using embedded HTML (no filesystem).");
-  
+
+  /* Has to be set BEFORE the DHCP lease is taken, which happens a second or two
+     into wifiManager.begin() below: lwIP hands the offered NTP servers to
+     dhcp_set_ntp_servers() as the lease is processed, and that drops them
+     unless this flag is already on. Enabling it later, when TaskSetClock
+     configures SNTP, is far too late and the clock silently never syncs.
+
+     esp_netif_init() first, and not optional. esp_sntp_servermode_dhcp() reaches
+     lwIP through tcpip_callback(), so calling it before the TCP/IP thread exists
+     is not a no-op or an error return - it is
+       assert failed: tcpip_callback ... (Invalid mbox)
+     and a boot loop that only a serial flash gets you out of. esp_netif_init()
+     is idempotent and WiFi will call it again itself. */
+  if (pref.getBool(ccNTPFromDHCP, true)) {
+    esp_netif_init();
+    esp_sntp_servermode_dhcp(true);
+    log_d("NTP: accepting a server from the DHCP lease");
+  }
+
   if (!wifiManager.begin())
   {
     // Failed to configure, start the basics to enable web configuration
@@ -393,7 +411,14 @@ void UpdateWifiScanResults() {
         int rssi = WiFi.RSSI(i);
         uint8_t channel = WiFi.channel(i);
         uint8_t secure = WiFi.encryptionType(i);
-        json += "{\"ssid\":\"" + ssid + "\",\"rssi\":" + String(rssi) + ",\"channel\":" + String(channel) + ",\"secure\":" + String(secure) + "}";
+        /* ssid is the sanitised, JSON-escaped name for the dropdown to show;
+           ssidhex is what the browser sends back to be saved. See the SSID
+           transport note in HTTPWSFunctions.h - beacon bytes verbatim would
+           make this an invalid UTF-8 text frame, and the browser is required
+           to drop the WebSocket rather than render it. */
+        json += "{\"ssid\":\"" + jsonEscape(toDisplayUTF8(ssid)) + "\""
+                ",\"ssidhex\":\"" + bytesToHex(ssid) + "\""
+                ",\"rssi\":" + String(rssi) + ",\"channel\":" + String(channel) + ",\"secure\":" + String(secure) + "}";
       }
       log_d("WiFi scan completed: %d networks found", n);
       WS_LOG_I("WiFi scan completed: %d networks found", n);
@@ -404,10 +429,8 @@ void UpdateWifiScanResults() {
     
     json += "]}";
     
-    // Send to all WebSocket clients
-    if(ws.count() > 0 && ws.availableForWriteAll()) {
-      ws.textAll(json);
-    }
+    // Per client, so one stalled reader cannot swallow everyone's scan results
+    if(ws.count() > 0) wsBroadcast(json);
   }
 }
 
@@ -523,6 +546,10 @@ void loop()
   
   wifiManager.loop();
   ScheduleApply(t);
+
+  // Feeds out the Home Assistant discovery burst a group at a time - see the
+  // note above HA_CHUNK_COUNT. No-op unless a sequence is armed.
+  haDiscoveryLoop();
 
   // Monitor WiFi scan completion and send results via WebSocket
   UpdateWifiScanResults();

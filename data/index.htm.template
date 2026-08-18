@@ -1295,7 +1295,7 @@
       <button class="tab-button" role="tab" id="tab-bms"      aria-selected="false" aria-controls="bms"      onclick="switchTab('bms')">BMS</button>
       <button class="tab-button" role="tab" id="tab-schedule" aria-selected="false" aria-controls="schedule" onclick="switchTab('schedule')">Schedule</button>
       <button class="tab-button" role="tab" id="tab-settings" aria-selected="false" aria-controls="settings" onclick="switchTab('settings')">Settings</button>
-      <button class="tab-button" role="tab" id="tab-wifimqtt" aria-selected="false" aria-controls="wifimqtt" onclick="switchTab('wifimqtt')">WiFi/MQTT</button>
+      <button class="tab-button" role="tab" id="tab-wifimqtt" aria-selected="false" aria-controls="wifimqtt" onclick="switchTab('wifimqtt')">WiFi/BLE/MQTT</button>
       <button class="tab-button" role="tab" id="tab-logs"     aria-selected="false" aria-controls="logs"     onclick="switchTab('logs')">Logs</button>
       <button class="tab-button" role="tab" id="tab-firmware" aria-selected="false" aria-controls="firmware" onclick="switchTab('firmware')">Firmware</button>
     </nav>
@@ -1789,60 +1789,22 @@
         <div class="section-title">Victron Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="shuntsource"><span class="tip" data-tip="Where battery voltage, current and SOC come from. VE.Direct reads the shunt over the wired serial link. Victron BLE listens to the shunt's Bluetooth broadcasts instead, with no wire at all. Takes effect after a reboot, because Bluetooth is only started when it is the selected source.">Shunt Source:</span></label>
+            <label for="shuntsource"><span class="tip" data-tip="Where battery voltage, current and SOC come from. Prefer Serial reads the shunt over the wired VE.Direct link. Prefer BLE listens to the shunt's Bluetooth broadcasts instead, with no wire at all. Takes effect after a reboot, because Bluetooth is only started when BLE is preferred. The device address and encryption key are set on the WiFi/BLE/MQTT tab.">Shunt Source:</span></label>
             <select id="shuntsource" onchange="SendJSONUpdate('shuntsource'); toggleBleConfig()">
-              <option value="0">VE.Direct (serial)</option>
-              <option value="1">Victron BLE</option>
+              <option value="0">Prefer Serial (VE.Direct)</option>
+              <option value="1">Prefer BLE (Bluetooth)</option>
             </select>
           </div>
         </div>
 
-        <div id="bleConfigFields" style="display:none">
-          <div class="form-row">
-            <div class="checkbox-row">
-              <input type="checkbox" id="blefallback" onchange="SendJSONUpdate('blefallback')">
-              <label for="blefallback"><span class="tip" data-tip="If no BLE advert decodes for 15 seconds, use the VE.Direct serial input until it comes back. For a shunt at the edge of Bluetooth range where the wire is still connected. Both switches are written to the log, so a source change is never silent. Leave off if nothing is wired to the VE.Direct pins.">Fall back to VE.Direct when BLE goes quiet</span></label>
-            </div>
+        <div class="form-row">
+          <div class="checkbox-row">
+            <input type="checkbox" id="blefallback" onchange="SendJSONUpdate('blefallback'); toggleBleConfig()">
+            <label for="blefallback"><span class="tip" data-tip="Only applies when BLE is preferred. If no BLE advert decodes for 15 seconds, use the VE.Direct serial input until it comes back - for a shunt at the edge of Bluetooth range where the wire is still connected. Both switches are written to the log, so a source change is never silent. Leave off if nothing is wired to the VE.Direct pins.">Allow fallback to the other source when the preferred one goes quiet</span></label>
           </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label><span class="tip" data-tip="Listens for nearby Victron devices for 8 seconds. The advert header is not encrypted, so devices are found before any key is entered.">Find your shunt:</span></label>
-              <button id="bleScanBtn" onclick="startBleScan()">Scan for Victron devices</button>
-              <div id="bleScanStatus" class="field-error"></div>
-              <div id="bleFoundList"></div>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="blemac"><span class="tip" data-tip="Bluetooth address of your SmartShunt. Filled in by the Scan button, or type it as aa:bb:cc:dd:ee:ff.">Device Address:</span></label>
-              <input type="textbox" id="blemac" placeholder="aa:bb:cc:dd:ee:ff" onchange="EnqueueUpdate('blemac')" onkeypress="HandleEnter(event, 'blemac')">
-            </div>
-            <div class="form-group">
-              <label for="blekey"><span class="tip" data-tip="32 hex characters, from VictronConnect: connect to the shunt, then Settings > Product info > Instant readout via Bluetooth > Show. This is the only thing protecting the shunt's broadcasts, so it is stored but never sent back to the browser.">Encryption Key:</span></label>
-              <div class="password-wrap">
-                <input type="password" id="blekey" placeholder="32 hex characters" onchange="EnqueueUpdate('blekey')" onkeypress="HandleEnter(event, 'blekey')">
-                <button class="password-toggle" onclick="togglePassword('blekey')">Show</button>
-              </div>
-              <div id="bleKeyState" class="field-error"></div>
-            </div>
-          </div>
-
-          <div class="stat-grid">
-            <div class="stat-box stat-status">
-              <div class="stat-label">BLE Status</div>
-              <div class="stat-value sm" id="bleStatus">--</div>
-            </div>
-            <div class="stat-box stat-status">
-              <div class="stat-label">Adverts Decoded</div>
-              <div class="stat-value sm" id="bleAdverts">--</div>
-            </div>
-            <div class="stat-box stat-status">
-              <div class="stat-label">Rejected</div>
-              <div class="stat-value sm" id="bleFailures">--</div>
-            </div>
-          </div>
+        </div>
+        <div class="form-row">
+          <div id="bleSetupHint" class="field-error"></div>
         </div>
 
         <div class="form-row">
@@ -1917,8 +1879,12 @@
         <div class="section-title">Network Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="ntpserver"><span class="tip" data-tip="Time server for clock sync, used for log and syslog timestamps. One address, or two separated by a comma. Leave blank to disable.">NTP Server:</span></label>
+            <label for="ntpserver"><span class="tip" data-tip="Time server for clock sync, used for log and syslog timestamps. One address, or two separated by a comma. Leave blank to use only the server offered by DHCP.">NTP Server:</span></label>
             <input type="textbox" id="ntpserver" placeholder="0.uk.pool.ntp.org" onchange="EnqueueUpdate('ntpserver')" onkeypress="HandleEnter(event, 'ntpserver')">
+            <div class="checkbox-row">
+              <input type="checkbox" id="ntpfromdhcp" onchange="SendJSONUpdate('ntpfromdhcp')">
+              <label for="ntpfromdhcp"><span class="tip" data-tip="Use the time server your router hands out with the DHCP lease (option 42). Tried first, with anything typed above as the fallback, so a device with nothing configured still gets a clock. Takes effect after a reboot.">Get NTP server from DHCP</span></label>
+            </div>
           </div>
           <div class="form-group">
             <label for="tzpreset"><span class="tip" data-tip="Sets the local time used for log and syslog timestamps. Daylight saving is handled automatically. Pick a region, or choose Custom and enter your own POSIX TZ string.">Timezone:</span></label>
@@ -2017,7 +1983,54 @@
         <div class="form-group">
           <button onclick="SaveWifiConfig()" class="save-btn">Save WiFi Configuration</button>
         </div>
-        
+
+        <div class="section-title">Victron BLE Shunt</div>
+        <!-- Always shown, so the shunt can be paired and tested before BLE is
+             made the preferred source over in Settings > Victron Configuration.
+             bleSourceHint says which way that preference is currently set. -->
+        <div class="form-row">
+          <div id="bleSourceHint" class="field-error"></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label><span class="tip" data-tip="Listens for nearby Victron devices for 8 seconds. The advert header is not encrypted, so devices are found before any key is entered.">Find your shunt:</span></label>
+            <button id="bleScanBtn" onclick="startBleScan()">Scan for Victron devices</button>
+            <div id="bleScanStatus" class="field-error"></div>
+            <div id="bleFoundList"></div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="blemac"><span class="tip" data-tip="Bluetooth address of your SmartShunt. Filled in by the Scan button, or type it as aa:bb:cc:dd:ee:ff.">Device Address:</span></label>
+            <input type="textbox" id="blemac" placeholder="aa:bb:cc:dd:ee:ff" onchange="EnqueueUpdate('blemac')" onkeypress="HandleEnter(event, 'blemac')">
+          </div>
+          <div class="form-group">
+            <label for="blekey"><span class="tip" data-tip="32 hex characters, from VictronConnect: connect to the shunt, then Settings > Product info > Instant readout via Bluetooth > Show. This is the only thing protecting the shunt's broadcasts, so it is stored but never sent back to the browser.">Encryption Key:</span></label>
+            <div class="password-wrap">
+              <input type="password" id="blekey" placeholder="32 hex characters" onchange="EnqueueUpdate('blekey')" onkeypress="HandleEnter(event, 'blekey')">
+              <button class="password-toggle" onclick="togglePassword('blekey')">Show</button>
+            </div>
+            <div id="bleKeyState" class="field-error"></div>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-box stat-status">
+            <div class="stat-label">BLE Status</div>
+            <div class="stat-value sm" id="bleStatus">--</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Adverts Decoded</div>
+            <div class="stat-value sm" id="bleAdverts">--</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Rejected</div>
+            <div class="stat-value sm" id="bleFailures">--</div>
+          </div>
+        </div>
+
         <div class="section-title">MQTT Server Configuration</div>
         <div class="form-row">
           <div class="form-group">
@@ -2246,7 +2259,25 @@
     const debounceTimers = {};
     const pendingAcks = {};
     let toastTimer = null;
-    let savedWifiSSID = '';  // Store the currently saved WiFi SSID
+    let savedWifiSSID = '';  // Currently saved WiFi SSID, as hex - see below
+
+    /* An SSID is raw octets in whatever encoding the router felt like, not text,
+       so it travels as hex and the <option> value IS that hex. Only what the user
+       reads is decoded. Anything that saves an SSID must send the hex back - a
+       name that survived a trip through UTF-8 is not necessarily the same name. */
+    function ssidHexToText(hex) {
+      if (!hex) return '';
+      const bytes = new Uint8Array(hex.length >> 1);
+      for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+      // Not fatal: undecodable bytes become U+FFFD so the name is still readable
+      return new TextDecoder('utf-8').decode(bytes);
+    }
+    function ssidTextToHex(text) {
+      if (!text) return '';
+      let out = '';
+      for (const b of new TextEncoder().encode(text)) out += b.toString(16).padStart(2, '0');
+      return out;
+    }
 
     window.addEventListener('load', onLoad);
 
@@ -2666,10 +2697,35 @@
     }
 
     /* ---------- Victron BLE ---------- */
+    /* The BLE fields live on the WiFi/BLE/MQTT tab and are always available -
+       you need to pair a shunt before it is worth preferring. This only keeps
+       the two tabs honest about which source is actually in use, so nobody
+       enters a key, sees no adverts, and concludes the key is wrong. */
     function toggleBleConfig() {
-      var el = document.getElementById('bleConfigFields');
       var src = document.getElementById('shuntsource');
-      if (el && src) el.style.display = (src.value === '1') ? '' : 'none';
+      if (!src) return;
+      var blePreferred = (src.value === '1');
+      var fallback = document.getElementById('blefallback');
+      var allowFallback = fallback && fallback.checked;
+
+      var onTab = document.getElementById('bleSourceHint');
+      if (onTab) {
+        onTab.textContent = blePreferred
+          ? 'BLE is the preferred shunt source.' +
+            (allowFallback ? ' VE.Direct takes over if adverts stop for 15 seconds.' : '')
+          : 'Bluetooth is not running: shunt data is being read over VE.Direct serial. Anything set ' +
+            'here is saved straight away, but stays idle until you set Shunt Source to "Prefer BLE" ' +
+            'in Settings and reboot - the radio is only started at boot.';
+        onTab.classList.add('show');
+      }
+
+      var inSettings = document.getElementById('bleSetupHint');
+      if (inSettings) {
+        inSettings.textContent = blePreferred
+          ? 'Device address and encryption key are on the WiFi/BLE/MQTT tab. Reboot to apply a source change.'
+          : '';
+        inSettings.classList.toggle('show', blePreferred);
+      }
     }
 
     function startBleScan() {
@@ -3012,18 +3068,20 @@
         const rfc = document.getElementById('requestfullcharge');
         if(rfc) rfc.checked = obj.requestfullcharge;
       }
-      if(obj.hasOwnProperty('wifissid')) { 
-        // Save the SSID as the current saved network
-        savedWifiSSID = obj.wifissid;
-        console.log("Updated saved WiFi SSID: " + savedWifiSSID);
+      if(obj.hasOwnProperty('wifissidhex') || obj.hasOwnProperty('wifissid')) {
+        // Hex identifies the network; wifissid is only what the user reads
+        var savedHex = obj.wifissidhex || ssidTextToHex(obj.wifissid || '');
+        var savedName = obj.wifissid || ssidHexToText(savedHex);
+        savedWifiSSID = savedHex;
+        console.log("Updated saved WiFi SSID: " + savedName);
         // Set the selected SSID in dropdown
         var select = document.getElementById('wifissid');
-        select.value = obj.wifissid;
+        select.value = savedHex;
         // If dropdown is empty or doesn't have this SSID option, create it
-        if(select.value !== obj.wifissid) {
+        if(savedHex && select.value !== savedHex) {
           var el = document.createElement('option');
-          el.textContent = obj.wifissid;
-          el.value = obj.wifissid;
+          el.textContent = savedName;
+          el.value = savedHex;
           el.selected = true;
           select.appendChild(el);
         }
@@ -3040,6 +3098,7 @@
         if(obj[f] !== undefined) { SetFieldValue(f, obj[f]); configDirty = true; }
       });
       {{CAN_FIELD_HANDLERS}}
+      if(obj.ntpfromdhcp !== undefined) { document.getElementById('ntpfromdhcp').checked=obj.ntpfromdhcp; AckUpdate('ntpfromdhcp'); }
       if(obj.tempprotection !== undefined) { document.getElementById('tempprotection').checked=obj.tempprotection; AckUpdate('tempprotection'); toggleTempConfig(); }
       if(obj.showtempdashboard !== undefined) { document.getElementById('showtempdashboard').checked=obj.showtempdashboard; AckUpdate('showtempdashboard'); }
       if(obj.canprotocol !== undefined) { document.getElementById('canprotocol').value=obj.canprotocol; AckUpdate('canprotocol'); }
@@ -3070,7 +3129,9 @@
         document.getElementById('shuntsource').value = obj.shuntsource;
         AckUpdate('shuntsource'); toggleBleConfig();
       }
-      if(obj.blefallback !== undefined) { document.getElementById('blefallback').checked = obj.blefallback; AckUpdate('blefallback'); }
+      // toggleBleConfig again here: the hint text depends on both fields, and
+      // shuntsource is handled above, before this one has been set
+      if(obj.blefallback !== undefined) { document.getElementById('blefallback').checked = obj.blefallback; AckUpdate('blefallback'); toggleBleConfig(); }
       if(obj.blemac !== undefined) { document.getElementById('blemac').value = obj.blemac; AckUpdate('blemac'); }
       if(obj.blekeyset !== undefined) {
         // The key itself never comes back, so report whether one is held
@@ -3096,8 +3157,15 @@
         var e = document.getElementById('bleStatus');
         if (e) {
           var ago = obj.blelastseen;
+          // The radio only runs when BLE is the preferred source, or while a
+          // scan/sniff has started it. Saying "nothing received" when it was
+          // never switched on reads as a fault rather than a setting.
+          var srcSel = document.getElementById('shuntsource');
+          var snif = document.getElementById('blesniffer');
+          var running = (srcSel && srcSel.value === '1') || obj.blescanning || (snif && snif.checked);
           if (obj.blefresh) { e.textContent = 'Receiving (' + obj.blesoc.toFixed(1) + '%)'; e.className = 'stat-value sm v-ok'; }
           else if (ago >= 0) { e.textContent = 'Stale, ' + ago + 's ago'; e.className = 'stat-value sm v-warn'; }
+          else if (!running) { e.textContent = 'Not started'; e.className = 'stat-value sm v-dim'; }
           else { e.textContent = 'Nothing received'; e.className = 'stat-value sm v-dim'; }
         }
       }
@@ -3246,7 +3314,7 @@
     const EXPORT_FIELDS = {
       checkboxes: ['canbusenabled','can16mhz','soctrickenabled','requestflagsenabled','never100soc',
                    'autocharge','tempprotection','showtempdashboard','lcdenabled','syslogenabled',
-                   'blefallback'],
+                   'blefallback','ntpfromdhcp'],
       numbers: ['lowsoclimit','highsoclimit','smartinterval','tailduration',
                 'maxabsorptiontime','rechargesoc','chargehightemp','chargelowtemp',
                 'dischargehightemp','dischargelowtemp','fanofftemp','fanfulltemp',
@@ -3291,9 +3359,10 @@
         var el = document.getElementById(f);
         if (el && el.value !== '' && Number(el.value) > 0) settings[f] = Number(el.value);
       });
-      // WiFi SSID from select
+      // WiFi SSID from select - exported as hex so a name in any encoding
+      // restores as the same bytes on any device
       var ssid = document.getElementById('wifissid');
-      if (ssid && ssid.value) settings.wifissid = ssid.value;
+      if (ssid && ssid.value) settings.wifissidhex = ssid.value;
       var wpass = document.getElementById('wifipass');
       if (wpass && wpass.value) settings.wifipass = wpass.value;
 
@@ -3344,20 +3413,27 @@
           // For converted fields, set DOM value as display units (server expects raw via SendQueuedUpdate)
           for (var key in settings) {
             if (skip.indexOf(key) >= 0) continue;
-            var el = document.getElementById(key);
+            // wifissidhex has no field of its own - it fills the network dropdown
+            var isSsid = (key === 'wifissid' || key === 'wifissidhex');
+            var el = document.getElementById(isSsid ? 'wifissid' : key);
             if (!el) continue;
+            // ...and the queued update always goes out under the field's own id
+            var sendKey = isSsid ? 'wifissid' : key;
 
             if (el.type === 'checkbox') {
               el.checked = !!settings[key];
-            } else if (key === 'wifissid') {
+            } else if (isSsid) {
+              // Files exported before 3.0 carry the name as text; convert so the
+              // option value is hex either way
+              var ssidHex = (key === 'wifissidhex') ? settings[key] : ssidTextToHex(settings[key]);
               // Ensure option exists in select
-              if (el.value !== settings[key]) {
+              if (el.value !== ssidHex) {
                 var opt = document.createElement('option');
-                opt.textContent = settings[key];
-                opt.value = settings[key];
+                opt.textContent = ssidHexToText(ssidHex);
+                opt.value = ssidHex;
                 el.appendChild(opt);
               }
-              el.value = settings[key];
+              el.value = ssidHex;
             } else {
               var value = settings[key];
               // Rescale legacy raw-unit exports into the display units the field now expects
@@ -3370,7 +3446,7 @@
             // Use a staggered delay to avoid flooding
             (function(k) {
               setTimeout(function() { SendQueuedUpdate(k); }, count * 150);
-            })(key);
+            })(sendKey);
             count++;
           }
           showToast('Importing ' + count + ' settings…', 'pending', (count * 150) + 2000);
@@ -3650,19 +3726,19 @@
 
     function SaveWifiConfig() {
       // Collect WiFi configuration values
-      const wifissid = document.getElementById('wifissid').value;
+      const wifissidhex = document.getElementById('wifissid').value;  // hex, not text
       const wifipass = document.getElementById('wifipass').value;
       const wifihostname = document.getElementById('wifihostname').value;
-      
+
       // Validate that at least SSID is provided
-      if(!wifissid || wifissid.trim() === '') {
+      if(!wifissidhex || wifissidhex.trim() === '') {
         showToast('Please select a WiFi network', 'error');
         return;
       }
-      
+
       // Send WiFi configuration via JSON
       const payload = {
-        wifissid: wifissid,
+        wifissidhex: wifissidhex,
         wifipass: wifipass,
         wifihostname: wifihostname
       };
@@ -3702,7 +3778,8 @@
       let payload;
 
       if (fieldId === 'wifissid') {
-        payload = { [fieldId]: element.options[element.selectedIndex].value };
+        // The option value is hex - send it under the key that means hex
+        payload = { wifissidhex: element.options[element.selectedIndex].value };
       } else if (element.type === 'checkbox') {
         payload = { [fieldId]: element.checked };
       } else {
@@ -4553,10 +4630,11 @@
       const ssidMap = {};
       
       networks.forEach(network => {
-        if(network.ssid) {
+        const key = networkKey(network);
+        if(key) {
           // Keep the network with the strongest signal (highest RSSI value)
-          if(!ssidMap[network.ssid] || network.rssi > ssidMap[network.ssid].rssi) {
-            ssidMap[network.ssid] = network;
+          if(!ssidMap[key] || network.rssi > ssidMap[key].rssi) {
+            ssidMap[key] = network;
           }
         }
       });
@@ -4571,6 +4649,12 @@
       return deduped;
     }
     
+    // Key by the bytes, never the name: two networks whose names both decode to
+    // the same unreadable placeholder are still two different networks.
+    function networkKey(network) {
+      return network.ssidhex || ssidTextToHex(network.ssid || '');
+    }
+
     function PopulateWifiList(networks) {
       console.log("Populating WiFi list with " + networks.length + " networks");
       
@@ -4582,12 +4666,13 @@
 
       deduped.forEach(network => {
         var el = document.createElement("option");
+        const key = networkKey(network);
         // RSSI is already known here - showing it beats making the user guess
         // which of two similarly-named networks is the reachable one.
-        el.textContent = network.ssid + '   ' + signalBars(network.rssi) + ' ' + network.rssi + ' dBm';
-        el.value = network.ssid;
+        el.textContent = (network.ssid || ssidHexToText(key)) + '   ' + signalBars(network.rssi) + ' ' + network.rssi + ' dBm';
+        el.value = key;   // hex, so selecting it saves the exact broadcast bytes
 
-        if(network.ssid === savedWifiSSID) el.selected = true;
+        if(key === savedWifiSSID) el.selected = true;
         select.appendChild(el);
       });
 

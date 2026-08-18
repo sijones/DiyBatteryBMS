@@ -11,7 +11,7 @@ extern "C" {
 #include <PsychicMqttClient.h>
 #define MAX_PENDING_MSGS 40
 #define MQTT_BUFFER_SIZE 2048
-const unsigned long MQTT_TIMEOUT_MS = 5000;  
+const unsigned long MQTT_TIMEOUT_MS = 5000;
 
 PsychicMqttClient mqttClient;
 
@@ -33,7 +33,8 @@ uint16_t iPort = 1883; // Default MQTT Port
 
 char buffer[16];
 
-typedef struct 
+#if !MQTT_ASSUME_CLIENT_COPIES
+typedef struct
 {
   char *payloadbuffer;
   char *topicbuffer;
@@ -43,17 +44,68 @@ typedef struct
 } mqtt_msg_t;
 
 static mqtt_msg_t pending_msgs[MAX_PENDING_MSGS];
+#endif
 
 bool mqttPublish(String topic, String payload, bool retain)
 {
   return mqttPublish(topic.c_str(),payload.c_str(),retain);
 }
 
+/* qos 0 for the Home Assistant discovery burst.
+
+   Discovery is ~42 retained config messages sent back to back. At qos 1 every
+   one of them is copied into esp-mqtt's outbox and held there until the broker
+   sends a PUBACK, which on a heap-starved board is where it fell over:
+     E (2070) outbox: outbox_enqueue(53): Memory exhausted
+   followed by abort(). Retained messages do not need the delivery guarantee -
+   the broker keeps the last one on each topic, so a config that is lost in
+   flight is replaced on the next connect anyway, and Home Assistant re-reads
+   all of them when it subscribes. Live data keeps qos 1. */
+bool mqttPublishQos(const char* topic, const char* payload, bool retain, int qos);
+
 bool mqttPublish(const char* topic, const char* payload, bool retain)
+{
+  return mqttPublishQos(topic, payload, retain, 1);
+}
+
+/* Whether the buffers handed to publish() have to outlive the call is a question
+   about the client library, not something to take on trust. This code kept its
+   own copies because an earlier client - AsyncMqttClient, still named in the
+   commented-out include at the top of this file - genuinely did not copy, and
+   getting that wrong is a use-after-free that shows up as corrupted topics under
+   load rather than as a clean crash.
+
+   PsychicMqttClient does copy. Not on the strength of the esp-mqtt docs, which
+   have been wrong before and describe a library that has been swapped under this
+   code once already, but measured on hardware: mqttRunCopyTest() publishes a
+   marker from a heap buffer, memsets that buffer and frees it the instant
+   publish() returns, and the marker still arrives at the broker intact -
+
+     Copy test RESULT: received 'COPYTEST-abcdefghijklmnop' -> client DOES copy
+
+   which it could not if the mqtt task were still reading our memory. It has to
+   copy: enqueue() hands the send to another task, so there is no buffer of ours
+   it could rely on.
+
+   Re-run that test after any change of MQTT client or IDF version, and set this
+   back to 0 if it ever fails. */
+#ifndef MQTT_ASSUME_CLIENT_COPIES
+#define MQTT_ASSUME_CLIENT_COPIES 1
+#endif
+
+bool mqttPublishQos(const char* topic, const char* payload, bool retain, int qos)
 {
   if (!mqttClient.connected()) return false;
 
-  // Remove from pending messages
+#if MQTT_ASSUME_CLIENT_COPIES
+  const int msg_id = mqttClient.publish(topic, qos, retain, payload, strlen(payload), true);
+  if (msg_id < 0) {
+    log_e("MQTT enqueue failed (%d) for %s", msg_id, topic);
+    return false;
+  }
+  return true;
+#else
+  // Reclaim anything the broker never acknowledged
   for (int i = 0; i < MAX_PENDING_MSGS; i++) {
     if (pending_msgs[i].active && millis() - pending_msgs[i].millis > MQTT_TIMEOUT_MS) {
       free(pending_msgs[i].payloadbuffer);
@@ -63,7 +115,6 @@ bool mqttPublish(const char* topic, const char* payload, bool retain)
       pending_msgs[i].topicbuffer = nullptr;
       pending_msgs[i].msg_id = -1;
       pending_msgs[i].active = false;
-      
     }
   }
 
@@ -82,14 +133,20 @@ bool mqttPublish(const char* topic, const char* payload, bool retain)
   bool addedToQueue = false;
   strcpy(payloadBuffer, payload);
   strcpy(topicBuffer, topic);
-  int msg_id = mqttClient.publish(topicBuffer,1,retain,payloadBuffer,lenPayload,true);
+  int msg_id = mqttClient.publish(topicBuffer,qos,retain,payloadBuffer,lenPayload,true);
 
   if (msg_id < 0) {
       log_e("Failed to enqueue message");
       free(payloadBuffer);
       free(topicBuffer);
       return false;
-  } 
+  }
+
+  /* Note for when qos 0 is switched on: nothing acknowledges a qos 0 publish, so
+     onMqttPublish never comes back to release these and they sit until the
+     timeout sweep - 42 discovery messages would fill the table long before that.
+     Freeing them here instead is only safe if the client really does copy, which
+     is what MQTT_ASSUME_CLIENT_COPIES is waiting on. */
 
   // Track buffer for cleanup
   for (int i = 0; i < MAX_PENDING_MSGS; i++) {
@@ -110,6 +167,7 @@ bool mqttPublish(const char* topic, const char* payload, bool retain)
       return false;
   }
   return true;
+#endif
 }
 
 static char _mqTopicBuf[64];
@@ -213,7 +271,12 @@ static char _haTopicBuf[128];
 void _haPublish(const char* type, const char* id, const char* payload,
                 const char* baseTopic, const char* nodeId) {
   snprintf(_haTopicBuf, sizeof(_haTopicBuf), "%s/%s/%s_%s/config", baseTopic, type, nodeId, id);
-  mqttPublish(_haTopicBuf, payload, true);
+  /* qos 0. These are retained config messages: the broker keeps the last one
+     per topic and Home Assistant re-reads all of them whenever it subscribes,
+     so the delivery guarantee buys nothing, while at qos 1 every one of the 42
+     sat in esp-mqtt's outbox awaiting a PUBACK - which is where the board ran
+     out of memory and aborted. */
+  mqttPublishQos(_haTopicBuf, payload, true, 0);
   yield();
 }
 
@@ -261,26 +324,60 @@ void haNumber(const char* name, const char* id, const char* valueTpl, const char
   _haPublish("number", id, _haBuf, baseTopic, nodeId);
 }
 
-void publishHADiscovery() {
-  if (!haDiscoveryEnabled || !mqttClient.connected()) return;
+/* Discovery is ~42 config messages. Published in one go they overran the
+   40-slot pending table and the tail was simply dropped - those entities then
+   never appeared in Home Assistant until something else happened to republish
+   them. Growing the table would spend RAM permanently on a burst that happens
+   once per connection, so the burst is paced instead: one group per pass of the
+   main loop, and only once the broker has acknowledged enough of the previous
+   group to leave room.
 
+   It has to be paced from the loop rather than by waiting here, because the
+   acks that free those slots are delivered on the MQTT task - blocking inside
+   onMqttConnect to wait for them would deadlock against the very task that
+   would unblock us. */
+#define HA_CHUNK_COUNT       5
+#define HA_CHUNK_GAP_MS      150
+/* Paced against free heap, because that is the resource that actually runs out.
+   An earlier version gated on slots free in our own 40-entry table, which said
+   nothing about whether esp-mqtt could allocate - the table had room right up to
+   the moment the outbox reported "Memory exhausted" and the board aborted. */
+#define HA_MIN_FREE_HEAP     24000
+
+static uint8_t  haStep = 0;       // 0 = idle, otherwise the group to send next
+static uint32_t haLastStepMs = 0;
+
+// Rebuilt per group rather than held across them: sTopic or the MAC could not
+// have changed, but a stale c_str() into a String that has gone is not worth
+// the few microseconds saved.
+struct HaCtx {
+  String nodeIdStr;
+  String dataTopicStr;
+  char deviceJson[192];
+  const char* base;
+  const char* node;
+  const char* dataTopic;
+  const char* st;
+};
+
+static void haBuildCtx(HaCtx& c) {
   String deviceId = WiFi.macAddress();
   deviceId.replace(":", "");
-  String nodeIdStr = "diybatterybms_" + deviceId;
-  const char* base = "homeassistant";
-  const char* node = nodeIdStr.c_str();
-  String dataTopicStr = sTopic + "/Data";
-  const char* dataTopic = dataTopicStr.c_str();
-  const char* st = sTopic.c_str();
-
-  char deviceJson[192];
-  snprintf(deviceJson, sizeof(deviceJson),
+  c.nodeIdStr = "diybatterybms_" + deviceId;
+  c.dataTopicStr = sTopic + "/Data";
+  c.base = "homeassistant";
+  c.node = c.nodeIdStr.c_str();
+  c.dataTopic = c.dataTopicStr.c_str();
+  c.st = sTopic.c_str();
+  snprintf(c.deviceJson, sizeof(c.deviceJson),
     ",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"DIY Battery BMS\","
     "\"model\":\"ESP32 BMS\",\"manufacturer\":\"https://github.com/sijones/DiyBatteryBMS\"}",
-    node);
+    c.node);
+}
 
-  log_i("Publishing Home Assistant Discovery configs...");
-  WS_LOG_I("Publishing Home Assistant Discovery configs...");
+static void haChunk1(HaCtx& c) {
+  const char* base = c.base; const char* node = c.node;
+  const char* dataTopic = c.dataTopic; const char* deviceJson = c.deviceJson;
 
   // Sensors
   haSensor("Battery SOC", "soc", "{{ value_json.battsoc }}",
@@ -319,6 +416,12 @@ void publishHADiscovery() {
   haSensor("VE.Direct Alarm Reason", "vealarmmessage", "{{ value_json.alarmreason }}",
     ",\"entity_category\":\"diagnostic\"",
     base, node, dataTopic, deviceJson);
+}
+
+static void haChunk2(HaCtx& c) {
+  const char* base = c.base; const char* node = c.node;
+  const char* dataTopic = c.dataTopic; const char* deviceJson = c.deviceJson;
+
   haSensor("Device Model", "devicemodel", "{{ value_json.modelstring }}",
     ",\"entity_category\":\"diagnostic\"",
     base, node, dataTopic, deviceJson);
@@ -364,6 +467,12 @@ void publishHADiscovery() {
     ",\"unit_of_measurement\":\"s\",\"device_class\":\"duration\",\"state_class\":\"measurement\",\"icon\":\"mdi:timer-outline\"",
     base, node, dataTopic, deviceJson);
 
+}
+
+static void haChunk3(HaCtx& c) {
+  const char* base = c.base; const char* node = c.node;
+  const char* dataTopic = c.dataTopic; const char* deviceJson = c.deviceJson;
+
   // Binary sensors
   haBinary("Charge Enabled Status", "chargeenabled", "chargeenabled", "", base, node, dataTopic, deviceJson);
   haBinary("Discharge Enabled Status", "dischargeenabled", "dischargeenabled", "", base, node, dataTopic, deviceJson);
@@ -373,6 +482,12 @@ void publishHADiscovery() {
   haBinary("SOC Override Active", "socoverride", "socoverride", ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:battery-sync\"", base, node, dataTopic, deviceJson);
   haBinary("Tail Current Active", "tailactive", "tailactive", ",\"icon\":\"mdi:current-dc\"", base, node, dataTopic, deviceJson);
 
+}
+
+static void haChunk4(HaCtx& c) {
+  const char* base = c.base; const char* node = c.node;
+  const char* st = c.st; const char* deviceJson = c.deviceJson;
+
   // Switches
   haSwitch("Charge Enable", "charge", "ChargeEnable", base, node, st, deviceJson);
   haSwitch("Discharge Enable", "discharge", "DischargeEnable", base, node, st, deviceJson);
@@ -381,6 +496,13 @@ void publishHADiscovery() {
   haSwitch("SOC Trick Enable", "soctrick", "SOCTrickEnable", base, node, st, deviceJson);
   haSwitch("Request Flags Enable", "requestflags", "RequestFlagsEnable", base, node, st, deviceJson);
   haSwitch("Smart Charge", "smartcharge", "SmartCharge", base, node, st, deviceJson);
+
+}
+
+static void haChunk5(HaCtx& c) {
+  const char* base = c.base; const char* node = c.node;
+  const char* dataTopic = c.dataTopic; const char* st = c.st;
+  const char* deviceJson = c.deviceJson;
 
   // Number controls
   haNumber("Charge Voltage", "chargevoltage", "{{ (value_json.chargevoltage * 0.001) | round(1) }}", "ChargeVoltage",
@@ -408,9 +530,47 @@ void publishHADiscovery() {
   haNumber("Float Current", "floatcurrent", "{{ (value_json.floatcurrent * 0.001) | round(1) }}", "FloatCurrent",
     ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"min\":0,\"max\":50,\"step\":0.5,\"entity_category\":\"config\"",
     base, node, dataTopic, st, deviceJson);
+}
 
-  log_i("Home Assistant Discovery published successfully.");
-  WS_LOG_I("Home Assistant Discovery published successfully.");
+/* Arms the sequence. Callers are MQTT and WebSocket callbacks, so this must
+   stay cheap - the messages themselves go out from haDiscoveryLoop(). */
+void publishHADiscovery() {
+  if (!haDiscoveryEnabled) return;
+  haStep = 1;
+  haLastStepMs = millis() - HA_CHUNK_GAP_MS;   // first group may go immediately
+  log_i("Publishing Home Assistant Discovery configs...");
+  WS_LOG_I("Publishing Home Assistant Discovery configs...");
+}
+
+// Called every pass of the main loop; does nothing unless a sequence is armed.
+void haDiscoveryLoop() {
+  if (haStep == 0) return;
+  if (!haDiscoveryEnabled || !mqttClient.connected() || otaInProgress) {
+    haStep = 0;                       // connection or OTA took it away; drop it
+    return;
+  }
+  if ((millis() - haLastStepMs) < HA_CHUNK_GAP_MS) return;
+  /* Wait rather than overrun. Holding here is safe: the sequence simply resumes
+     on a later pass once the outbox has drained and the heap recovered, and if
+     it never does, no discovery is a great deal better than an abort(). */
+  if (ESP.getFreeHeap() < HA_MIN_FREE_HEAP) return;
+
+  haLastStepMs = millis();
+  HaCtx c;
+  haBuildCtx(c);
+  switch (haStep) {
+    case 1: haChunk1(c); break;
+    case 2: haChunk2(c); break;
+    case 3: haChunk3(c); break;
+    case 4: haChunk4(c); break;
+    case 5: haChunk5(c); break;
+  }
+
+  if (++haStep > HA_CHUNK_COUNT) {
+    haStep = 0;
+    log_i("Home Assistant Discovery published successfully.");
+    WS_LOG_I("Home Assistant Discovery published successfully.");
+  }
 }
 
 void mqttReconnectTimerCallback(TimerHandle_t xTimer) {
@@ -478,29 +638,32 @@ void onMqttConnect(bool sessionPresent) {
   mqttPublish((sTopic + "/status").c_str(), "online", true);
   yield();
   
-  // Publish Home Assistant Discovery
+  // Arm Home Assistant Discovery - the main loop feeds it out from here
   publishHADiscovery();
   yield();
-  
-  // Send initial state updates
+
+  // Send initial state updates. Retained, so Home Assistant picks them up when
+  // it subscribes to each entity, whether that happens before or after this.
   sendUpdateMQTTData();
 }
 
 void onMqttDisconnect(bool sessionPresent) {
-  log_d("Disconnected from MQTT, sessionPresent: %d, Cleaning up pending messages.", sessionPresent);
+  log_d("Disconnected from MQTT, sessionPresent: %d", sessionPresent);
   WS_LOG_W("MQTT disconnected, scheduling reconnect...");
   Lcd.Data.MQTTConnected.setValue(false);
+#if !MQTT_ASSUME_CLIENT_COPIES
   for (int i = 0; i < MAX_PENDING_MSGS; i++) {
-  if (pending_msgs[i].active) {
-    free(pending_msgs[i].payloadbuffer);
-    free(pending_msgs[i].topicbuffer);
-    pending_msgs[i].payloadbuffer = nullptr;
-    pending_msgs[i].topicbuffer = nullptr;
-    pending_msgs[i].msg_id = -1;
-    pending_msgs[i].active = false;
+    if (pending_msgs[i].active) {
+      free(pending_msgs[i].payloadbuffer);
+      free(pending_msgs[i].topicbuffer);
+      pending_msgs[i].payloadbuffer = nullptr;
+      pending_msgs[i].topicbuffer = nullptr;
+      pending_msgs[i].msg_id = -1;
+      pending_msgs[i].active = false;
     }
   }
-  
+#endif
+
   // Schedule reconnection attempt after delay
   if (mqttEnabled && mqttReconnectTimer != NULL) {
     log_i("Scheduling MQTT reconnect in 10 seconds...");
@@ -551,6 +714,14 @@ else if (sMqttInvTopic.length() > 0 && _Topic == sMqttInvTopic) {
     Inverter.MqttInverterTemp(temp);
     if (temp != prev) WS_LOG_I("MQTT Inverter Temp: %d C", temp);
     return;
+}
+
+if (_Topic.endsWith("/set/CopyTest")) {
+  // Round trip of the buffer-lifetime test - see mqttRunCopyTest()
+  const bool intact = (message == "COPYTEST-abcdefghijklmnop");
+  WS_LOG_I("Copy test RESULT: received '%s' -> client %s copy the payload",
+           message.c_str(), intact ? "DOES" : "does NOT");
+  return;
 }
 
 if (false) { }
@@ -692,9 +863,9 @@ if (false) { }
 }
 
 void onMqttPublish(uint16_t msg_id) {
- 
-  // Free buffer associated with this msg_id
   log_d("MQTT Publish acknowledged. Msg ID: %d", msg_id);
+#if !MQTT_ASSUME_CLIENT_COPIES
+  // Free buffer associated with this msg_id
   for (int i = 0; i < MAX_PENDING_MSGS; i++) {
     if (pending_msgs[i].msg_id == msg_id) {
       free(pending_msgs[i].payloadbuffer);
@@ -706,7 +877,46 @@ void onMqttPublish(uint16_t msg_id) {
       break;
     }
   }
+#endif
+}
 
+/* Does the client copy what we hand publish(), or must our buffer outlive the
+   call? The whole pending_msgs table exists because of that question, and the
+   docs are not evidence - the client behind this API has been swapped before.
+
+   Publishes a known marker from a heap buffer, scribbles the buffer the
+   instant publish() returns, then frees it. The device is already subscribed to
+   its own <topic>/set/#, so whatever the broker actually received comes back to
+   onMqttMessage and is logged. Marker intact => the client copied. Marker
+   corrupted or missing => it did not, and the copies stay.
+
+   Triggered from the web UI by sending {"mqttcopytest": true}. Costs nothing
+   when unused; delete once the answer is recorded in the code. */
+static bool mqttCopyTestPending = false;
+
+void mqttRunCopyTest() {
+  if (!mqttClient.connected()) { WS_LOG_W("Copy test: MQTT not connected"); return; }
+
+  const char* marker = "COPYTEST-abcdefghijklmnop";
+  const size_t len = strlen(marker);
+
+  char* topic = (char*)malloc(96);
+  char* payload = (char*)malloc(len + 1);
+  if (!topic || !payload) { free(topic); free(payload); WS_LOG_E("Copy test: out of memory"); return; }
+  snprintf(topic, 96, "%s/set/CopyTest", sTopic.c_str());
+  strcpy(payload, marker);
+
+  // Straight to the client, deliberately bypassing mqttPublish's bookkeeping
+  const int msg_id = mqttClient.publish(topic, 0, false, payload, len, true);
+
+  // Poison both buffers before the mqtt task can possibly have sent them
+  memset(payload, 'Z', len);
+  memset(topic, 'Z', 95); topic[95] = '\0';
+  free(payload);
+  free(topic);
+
+  WS_LOG_I("Copy test: published id=%d, buffers poisoned and freed. Expect '%s' back.",
+           msg_id, marker);
 }
 
 // Declare the mutex as a static variable at file scope
@@ -714,6 +924,7 @@ static portMUX_TYPE MqttMutex = portMUX_INITIALIZER_UNLOCKED;
 
 void mqttsetup() {
 
+#if !MQTT_ASSUME_CLIENT_COPIES
   memset(pending_msgs, 0, sizeof(pending_msgs));
   for (int i = 0; i < MAX_PENDING_MSGS; i++) {
       pending_msgs[i].payloadbuffer = nullptr;
@@ -721,6 +932,7 @@ void mqttsetup() {
       pending_msgs[i].msg_id = -1;
       pending_msgs[i].active = false;
   }
+#endif
 
   /* Everything that can block is done before the critical section, not inside
      it. taskENTER_CRITICAL disables interrupts and takes a spinlock, so nothing
@@ -737,6 +949,38 @@ void mqttsetup() {
   String topic     = String(wifiManager.GetMQTTTopic().c_str());
   String clientid  = String(wifiManager.GetMQTTClientID().c_str());
   uint16_t port    = wifiManager.GetMQTTPort();
+
+  /* Second gate, after mEEPROM::getString's. These values reach us through the
+     WiFi manager's cached copies rather than a fresh NVS read, so a bad one read
+     before this check existed - or written by an older build - can still be
+     sitting in memory. MQTT 3.1.1 requires well-formed UTF-8 in every string of
+     the CONNECT packet, and PsychicMqttClient passes them through untouched, so
+     a broker's only answer is to drop the link. Better to stay off the broker
+     and say why. */
+  auto utf8ok = [](const char* what, const String& v) -> bool {
+    if (isValidUTF8(v)) return true;
+    log_e("MQTT %s is not valid UTF-8 (%u bytes), refusing to send it", what, (unsigned)v.length());
+    WS_LOG_E("MQTT %s is not valid UTF-8, check the setting and re-save it", what);
+    return false;
+  };
+
+  bool connectOK = true;
+  if (!utf8ok("server address", server))  connectOK = false;
+  if (!utf8ok("username", user))          connectOK = false;
+  if (!utf8ok("password", pass))          connectOK = false;
+  if (!utf8ok("base topic", topic))       connectOK = false;
+  if (!utf8ok("client ID", clientid))     connectOK = false;
+  if (!connectOK) {
+    log_e("MQTT settings failed validation, not connecting.");
+    WS_LOG_E("MQTT settings failed validation, not connecting");
+    mqttEnabled = false;
+    return;
+  }
+
+  /* The temperature topics are optional subscriptions, so a bad one drops just
+     that subscription instead of taking MQTT down with it. */
+  if (!utf8ok("battery temperature topic", battTopic)) battTopic = "";
+  if (!utf8ok("inverter temperature topic", invTopic)) invTopic = "";
 
   // Only the handover to the shared copies needs guarding
   taskENTER_CRITICAL(&MqttMutex);

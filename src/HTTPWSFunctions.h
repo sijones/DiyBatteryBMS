@@ -23,15 +23,47 @@ volatile bool otaInProgress = false;
 extern String sMqttBattTopic;
 extern String sMqttInvTopic;
 void mqttResubscribeTemp();
+void mqttRunCopyTest();   // diagnostic, see mqttFunctions.h
 // Re-publish HA discovery (defined in mqttFunctions.h) so number-control limits track config changes
 void publishHADiscovery();
 
-// Log buffer for web UI
-#define LOG_BUFFER_SIZE 100
+/* Log buffer for web UI.
+
+   This is the largest single object in the firmware's static RAM, so its size
+   is a direct tax on the heap everything else runs from. At 100 entries of
+   201+10+4 bytes it was 21,600 bytes, and a second 50-entry copy for replaying
+   to a browser added 10,800 more - together a third of all static RAM, and more
+   than the entire cost of running Bluetooth. On a 4MB ESP32 with BLE enabled
+   that was the difference between ~11KB free heap (which aborts inside
+   AsyncTCP the moment an allocation fails) and a working device.
+
+   144 characters holds every WS_LOG_* line this firmware actually produces -
+   the longest are the CC-CV and schedule lines around 120 - and the level is
+   one of four values, so it is a byte rather than a ten-character string. */
+#define LOG_BUFFER_SIZE 60
 #define LOG_SEND_MAX 50      // how many of those a GetLogs() replay hands over
+#define LOG_MSG_MAX 143      // + null terminator
+
+enum LogLevel : uint8_t { LVL_DEBUG = 0, LVL_INFO, LVL_WARNING, LVL_ERROR };
+
+static const char* const LOG_LEVEL_NAMES[] = { "debug", "info", "warning", "error" };
+
+static inline uint8_t logLevelCode(const char* level) {
+  if (!level) return LVL_INFO;
+  switch (level[0]) {          // first letter is unique across the four
+    case 'd': return LVL_DEBUG;
+    case 'w': return LVL_WARNING;
+    case 'e': return LVL_ERROR;
+    default:  return LVL_INFO;
+  }
+}
+static inline const char* logLevelName(uint8_t code) {
+  return LOG_LEVEL_NAMES[code < 4 ? code : LVL_INFO];
+}
+
 struct LogEntry {
-  char message[201];  // max 200 chars + null terminator
-  char level[10];
+  char message[LOG_MSG_MAX + 1];
+  uint8_t level;              // LogLevel
   unsigned long timestamp;
 };
 LogEntry logBuffer[LOG_BUFFER_SIZE];
@@ -42,6 +74,96 @@ portMUX_TYPE logMutex = portMUX_INITIALIZER_UNLOCKED;
 int lastWifiScanCount = -2;  // -2 = no scan in progress, -1 = scan in progress, >=0 = completed with count
 portMUX_TYPE wifiScanMutex = portMUX_INITIALIZER_UNLOCKED;
 bool wifiScanRequested = false;  // Track if scan was requested to trigger background scan
+
+/* ---------- SSID transport ----------
+
+   802.11 says an SSID is up to 32 octets with no encoding attached, and routers
+   in Japan, China, Korea and parts of Europe still broadcast names in Shift_JIS,
+   GBK, EUC-KR or Latin-1. Those bytes cannot travel as JSON text: the browser
+   decodes our WebSocket frames as UTF-8, so it would hand back a name full of
+   U+FFFD and WiFi.begin() would look for a network nobody is advertising.
+
+   So every SSID crosses the wire twice - "ssid" is a sanitised copy for the
+   dropdown to show, "ssidhex" is the exact bytes. The browser picks a network by
+   its hex, and that is what comes back to be stored, byte for byte. */
+inline String bytesToHex(const String& s) {
+  static const char* digits = "0123456789abcdef";
+  const uint8_t* p = (const uint8_t*)s.c_str();
+  String out;
+  out.reserve(s.length() * 2);
+  for (size_t i = 0; i < s.length(); i++) {
+    out += digits[p[i] >> 4];
+    out += digits[p[i] & 0x0F];
+  }
+  return out;
+}
+
+// Empty on anything that is not clean, even-length hex - the caller then falls
+// back to the plain text field rather than storing half a name.
+inline String hexToBytes(const String& hex) {
+  const size_t len = hex.length();
+  if (len == 0 || (len & 1)) return String();
+  String out;
+  out.reserve(len / 2);
+  for (size_t i = 0; i < len; i += 2) {
+    uint8_t b = 0;
+    for (size_t j = 0; j < 2; j++) {
+      const char c = hex[i + j];
+      b <<= 4;
+      if      (c >= '0' && c <= '9') b |= (c - '0');
+      else if (c >= 'a' && c <= 'f') b |= (c - 'a' + 10);
+      else if (c >= 'A' && c <= 'F') b |= (c - 'A' + 10);
+      else return String();
+      }
+    if (b == 0) return String();   // a NUL would truncate the String it lands in
+    out += (char)b;
+  }
+  return out;
+}
+
+/* Broadcast to every client that can take it, skipping only the ones that
+   cannot - never withholding from everybody because of one.
+
+   ws.textAll() was guarded by ws.availableForWriteAll(), which is
+     none_of(clients, queueIsFull)
+   so a SINGLE client with a full queue silenced the broadcast to all of them. A
+   backgrounded tab, a laptop that went to sleep, a phone that walked out of
+   range, or a script that died without closing its socket was enough: every
+   browser then sat there with frozen values until that client was reaped, and
+   reloading the page only helped because it dropped the reader's own stale
+   connection. Sending per client keeps one bad reader from starving the rest.
+
+   textAll() was always the right call - it builds ONE shared buffer and hands
+   the same one to every client, and AsyncWebSocketClient::_queueMessage already
+   skips a client that is not connected and discards (or closes) per client when
+   that client's own queue is full. Only the gate in front of it was wrong. Do
+   not "improve" this into a per-client loop calling c.text(payload): each of
+   those calls copies the whole payload into its own buffer, so a 3KB status
+   broadcast to four browsers allocates 12KB instead of 3KB, several times a
+   second, on a board that aborts when an allocation fails. */
+inline void wsBroadcast(const String& payload) {
+  if (payload.length() == 0) return;
+  ws.textAll(payload);
+}
+
+/* For the scan lists, which are built by string concatenation rather than
+   ArduinoJson. An SSID is free to contain a quote or a backslash, and one of
+   those used to be enough to make the whole response unparseable. */
+inline String jsonEscape(const String& s) {
+  String out;
+  out.reserve(s.length() + 8);
+  for (size_t i = 0; i < s.length(); i++) {
+    const char c = s[i];
+    if      (c == '"')  out += "\\\"";
+    else if (c == '\\') out += "\\\\";
+    else if (c == '\n') out += "\\n";
+    else if (c == '\r') out += "\\r";
+    else if (c == '\t') out += "\\t";
+    else if ((uint8_t)c < 0x20) { char u[7]; snprintf(u, sizeof(u), "\\u%04x", c); out += u; }
+    else out += c;
+  }
+  return out;
+}
 
 SyslogSender Syslog;
 RemoteOverrideClass RemoteOverride;
@@ -84,7 +206,7 @@ void applySyslogConfig() {
 // cannot drift: an unescaped replay emitted broken JSON, and the client parses
 // every frame without a net.
 String jsonEscapeLog(const char* message) {
-  String msg = String(message).substring(0, 200);  // Limit message length
+  String msg = String(message).substring(0, LOG_MSG_MAX);  // Limit message length
   msg.replace("\\", "\\\\");
   msg.replace("\"", "'");
   msg.replace("\n", "\\n");
@@ -100,21 +222,22 @@ void sendLogToWS(const char* message, const char* level) {
   Syslog.log(message, level);
 
   // Only send if WebSocket is initialized and has connected clients
-  if(ws.count() > 0 && ws.availableForWriteAll()) {
+  if(ws.count() > 0) {
     String json = "{\"log\":\"";
     json += jsonEscapeLog(message);
     json += "\",\"level\":\"";
     json += level;
     json += "\"}";
-    ws.textAll(json);
+    wsBroadcast(json);
   }
   
-  // Also store in circular buffer (strncpy is safe inside critical section - no heap alloc)
+  // Also store in circular buffer (strncpy is safe inside critical section - no heap alloc).
+  // The level is mapped to a code out here; the critical section stays a copy.
+  const uint8_t lvl = logLevelCode(level);
   taskENTER_CRITICAL(&logMutex);
-  strncpy(logBuffer[logBufferIndex].message, message, 200);
-  logBuffer[logBufferIndex].message[200] = '\0';
-  strncpy(logBuffer[logBufferIndex].level, level, 9);
-  logBuffer[logBufferIndex].level[9] = '\0';
+  strncpy(logBuffer[logBufferIndex].message, message, LOG_MSG_MAX);
+  logBuffer[logBufferIndex].message[LOG_MSG_MAX] = '\0';
+  logBuffer[logBufferIndex].level = lvl;
   logBuffer[logBufferIndex].timestamp = millis();
   logBufferIndex = (logBufferIndex + 1) % LOG_BUFFER_SIZE;
   taskEXIT_CRITICAL(&logMutex);
@@ -178,17 +301,18 @@ void applyTimeZone() {
 }
 
 void TaskSetClock(void * pointer) {
-  
+
   log_d("Entering TaskSetClock");
   applyTimeZone();
   String Servers = pref.getString(ccNTPServer,"");
-    // Return if no servers set.
-  if (Servers.length()==0)
+  const bool dhcpNtp = pref.getBool(ccNTPFromDHCP, true);
+    // Nothing to go on: no server typed in and not willing to take one from DHCP
+  if (Servers.length()==0 && !dhcpNtp)
   {
     log_d("No NTP Server Set.");
     vTaskDelete(NULL);
     return;
-  } 
+  }
 
   while (!WiFi.isConnected())
     vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -213,7 +337,7 @@ void TaskSetClock(void * pointer) {
     secondserver = (ServerArray[1].length() > 0);
   }
 
-  if (ServerArray[0].length() == 0) {
+  if (ServerArray[0].length() == 0 && !dhcpNtp) {
     WS_LOG_W("NTP server setting is not a usable address, clock will not be set");
     vTaskDelete(NULL);
     return;
@@ -225,7 +349,43 @@ void TaskSetClock(void * pointer) {
   // Register before starting SNTP so the very first sync is not missed
   sntp_set_time_sync_notification_cb(ntpSyncCallback);
 
-  if (secondserver) {
+  /* Slot 0 is reserved for whatever DHCP offered, because that is the only slot
+     it can use - CONFIG_LWIP_DHCP_MAX_NTP_SERVERS is 1 - and configTzTime()
+     writes slots 0,1,2 unconditionally, so a manually configured server in slot
+     0 would quietly overwrite the DHCP one. With DHCP enabled the typed-in
+     servers move down to slots 1 and 2 and act as the fallback: SNTP works
+     through the slots in order, so the router is tried first and the manual
+     entries answer if it offered nothing. */
+  if (dhcpNtp) {
+    /* Already switched on in setup(), before the lease - see the note there.
+       Repeated here only because it is cheap and makes this block correct on
+       its own if the clock is ever reconfigured at runtime. */
+    esp_sntp_servermode_dhcp(true);
+
+    // Say whether the router actually offered one, so "no NTP response" can be
+    // told apart from "your router does not send DHCP option 42"
+    const ip_addr_t* dhcpSrv = esp_sntp_getserver(0);
+    if (dhcpSrv && !ip_addr_isany(dhcpSrv))
+      WS_LOG_I("DHCP offered NTP server %s", ipaddr_ntoa(dhcpSrv));
+    else
+      WS_LOG_W("DHCP did not offer an NTP server (option 42)%s",
+               ServerArray[0].length() ? " - using the configured server instead"
+                                       : " - set one manually or the clock will not sync");
+
+    if (ServerArray[0].length()) {
+      WS_LOG_I("Setting NTP clock from DHCP, falling back to %s%s%s (TZ %s)",
+               ServerArray[0].c_str(),
+               secondserver ? " and " : "",
+               secondserver ? ServerArray[1].c_str() : "",
+               tz.c_str());
+      configTzTime(tz.c_str(), NULL, ServerArray[0].c_str(),
+                   secondserver ? ServerArray[1].c_str() : NULL);
+    } else {
+      WS_LOG_I("Setting NTP clock from DHCP (TZ %s)", tz.c_str());
+      configTzTime(tz.c_str(), NULL, NULL, NULL);
+    }
+  }
+  else if (secondserver) {
     WS_LOG_I("Setting NTP clock from %s and %s (TZ %s)",
              ServerArray[0].c_str(), ServerArray[1].c_str(), tz.c_str());
     configTzTime(tz.c_str(), ServerArray[0].c_str(), ServerArray[1].c_str(), NULL);
@@ -241,8 +401,13 @@ void TaskSetClock(void * pointer) {
   time_t now = time(nullptr);
   while (g_ntpLastSyncMs == 0) {
     if ((uint32_t)(millis() - waitStart) > NTP_SYNC_TIMEOUT_MS) {
+      // Name the source that was actually tried, so "no response from " is not
+      // followed by an empty string on a DHCP-only setup
+      const char* srv = esp_sntp_getservername(0);
       WS_LOG_E("No NTP response from %s after %us - check the address is reachable and UDP/123 is open",
-               ServerArray[0].c_str(), (unsigned)(NTP_SYNC_TIMEOUT_MS / 1000));
+               ServerArray[0].length() ? ServerArray[0].c_str()
+                                       : (srv ? srv : "the DHCP-provided server"),
+               (unsigned)(NTP_SYNC_TIMEOUT_MS / 1000));
       vTaskDelete(NULL);
       return;
     }
@@ -310,8 +475,11 @@ String generateDatatoJSON(bool All)
     doc["never100soc"] = Inverter.Never100SOC();
     doc["canprotocol"] = (uint8_t)Inverter.GetCANProtocol();
     doc["pylonversion"] = (uint8_t)Inverter.GetCANProtocol(); // backward compat for cached pages
-    doc["wifissid"] = wifiManager.GetWifiSSID();
-    doc["wifipass"] = wifiManager.GetWifiPass();
+    // Display copy plus exact bytes - see the SSID transport note above. The
+    // sanitised one must never be what gets saved back.
+    doc["wifissid"] = toDisplayUTF8(wifiManager.GetWifiSSID());
+    doc["wifissidhex"] = bytesToHex(wifiManager.GetWifiSSID());
+    doc["wifipass"] = toDisplayUTF8(wifiManager.GetWifiPass());
     doc["wifihostname"] = wifiManager.GetWifiHostName();
     doc["mqttuser"] = wifiManager.GetMQTTUser();
     doc["mqttpass"] = wifiManager.GetMQTTPass();
@@ -326,6 +494,7 @@ String generateDatatoJSON(bool All)
     doc["slowchargesoc2div"] = Inverter.GetSlowChargeDivider(2);
     doc["lcdenabled"] = pref.getBool(ccLcdEnabled,false);
     doc["ntpserver"] = pref.getString(ccNTPServer,"");
+    doc["ntpfromdhcp"] = pref.getBool(ccNTPFromDHCP, true);
     doc["timezone"] = pref.getString(ccTimeZone, initTimeZone);
 #ifndef DISABLE_SCHEDULER
     Schedule.uiToJson(doc["schedui"].to<JsonArray>());
@@ -353,7 +522,15 @@ String generateDatatoJSON(bool All)
 
        An install reading the shunt over the wire now pays nothing for BLE
        being compiled in. */
-    const bool bleRelevant = (shuntSource == SHUNT_SRC_BLE) ||
+    /* "Configured" counts as relevant, not just "in use". Someone who has
+       scanned, picked a shunt and entered its key has not switched the source
+       over yet - and if we send nothing back, the address box and key state sit
+       empty and the page looks like it threw the settings away. They are in NVS;
+       the UI just never heard about them. An install that has never touched BLE
+       still has no MAC and no key, so it pays nothing, which is what the note
+       above is really protecting. */
+    const bool bleConfigured = VictronBle.HaveKey() || VictronBle.GetMac().length() > 0;
+    const bool bleRelevant = (shuntSource == SHUNT_SRC_BLE) || bleConfigured ||
                              VictronBle.Sniffer() || VictronBle.Scanning() ||
                              VictronBle.FoundCount() > 0;
     doc["blerelevant"] = bleRelevant;
@@ -518,8 +695,10 @@ String generateDatatoJSON(bool All)
     doc["ovrsecs"]      = RemoteOverride.SecondsLeft();
   }
 #endif
-  // -1 = never synced. -2 = no NTP server configured, so nothing will sync.
-  doc["ntpsyncago"] = (pref.getString(ccNTPServer,"").length() == 0)
+  // -1 = never synced. -2 = no source configured at all, so nothing will sync.
+  // Taking the server from DHCP counts as a source even with the field empty.
+  doc["ntpsyncago"] = (pref.getString(ccNTPServer,"").length() == 0 &&
+                       !pref.getBool(ccNTPFromDHCP, true))
                         ? -2 : ntpSecondsSinceSync();
   doc["inverterpresent"] = Inverter.InverterPresent();
   doc["victrondata"] = Lcd.Data.VEData.getValue();
@@ -539,8 +718,8 @@ String generateDatatoJSON(bool All)
 void notifyWSClients(bool sendalldata = true) {
   if(otaInProgress) return;
   ws.cleanupClients();
-  if(ws.count()>0 && ws.availableForWriteAll())
-    ws.textAll(generateDatatoJSON(sendalldata));
+  if(ws.count() > 0)
+    wsBroadcast(generateDatatoJSON(sendalldata));
 }
 
 String GetWSDataJson(const String& data, const String& value)
@@ -562,51 +741,52 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
     if (strncmp(data,"GetAll()",len)==0)
       notifyWSClients();
     else if (strncmp(data,"GetLogs()",len)==0) {
-      // Send the most recent buffered logs to the requesting client.
-      // Copy logs out of critical section first to avoid blocking
-      // static to avoid ~10KB on stack; struct copy is safe (no heap alloc with char arrays)
-      static LogEntry tempLogs[LOG_SEND_MAX];
-      int count = 0;
+      /* One entry is copied out at a time rather than the whole batch up front.
+         The old version kept a static LogEntry[LOG_SEND_MAX] purely as a staging
+         area - 10,800 bytes of RAM permanently reserved to serve a request that
+         happens when somebody opens the Logs tab. A single entry on the stack
+         does the same job, still copies out of the critical section before any
+         sending, and gives that RAM back to the heap for good. */
+      LogEntry entry;
+      int available = 0;
 
+      // How far back the ring actually goes, so the replay can run oldest-first
+      // without holding the lock across the sends.
       taskENTER_CRITICAL(&logMutex);
-      // Walk back from the newest entry. Reading forward from logBufferIndex took
-      // the OLDEST LOG_SEND_MAX of the ring instead, so on a device that had been
-      // up a while the tab showed the boot sequence and nothing since.
-      for(int i = 1; i <= LOG_BUFFER_SIZE && count < LOG_SEND_MAX; i++) {
+      for(int i = 1; i <= LOG_BUFFER_SIZE && available < LOG_SEND_MAX; i++) {
         int idx = (logBufferIndex - i + LOG_BUFFER_SIZE) % LOG_BUFFER_SIZE;
         if(logBuffer[idx].message[0] == '\0') break;   // not wrapped yet, nothing older
-        tempLogs[count] = logBuffer[idx];
-        count++;
+        available++;
       }
       taskEXIT_CRITICAL(&logMutex);
 
-      // Send logs outside critical section. Collected newest-first above, so walk
-      // back down to hand the viewer chronological order.
+      // Oldest first, so the viewer reads in chronological order.
       uint32_t nowMs = millis();
-      for(int i = count - 1; i >= 0; i--) {
-        if(wsclient->status() == WS_CONNECTED) {
-          // Built as a String, not snprintf into a fixed buffer: a 200 char message
-          // plus level and age already sat within a byte or two of 256, and any
-          // truncation would have cut the JSON off mid-string.
-          // "age" is how long ago the line was logged. The client has no reference
-          // for our millis(), and stamping replayed lines with their arrival time
-          // collapsed a whole backlog onto one second of the browser's clock.
-          String json = "{\"log\":\"";
-          json += jsonEscapeLog(tempLogs[i].message);
-          json += "\",\"level\":\"";
-          json += tempLogs[i].level;
-          json += "\",\"age\":";
-          json += (unsigned long)(nowMs - tempLogs[i].timestamp);
-          json += "}";
-          wsclient->text(json);
+      for(int n = available; n >= 1; n--) {
+        if(wsclient->status() != WS_CONNECTED) break;   // client went away
 
-          // Yield every 10 messages to prevent WDT
-          if((count - i) % 10 == 0) {
-            yield();
-          }
-        } else {
-          break;  // Client disconnected, stop sending
-        }
+        taskENTER_CRITICAL(&logMutex);
+        int idx = (logBufferIndex - n + LOG_BUFFER_SIZE) % LOG_BUFFER_SIZE;
+        entry = logBuffer[idx];                        // plain struct copy, no alloc
+        taskEXIT_CRITICAL(&logMutex);
+
+        // Built as a String, not snprintf into a fixed buffer: message plus level
+        // and age would sit close to any fixed size, and truncation would cut the
+        // JSON off mid-string.
+        // "age" is how long ago the line was logged. The client has no reference
+        // for our millis(), and stamping replayed lines with their arrival time
+        // collapsed a whole backlog onto one second of the browser's clock.
+        String json = "{\"log\":\"";
+        json += jsonEscapeLog(entry.message);
+        json += "\",\"level\":\"";
+        json += logLevelName(entry.level);
+        json += "\",\"age\":";
+        json += (unsigned long)(nowMs - entry.timestamp);
+        json += "}";
+        wsclient->text(json);
+
+        // Yield every 10 messages to prevent WDT
+        if((available - n) % 10 == 0) yield();
       }
     }
     else if (strncmp(data,"GetWifiScan()",len)==0) {
@@ -904,7 +1084,25 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       #undef HANDLE_PIN
       #undef HANDLE_PIN_EX
 
-      if (!doc["wifissid"].isNull()) {
+      /* wifissidhex wins when both are present: it is the only one that can
+         carry a name the browser could not represent as text. wifissid stays
+         accepted for a cached older page, an imported 2.x settings file, and
+         anything scripting this WebSocket by hand. */
+      if (!doc["wifissidhex"].isNull()) {
+        String hex = doc["wifissidhex"];
+        String value = hexToBytes(hex);
+        if (value.length() == 0 && hex.length() > 0) {
+          log_e("Ignoring wifissidhex '%s' - not valid hex", hex.c_str());
+          WS_LOG_E("WiFi network name arrived malformed, not saved");
+        } else {
+          handled = true;
+          wifiManager.SetWifiSSID(value);
+          WS_LOG_I("WiFi SSID set to '%s' (%u bytes)",
+                   toDisplayUTF8(value).c_str(), (unsigned)value.length());
+          notifyWSClients();
+        }
+      }
+      else if (!doc["wifissid"].isNull()) {
         String value = doc["wifissid"];
         handled = true;
         wifiManager.SetWifiSSID(value);
@@ -1033,6 +1231,15 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       pref.putString(ccNTPServer,value);
       notifyWSClients();}
 
+      if (!doc["ntpfromdhcp"].isNull()) {
+        bool value = doc["ntpfromdhcp"];
+        handled = true;
+        pref.putBool(ccNTPFromDHCP, value);
+        // SNTP is configured once, in TaskSetClock, so this lands on the next boot
+        WS_LOG_I("NTP from DHCP %s (reboot to apply)", value ? "enabled" : "disabled");
+        notifyWSClients();
+      }
+
 #ifndef DISABLE_SCHEDULER
       if (!doc["schedule"].isNull()) {
         handled = true;
@@ -1099,6 +1306,12 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       }
 
       // Also runtime only, and also not in settings export
+      // Diagnostic: does the MQTT client copy our buffers? See mqttRunCopyTest()
+      if (!doc["mqttcopytest"].isNull()) {
+        handled = true;
+        mqttRunCopyTest();
+      }
+
       if (!doc["blesniffer"].isNull()) {
         bool value = doc["blesniffer"];
         handled = true;
@@ -1574,7 +1787,10 @@ void StartWebServices()
         if(i) json += ",";
         json += "{";
         json += "\"rssi\":"+String(WiFi.RSSI(i));
-        json += ",\"ssid\":\""+WiFi.SSID(i)+"\"";
+        // Display copy and exact bytes, as in the WebSocket scan - see the SSID
+        // transport note above.
+        json += ",\"ssid\":\""+jsonEscape(toDisplayUTF8(WiFi.SSID(i)))+"\"";
+        json += ",\"ssidhex\":\""+bytesToHex(WiFi.SSID(i))+"\"";
         json += ",\"bssid\":\""+WiFi.BSSIDstr(i)+"\"";
         json += ",\"channel\":"+String(WiFi.channel(i));
         json += ",\"secure\":"+String(WiFi.encryptionType(i));

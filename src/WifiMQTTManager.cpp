@@ -7,12 +7,21 @@ bool WifiMQTTManagerClass::begin()
     m_pref.begin("network");
     log_d("Attempting to get WiFi/MQTT details from NVS");
 
+    /* getStringRaw, not getString: WiFi.begin() has to send back the exact bytes
+       the access point broadcasts, and an SSID is not required to be UTF-8. See
+       the note on getStringRaw in mEEPROM.h. The passphrase follows the SSID for
+       the same reason - it is a key, not a sentence. */
     if(m_pref.isKey(ccWifiSSID))
-        _wifiSSID = m_pref.getString(ccWifiSSID,_wifiSSID);
+        _wifiSSID = m_pref.getStringRaw(ccWifiSSID,_wifiSSID);
     if(m_pref.isKey(ccWifiPass))
-        _wifiPass = m_pref.getString(ccWifiPass,_wifiPass);
+        _wifiPass = m_pref.getStringRaw(ccWifiPass,_wifiPass);
 
-    log_d("Wifi SSID: %s, Password Length: %i",_wifiSSID,_wifiPass.length());
+    /* .c_str() on every one of these. Passing a String straight to a %s is
+       undefined behaviour, and core 3.x's String is a union with an inline SSO
+       buffer, so it silently prints correctly for <= 11 characters and prints
+       the bytes of a heap pointer for anything longer. A 12-character SSID
+       coming out as line noise reads exactly like corrupted NVS. */
+    log_d("Wifi SSID: %s, Password Length: %i",_wifiSSID.c_str(),_wifiPass.length());
 
     if(!m_pref.isKey(ccWifiHostName))
         m_pref.putString(ccWifiHostName, _wifiHostName);
@@ -49,7 +58,7 @@ bool WifiMQTTManagerClass::begin()
         _mqttPass = m_pref.getString(ccMQTTPass,_mqttPass);
     
     if(_wifiSSID.length() > 2 && _wifiPass.length() > 4) {
-        log_d("Connecting to SSID: %s", _wifiSSID);
+        log_d("Connecting to SSID: %s", _wifiSSID.c_str());
         WiFi.mode(WIFI_MODE_STA);
         WiFi.begin(_wifiSSID.c_str(),_wifiPass.c_str());
 
@@ -125,15 +134,15 @@ bool WifiMQTTManagerClass::begin()
         }
         else {
             log_d("MQTT details stored are not valid.");
-            log_d("MQTT Server IP: %s, MQTT Port %d, MQTT Client ID: %s",_mqttServer,_mqttPort,_mqttClientID);
+            log_d("MQTT Server IP: %s, MQTT Port %d, MQTT Client ID: %s",_mqttServer.c_str(),_mqttPort,_mqttClientID.c_str());
             if(_mqttTopic.length() < 2)
-                log_d("MQTT Topic: %s",_mqttTopic);
+                log_d("MQTT Topic: %s",_mqttTopic.c_str());
         } 
 
     } else 
     {
         log_d("MQTT server not set.");
-        log_d("MQTT Server IP: %s, MQTT Port %d, MQTT Client ID: %s",_mqttServer,_mqttPort,_mqttClientID);
+        log_d("MQTT Server IP: %s, MQTT Port %d, MQTT Client ID: %s",_mqttServer.c_str(),_mqttPort,_mqttClientID.c_str());
     }
 
     return true;

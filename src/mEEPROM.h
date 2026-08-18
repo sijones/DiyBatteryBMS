@@ -4,10 +4,86 @@
 // Constants
 // no key larger than 15 chars
 
+#include <Arduino.h>
 #include <Preferences.h>
 #include <nvs_flash.h>
 #define RW_MODE true
 #define RO_MODE false
+
+/* Longest string NVS can store, terminator included (nvs.h, nvs_set_str). An
+   entry claiming more than this cannot have been written by us. */
+#define NVS_STRING_MAX 4000
+
+/* NVS hands back whatever bytes are in flash. A half-written entry, a value
+   left by an older build, or a corrupted page all read back as a String that
+   looks fine to us but is not valid UTF-8 - and MQTT 3.1.1 (1.5.3) requires
+   every string in a packet to be well-formed UTF-8, so a broker answers a bad
+   client ID, user, password or topic by dropping the connection with nothing
+   useful in the log.
+
+   This is Table 3-7 of the Unicode standard rather than a "top bit set" test:
+   overlong encodings, UTF-16 surrogates (U+D800-U+DFFF) and anything past
+   U+10FFFF are all rejected, because a broker's own validator rejects them. */
+// Length of the well-formed sequence starting at p, or 0 if it is not one.
+inline int utf8SeqLen(const uint8_t* p, size_t avail) {
+  if (avail == 0) return 0;
+  const uint8_t c = p[0];
+  size_t extra;
+  uint8_t lo = 0x80, hi = 0xBF;    // allowed range of the FIRST continuation byte
+  if (c < 0x80) return 1;
+  else if (c >= 0xC2 && c <= 0xDF) extra = 1;
+  else if (c == 0xE0)            { extra = 2; lo = 0xA0; }  // no overlong 3-byte
+  else if (c >= 0xE1 && c <= 0xEC) extra = 2;
+  else if (c == 0xED)            { extra = 2; hi = 0x9F; }  // no surrogates
+  else if (c >= 0xEE && c <= 0xEF) extra = 2;
+  else if (c == 0xF0)            { extra = 3; lo = 0x90; }  // no overlong 4-byte
+  else if (c >= 0xF1 && c <= 0xF3) extra = 3;
+  else if (c == 0xF4)            { extra = 3; hi = 0x8F; }  // stop at U+10FFFF
+  else return 0;                   // 0x80-0xC1 and 0xF5-0xFF are never lead bytes
+  if (extra >= avail) return 0;                             // truncated sequence
+  if (p[1] < lo || p[1] > hi) return 0;
+  for (size_t j = 2; j <= extra; j++)
+    if (p[j] < 0x80 || p[j] > 0xBF) return 0;
+  return (int)(extra + 1);
+}
+
+inline bool isValidUTF8(const char* s, size_t len) {
+  if (!s) return false;
+  const uint8_t* p = (const uint8_t*)s;
+  size_t i = 0;
+  while (i < len) {
+    const int n = utf8SeqLen(p + i, len - i);
+    if (n == 0) return false;
+    i += (size_t)n;
+  }
+  return true;
+}
+
+inline bool isValidUTF8(const String& s) { return isValidUTF8(s.c_str(), s.length()); }
+
+/* Make a string safe to put in JSON bound for the browser, keeping every
+   character that is real text and replacing each byte that is not.
+
+   Needed because a WiFi SSID is allowed to be raw bytes in any encoding (see
+   getStringRaw), while a WebSocket text frame is not: RFC 6455 requires the
+   browser to FAIL THE CONNECTION on invalid UTF-8, so one Shift_JIS network
+   name in the settings would take the whole web UI down rather than just look
+   wrong. Only the copy sent for display is changed; what WiFi.begin() gets is
+   always the untouched bytes. */
+inline String toDisplayUTF8(const String& s) {
+  const uint8_t* p = (const uint8_t*)s.c_str();
+  const size_t len = s.length();
+  String out;
+  out.reserve(len);
+  size_t i = 0;
+  while (i < len) {
+    const int n = utf8SeqLen(p + i, len - i);
+    if (n == 0) { out += '?'; i++; continue; }
+    for (int j = 0; j < n; j++) out += (char)p[i + j];
+    i += (size_t)n;
+  }
+  return out;
+}
 
 const char* const ccChargeVolt = "ChargeVolt";
 const char* const ccDischargeVolt = "DischargeVolt";
@@ -98,6 +174,10 @@ const char* const ccVELOOPTIME = "VE_LOOP_TIME";
 const char* const ccCANBusEnabled  = "CANEnabled";
 const char* const ccLcdEnabled = "lcdenabled";
 const char* const ccNTPServer = "NTPServer";
+/* Take the NTP server from DHCP option 42 as well as (or instead of) the one
+   typed in. Defaults on: a device with nothing configured currently never sets
+   its clock at all, and almost every router hands out an NTP server. */
+const char* const ccNTPFromDHCP = "NTPDHCP";
 const char* const ccTimeZone = "TimeZone";
 const char* const ccSchedule = "Schedule";
 const char* const ccOverrideTime = "OvrTimeout";   // remote override latch, seconds. 0 = off
@@ -121,6 +201,15 @@ class mEEPROM {
 
     String getString(String key, String default_value);
     String getString(const char* key, String default_value);
+    /* Same length and corruption checks as getString, but the bytes are handed
+       back whatever they are. 802.11 puts no encoding on an SSID - it is 32
+       octets of anything - and routers in Japan, China, Korea and parts of
+       Europe still broadcast them in Shift_JIS, GBK, EUC-KR or Latin-1. Those
+       are not valid UTF-8, and this product ships worldwide, so rejecting them
+       would strand a working device in AP mode over a name it never had to
+       understand. MQTT is the opposite case: the protocol requires UTF-8, so
+       those keys stay on getString. */
+    String getStringRaw(const char* key, String default_value);
     bool putString(String key, String value);
     bool putString(const char* key, String value);
 

@@ -186,12 +186,47 @@ bool mEEPROM::putUInt8(const char* key, uint8_t value) {
 // END of 8
 
 String mEEPROM::getString(String key, String default_value = String("")) {
-  String ret = _preferences.getString(key.c_str(), default_value);
+  return getString(key.c_str(), default_value);
+}
+
+/* Length-checked read with no opinion about the bytes. For the few settings that
+   are legitimately not text - see the note on getStringRaw in mEEPROM.h. */
+String mEEPROM::getStringRaw(const char* key, String default_value) {
+  /* Ask how long the value is before reading it. Preferences::getString puts the
+     value in "char buf[len]" - a stack array sized by whatever length the entry
+     header claims - so an entry with a corrupt length field overflows the task
+     stack inside the library, before any check of ours could run. NVS itself
+     cannot store a string longer than 4000 bytes including the terminator, so
+     anything above that is corruption by definition.
+     len == 0 means missing key, wrong type, or a read error; getStringLength has
+     already logged which, and the answer in every case is the caller's default. */
+  const size_t len = _preferences.getStringLength(key);
+  if (len == 0) return default_value;
+  if (len > NVS_STRING_MAX) {
+    log_e("NVS key '%s' claims %u bytes, longer than NVS can hold - treating as corrupt",
+          key, (unsigned)len);
+    return default_value;
+  }
+
+  String ret = _preferences.getString(key, default_value);
+  if (!isValidUTF8(ret))
+    log_w("NVS key '%s' is not valid UTF-8 - keeping it, this key is allowed raw bytes", key);
   return ret;
 }
 
 String mEEPROM::getString(const char* key, String default_value = String("")) {
-  String ret = _preferences.getString(key, default_value);
+  String ret = getStringRaw(key, default_value);
+  /* Every string leaving NVS is checked once, here, rather than at each call
+     site - an entry left half-written by the 2.8 -> 3.0 upgrade reads back as
+     arbitrary bytes, and those bytes otherwise flow straight into the MQTT
+     CONNECT, the web UI's JSON and the syslog line. Fall back to the caller's
+     default, which is either the compiled-in value or "", so a corrupt entry
+     costs a setting rather than the whole service. */
+  if (!isValidUTF8(ret)) {
+    log_e("NVS key '%s' holds %u bytes that are not valid UTF-8, using the default instead",
+          key, (unsigned)ret.length());
+    return default_value;
+  }
   return ret;
 }
 
