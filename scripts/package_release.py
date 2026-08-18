@@ -100,6 +100,14 @@ def build_readme_text(env_name, partitions_csv_name):
         f"  so a full flash does not erase it - do NOT pass erase_flash, which would.\n"
         f"- The Firmware tab shows the running App Partition size, and warns if the\n"
         f"  device is still on the old table.\n\n"
+        f"EASIEST WAY (Windows): Upgrade-DiyBatteryBMS.ps1\n"
+        f"  powershell -ExecutionPolicy Bypass -File .\\Upgrade-DiyBatteryBMS.ps1 -ReleaseDir .\n\n"
+        f"  It backs up your settings out of NVS first, checks this release does not\n"
+        f"  move the NVS partition (which is the one thing that would wipe them),\n"
+        f"  flashes all three files at the right offsets for your chip, then reads the\n"
+        f"  settings back and lists anything that did not survive. -PullOnly dumps the\n"
+        f"  configuration and changes nothing; -Restore <nvs-before.bin> puts an\n"
+        f"  earlier backup back. Run it with -? for the rest.\n\n"
         f"Notes:\n"
         f"- Flash addresses above follow Arduino defaults; confirm against your partitions CSV if using a custom layout.\n"
         f"- Use your preferred ESP32 flasher tool and supply addresses accordingly.\n"
@@ -158,6 +166,10 @@ def package_release(source, target, env):
             "littlefs.bin": os.path.join(BUILD_DIR, "littlefs.bin"),
             "bootloader.bin": os.path.join(BUILD_DIR, "bootloader.bin"),
             "partitions.bin": os.path.join(BUILD_DIR, "partitions.bin"),
+            # Shipped with the binaries so the upgrade path travels with the
+            # thing being upgraded - a script left in the repo is a script
+            # nobody downloading a release ever sees.
+            "Upgrade-DiyBatteryBMS.ps1": os.path.join(PROJECT_DIR, "scripts", "Upgrade-DiyBatteryBMS.ps1"),
         }
 
         # Collect existing files
