@@ -930,7 +930,13 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         notifyWSClients(); }
       if (!doc["maxdischargecurrent"].isNull()) {
-        if (persist) pref.putUInt32(ccDischargeCurrent,(uint32_t) doc["maxdischargecurrent"]);
+        if (persist) {
+          pref.putUInt32(ccDischargeCurrent,(uint32_t) doc["maxdischargecurrent"]);
+          // Same as the charge limit above: the Discharge Current slider max is
+          // built from this value, so a saved change has to be re-advertised or
+          // Home Assistant keeps rejecting anything above the old ceiling.
+          publishHADiscovery();
+        }
         Inverter.SetMaxDischargeCurrent((uint32_t) doc["maxdischargecurrent"]);
         WS_LOG_I("Set Max Discharge Current to %u%s", (uint32_t) doc["maxdischargecurrent"], persist ? "" : " (not saved)");
         handled = true;

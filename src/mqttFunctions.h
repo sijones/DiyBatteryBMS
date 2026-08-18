@@ -261,16 +261,36 @@ bool sendVE2MQTT() {
   return true;
 }
 
-// HA Discovery helpers — build JSON with snprintf to avoid String heap churn
-// Sized for the longest discovery payload: scaffolding + name + unique_id + state topic
-// + value template + extra attributes + up to 192 bytes of device JSON. The templated
-// sensors (SOC override reason, absorption remaining) push past 512.
-static char _haBuf[640];
+/* HA Discovery helpers - build JSON with snprintf to avoid String heap churn.
+   Sized for the longest payload: scaffolding + name + unique_id + state topic +
+   value template + extra attributes + up to 192 bytes of device JSON. The
+   templated sensors (SOC override reason, absorption remaining) reach 536 bytes
+   with the default topic, and the base topic inside them is user-configurable,
+   so the headroom is for someone whose topic is not "DIY-BATTERY". */
+static char _haBuf[768];
 static char _haTopicBuf[128];
+
+/* snprintf reports the length it WOULD have written, so a payload that did not
+   fit is detectable rather than silently short - and a truncated config is far
+   worse than a missing one. Home Assistant answers it with
+
+     Unable to parse JSON diybatterybms_..._dischargecurrent: '{"name":...
+
+   the entity never appears, and nothing on this side says why. Skip and say so
+   instead. */
+static bool haFits(int written, size_t cap, const char* id) {
+  if (written >= 0 && (size_t)written < cap) return true;
+  log_e("HA discovery for '%s' needs %d bytes, buffer is %u - not published",
+        id, written, (unsigned)cap);
+  WS_LOG_E("HA discovery config for '%s' did not fit and was not sent", id);
+  return false;
+}
 
 void _haPublish(const char* type, const char* id, const char* payload,
                 const char* baseTopic, const char* nodeId) {
-  snprintf(_haTopicBuf, sizeof(_haTopicBuf), "%s/%s/%s_%s/config", baseTopic, type, nodeId, id);
+  const int n = snprintf(_haTopicBuf, sizeof(_haTopicBuf), "%s/%s/%s_%s/config",
+                         baseTopic, type, nodeId, id);
+  if (!haFits(n, sizeof(_haTopicBuf), id)) return;
   /* qos 0. These are retained config messages: the broker keeps the last one
      per topic and Home Assistant re-reads all of them whenever it subscribes,
      so the delivery guarantee buys nothing, while at qos 1 every one of the 42
@@ -282,45 +302,49 @@ void _haPublish(const char* type, const char* id, const char* payload,
 
 void haSensor(const char* name, const char* id, const char* valueTpl, const char* extra,
               const char* baseTopic, const char* nodeId, const char* stateTopic, const char* deviceJson) {
-  snprintf(_haBuf, sizeof(_haBuf),
+  const int n = snprintf(_haBuf, sizeof(_haBuf),
     "{\"name\":\"%s\",\"unique_id\":\"%s_%s\","
     "\"state_topic\":\"%s\","
     "\"value_template\":\"%s\"%s%s}",
     name, nodeId, id, stateTopic, valueTpl, extra, deviceJson);
+  if (!haFits(n, sizeof(_haBuf), id)) return;
   _haPublish("sensor", id, _haBuf, baseTopic, nodeId);
 }
 
 void haBinary(const char* name, const char* id, const char* jsonField, const char* extra,
               const char* baseTopic, const char* nodeId, const char* stateTopic, const char* deviceJson) {
-  snprintf(_haBuf, sizeof(_haBuf),
+  const int n = snprintf(_haBuf, sizeof(_haBuf),
     "{\"name\":\"%s\",\"unique_id\":\"%s_%s\","
     "\"state_topic\":\"%s\","
     "\"value_template\":\"{%% if value_json.%s %%}ON{%% else %%}OFF{%% endif %%}\","
     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"%s%s}",
     name, nodeId, id, stateTopic, jsonField, extra, deviceJson);
+  if (!haFits(n, sizeof(_haBuf), id)) return;
   _haPublish("binary_sensor", id, _haBuf, baseTopic, nodeId);
 }
 
 void haSwitch(const char* name, const char* id, const char* paramName,
               const char* baseTopic, const char* nodeId, const char* sTopic, const char* deviceJson) {
-  snprintf(_haBuf, sizeof(_haBuf),
+  const int n = snprintf(_haBuf, sizeof(_haBuf),
     "{\"name\":\"%s\",\"unique_id\":\"%s_%s\","
     "\"state_topic\":\"%s/Param/%s\","
     "\"command_topic\":\"%s/set/%s\","
     "\"payload_on\":\"ON\",\"payload_off\":\"OFF\"%s}",
     name, nodeId, id, sTopic, paramName, sTopic, paramName, deviceJson);
+  if (!haFits(n, sizeof(_haBuf), id)) return;
   _haPublish("switch", id, _haBuf, baseTopic, nodeId);
 }
 
 void haNumber(const char* name, const char* id, const char* valueTpl, const char* cmdSuffix,
               const char* extra, const char* baseTopic, const char* nodeId,
               const char* stateTopic, const char* sTopic, const char* deviceJson) {
-  snprintf(_haBuf, sizeof(_haBuf),
+  const int n = snprintf(_haBuf, sizeof(_haBuf),
     "{\"name\":\"%s\",\"unique_id\":\"%s_%s\","
     "\"state_topic\":\"%s\","
     "\"value_template\":\"%s\","
     "\"command_topic\":\"%s/set/%s\"%s%s}",
     name, nodeId, id, stateTopic, valueTpl, sTopic, cmdSuffix, extra, deviceJson);
+  if (!haFits(n, sizeof(_haBuf), id)) return;
   _haPublish("number", id, _haBuf, baseTopic, nodeId);
 }
 
@@ -518,8 +542,28 @@ static void haChunk5(HaCtx& c) {
   haNumber("Charge Current", "chargecurrent", "{{ (value_json.chargecurrent * 0.001) | round(0) }}", "ChargeCurrent",
     chargeCurrentExtra,
     base, node, dataTopic, st, deviceJson);
+  /* Slider max tracks the configured Max Discharge Current, exactly as Charge
+     Current above does. Without min and max, Home Assistant falls back to its
+     own defaults of 0-100 for a number entity and then rejects every reading
+     outside them:
+
+       Invalid value for number.diy_battery_bms_discharge_current:
+       150 (range 0.0 - 100.0)
+
+     - logged once per state update, which is thousands of lines a day on any
+     system rated above 100 A, and the control never shows the real value.
+
+     state_class and suggested_display_precision were also in here. Neither is a
+     valid key for an MQTT number - they belong to sensors - so they were doing
+     nothing but taking up room in a payload that has to fit a fixed buffer. */
+  float maxDischargeA = Inverter.GetMaxDischargeCurrent() * 0.001f;
+  if (maxDischargeA <= 0.0f) maxDischargeA = 100.0f;
+  char dischargeCurrentExtra[128];
+  snprintf(dischargeCurrentExtra, sizeof(dischargeCurrentExtra),
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"min\":0,\"max\":%.0f,\"step\":1",
+    maxDischargeA);
   haNumber("Discharge Current", "dischargecurrent", "{{ value_json.dischargecurrent | multiply(0.001) | round(0) }}", "DischargeCurrent",
-    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"suggested_display_precision\":0",
+    dischargeCurrentExtra,
     base, node, dataTopic, st, deviceJson);
   // Float stage. 0 V asks for the automatic target rather than turning float off,
   // so the minimum still has to reach down to 0 rather than stopping at a
