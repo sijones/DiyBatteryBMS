@@ -1,11 +1,20 @@
 <#
 .SYNOPSIS
-  Upgrade a DIY Battery BMS board over USB, keeping its settings.
+  Install or upgrade a DIY Battery BMS board over USB, keeping its settings.
 
 .DESCRIPTION
-  Reads the board's configuration out of NVS, flashes a release, then reads NVS
-  back and proves every setting survived - the step a plain esptool command line
-  cannot do for you.
+  Works out what is on the board and does the right thing:
+
+    Blank or running something else -> a fresh install. Writes the firmware,
+      points the bootloader at it, and clears the settings area so the first
+      boot starts clean and comes up as an access point.
+    This project on 2.x's layout -> the migration. Replaces the partition
+      table, keeps NVS where it is, and resets the boot slot.
+    This project on the 3.x layout -> an ordinary update.
+
+  For anything with settings on it, it reads the configuration out of NVS
+  first, then reads it back afterwards and proves every value survived - the
+  step a plain esptool command line cannot do for you.
 
   Why this exists. 3.0 changed the partition table, so upgrading from 2.x needs a
   serial flash of bootloader + partition table + firmware rather than an OTA. The
@@ -479,6 +488,65 @@ function Write-CloneNotes {
   Set-Content -Path $Path -Value $lines -Encoding UTF8
 }
 
+# -------------------------------------------------------- board identity ----
+
+function Get-BoardState {
+  <# What is on this board, so the right thing happens without being told.
+
+     Four cases, and they need different handling:
+       Blank   - erased or brand new, no partition table at all
+       Foreign - a partition table, but not this project's and no settings of
+                 ours in nvs. Something else lives here.
+       Legacy  - this project on 2.x's default.csv layout: app0 is 0x140000 and
+                 there is a spiffs partition. The upgrade that needs care.
+       Current - this project on the 3.x table already. An ordinary update. #>
+  param($Tool, $Verbs, [string]$Port, [string]$WorkDir)
+
+  $tablePath = Join-Path $WorkDir 'partitions-before.bin'
+  Invoke-EspTool -Tool $Tool -Quiet -Arguments @('--port', $Port, '--baud', '921600',
+    $Verbs.Read, '0x8000', '0xC00', $tablePath) | Out-Null
+  $table = @(Read-PartitionTable -Bytes ([IO.File]::ReadAllBytes($tablePath)))
+
+  $state = [pscustomobject]@{
+    Kind = 'Blank'; Table = $table; Nvs = $null; App0 = $null; Otadata = $null
+    Entries = @(); HasOurSettings = $false; TablePath = $tablePath; NvsPath = $null
+  }
+  if ($table.Count -eq 0) { return $state }
+
+  $state.Nvs     = $table | Where-Object { $_.Name -eq 'nvs' }
+  $state.App0    = $table | Where-Object { $_.Name -eq 'app0' }
+  $state.Otadata = $table | Where-Object { $_.Name -eq 'otadata' }
+
+  if ($state.Nvs) {
+    $nvsPath = Join-Path $WorkDir 'nvs-before.bin'
+    Invoke-EspTool -Tool $Tool -Quiet -Arguments @('--port', $Port, '--baud', '921600', $Verbs.Read,
+      ('0x{0:x}' -f $state.Nvs.Offset), ('0x{0:x}' -f $state.Nvs.Size), $nvsPath) | Out-Null
+    $state.NvsPath = $nvsPath
+    $state.Entries = @(Read-NvsEntries -Bytes ([IO.File]::ReadAllBytes($nvsPath)))
+    # Our namespaces are the only reliable marker. A partition layout can be
+    # coincidental; "smartbms" and "network" holding keys is not.
+    $state.HasOurSettings = @($state.Entries | Where-Object { $script:AppNamespaces -contains $_.Namespace }).Count -gt 0
+  }
+
+  if (-not $state.HasOurSettings) { $state.Kind = 'Foreign'; return $state }
+
+  $hasSpiffs = @($table | Where-Object { $_.Name -eq 'spiffs' }).Count -gt 0
+  if ($hasSpiffs -or ($state.App0 -and $state.App0.Size -le 0x140000)) { $state.Kind = 'Legacy' }
+  else { $state.Kind = 'Current' }
+  return $state
+}
+
+function Clear-FlashRegion {
+  <# Erase rather than write zeros: NVS and otadata both treat 0xFF as "never
+     used", which is the state each of them wants to start from. #>
+  param($Tool, $Verbs, [string]$Port, [string]$ChipName, $Partition, [string]$What)
+  $erase = 'erase-region'
+  if ($Verbs.Read -eq 'read_flash') { $erase = 'erase_region' }
+  Write-Detail ("erasing {0} at 0x{1:x} + 0x{2:x}" -f $What, $Partition.Offset, $Partition.Size)
+  Invoke-EspTool -Tool $Tool -Quiet -Arguments @('--chip', $ChipName, '--port', $Port, '--baud', '921600',
+    $erase, ('0x{0:x}' -f $Partition.Offset), ('0x{0:x}' -f $Partition.Size)) | Out-Null
+}
+
 # ---- export a clone kit and stop ----
 if ($ExportProfile) {
   if (-not (Test-Path $ExportProfile)) { New-Item -ItemType Directory -Path $ExportProfile -Force | Out-Null }
@@ -642,34 +710,44 @@ if ($Restore) {
   exit 0
 }
 
-# ---- 1. pull the current configuration ----
-Write-Step 'Reading the partition table'
-$curPartPath = Join-Path $BackupDir 'partitions-before.bin'
-Invoke-EspTool -Tool $tool -Quiet -Arguments @('--port', $Port, '--baud', '921600', $verbs.Read, '0x8000', '0xC00', $curPartPath) | Out-Null
-$curTable = Read-PartitionTable -Bytes ([IO.File]::ReadAllBytes($curPartPath))
-if ($curTable.Count -eq 0) { throw 'No partition table at 0x8000 - is this a blank board?' }
-foreach ($p in $curTable) { Write-Detail (Format-Partition $p) }
+# ---- 1. work out what is on the board ----
+Write-Step 'Looking at the board'
+$state = Get-BoardState -Tool $tool -Verbs $verbs -Port $Port -WorkDir $BackupDir
+foreach ($p in $state.Table) { Write-Detail (Format-Partition $p) }
+if ($state.Table.Count -eq 0) { Write-Detail 'no partition table at 0x8000' }
 
-$curNvs = $curTable | Where-Object { $_.Name -eq 'nvs' }
-if (-not $curNvs) { throw 'This board has no nvs partition; there is no configuration to keep.' }
-$curApp0 = $curTable | Where-Object { $_.Name -eq 'app0' }
+$curNvs  = $state.Nvs
+$curApp0 = $state.App0
+$before  = $state.Entries
+$nvsBefore = $state.NvsPath
 
-Write-Step 'Pulling the configuration out of NVS'
-$nvsBefore = Join-Path $BackupDir 'nvs-before.bin'
-Invoke-EspTool -Tool $tool -Quiet -Arguments @('--port', $Port, '--baud', '921600', $verbs.Read,
-  ('0x{0:x}' -f $curNvs.Offset), ('0x{0:x}' -f $curNvs.Size), $nvsBefore) | Out-Null
-$before = Read-NvsEntries -Bytes ([IO.File]::ReadAllBytes($nvsBefore))
-Write-Ok ("{0} entries read, backup at {1}" -f $before.Count, $nvsBefore)
-Show-Config -Entries $before -All:$IncludeSystemKeys
+switch ($state.Kind) {
+  'Blank'   { Write-Ok 'Blank board - nothing installed. This will be a fresh install.' }
+  'Foreign' { Write-Warn 'A partition table is present but none of this project''s settings are in nvs.'
+              Write-Warn 'Something else is installed here, and installing will replace it.' }
+  'Legacy'  { Write-Ok 'DIY Battery BMS on the 2.x partition layout. This is the upgrade that needs the table replaced.' }
+  'Current' { Write-Ok 'DIY Battery BMS already on the 3.x layout. An ordinary update.' }
+}
 
-$beforeJson = Join-Path $BackupDir 'config-before.json'
-$before | Select-Object Namespace, Key, Type, Value, ValidUtf8 | ConvertTo-Json -Depth 4 | Set-Content -Path $beforeJson -Encoding UTF8
-Write-Detail ("inventory: {0}" -f $beforeJson)
+$isInstall = ($state.Kind -eq 'Blank') -or ($state.Kind -eq 'Foreign')
 
-$badUtf8 = @($before | Where-Object { $_.IsText -and -not $_.ValidUtf8 })
-if ($badUtf8.Count -gt 0) {
-  Write-Warn ("{0} stored string(s) are not valid UTF-8 - 3.0 and later fall back to defaults for these:" -f $badUtf8.Count)
-  foreach ($e in $badUtf8) { Write-Warn ("     {0} = {1}" -f $e.Id, $e.Value) }
+if ($state.HasOurSettings) {
+  Write-Step 'Pulling the configuration out of NVS'
+  Write-Ok ("{0} entries read, backup at {1}" -f $before.Count, $nvsBefore)
+  Show-Config -Entries $before -All:$IncludeSystemKeys
+
+  $beforeJson = Join-Path $BackupDir 'config-before.json'
+  $before | Select-Object Namespace, Key, Type, Value, ValidUtf8 | ConvertTo-Json -Depth 4 | Set-Content -Path $beforeJson -Encoding UTF8
+  Write-Detail ("inventory: {0}" -f $beforeJson)
+
+  $badUtf8 = @($before | Where-Object { $_.IsText -and -not $_.ValidUtf8 })
+  if ($badUtf8.Count -gt 0) {
+    Write-Warn ("{0} stored string(s) are not valid UTF-8 - 3.0 and later fall back to defaults for these:" -f $badUtf8.Count)
+    foreach ($e in $badUtf8) { Write-Warn ("     {0} = {1}" -f $e.Id, $e.Value) }
+  }
+}
+else {
+  Write-Detail 'No settings of ours to preserve.'
 }
 
 if ($PullOnly) {
@@ -678,7 +756,7 @@ if ($PullOnly) {
   exit 0
 }
 
-# ---- 2. check the release, and that it will not wipe the settings ----
+# ---- 2. check the release ----
 if (-not $ReleaseDir) { throw 'Give -ReleaseDir (an unzipped release, or a .pio\build\<env> folder), or use -PullOnly.' }
 $ReleaseDir = (Resolve-Path $ReleaseDir).Path
 
@@ -690,25 +768,30 @@ foreach ($f in @($fwPath, $blPath, $partPath)) {
 }
 
 Write-Step 'Checking the release against this board'
-$newTable = Read-PartitionTable -Bytes ([IO.File]::ReadAllBytes($partPath))
+$newTable = @(Read-PartitionTable -Bytes ([IO.File]::ReadAllBytes($partPath)))
 if ($newTable.Count -eq 0) { throw 'partitions.bin in the release is not a partition table.' }
-$newNvs = $newTable | Where-Object { $_.Name -eq 'nvs' }
+$newNvs  = $newTable | Where-Object { $_.Name -eq 'nvs' }
 $newApp0 = $newTable | Where-Object { $_.Name -eq 'app0' }
+$newOta  = $newTable | Where-Object { $_.Name -eq 'otadata' }
 if (-not $newNvs) { throw 'The release partition table has no nvs partition.' }
 
-Write-Detail ("device nvs : 0x{0:x} + 0x{1:x}" -f $curNvs.Offset, $curNvs.Size)
-Write-Detail ("release nvs: 0x{0:x} + 0x{1:x}" -f $newNvs.Offset, $newNvs.Size)
+if ($state.HasOurSettings) {
+  Write-Detail ("device nvs : 0x{0:x} + 0x{1:x}" -f $curNvs.Offset, $curNvs.Size)
+  Write-Detail ("release nvs: 0x{0:x} + 0x{1:x}" -f $newNvs.Offset, $newNvs.Size)
 
-$nvsMoved = ($newNvs.Offset -ne $curNvs.Offset) -or ($newNvs.Size -ne $curNvs.Size)
-if ($nvsMoved) {
-  Write-Err 'The release moves or resizes the nvs partition.'
-  Write-Err 'Flashing it will leave the settings unreadable - they are not where the new firmware looks.'
-  Write-Err ("A backup is already saved at {0}, but restoring it into a relocated nvs will not help." -f $nvsBefore)
-  if (-not $Force) { throw 'Refusing to flash. Re-run with -Force if this is genuinely what you want.' }
-  Write-Warn '-Force given, continuing anyway.'
-}
-else {
-  Write-Ok 'nvs is unchanged - settings will survive the flash.'
+  # Only worth refusing over when there is something to lose. On a blank or
+  # foreign board a relocated nvs costs nothing.
+  $nvsMoved = ($newNvs.Offset -ne $curNvs.Offset) -or ($newNvs.Size -ne $curNvs.Size)
+  if ($nvsMoved) {
+    Write-Err 'The release moves or resizes the nvs partition.'
+    Write-Err 'Flashing it will leave the settings unreadable - they are not where the new firmware looks.'
+    Write-Err ("A backup is already saved at {0}, but restoring it into a relocated nvs will not help." -f $nvsBefore)
+    if (-not $Force) { throw 'Refusing to flash. Re-run with -Force if this is genuinely what you want.' }
+    Write-Warn '-Force given, continuing anyway.'
+  }
+  else {
+    Write-Ok 'nvs is unchanged - settings will survive the flash.'
+  }
 }
 
 $fwSize = (Get-Item $fwPath).Length
@@ -720,12 +803,16 @@ if ($newApp0) {
     $fwSize, $newApp0.Size, (100 * $fwSize / $newApp0.Size))
 }
 if ($curApp0 -and $newApp0 -and $curApp0.Size -ne $newApp0.Size) {
-  Write-Detail ("app0 changes from 0x{0:x} to 0x{1:x} - this is why an OTA cannot do this upgrade." -f $curApp0.Size, $newApp0.Size)
+  Write-Detail ("app0 changes from 0x{0:x} to 0x{1:x}" -f $curApp0.Size, $newApp0.Size)
+  if ($state.Kind -eq 'Legacy') {
+    Write-Detail ("{0:N0} bytes of firmware could never fit 2.x's {1:N0} byte slot, which is why an OTA cannot do this upgrade." -f $fwSize, $curApp0.Size)
+  }
 }
 
 # ---- 3. flash ----
 Write-Step 'Flashing'
-Write-Detail 'bootloader, partition table and firmware only. No erase, so nvs is left alone.'
+if ($isInstall) { Write-Detail 'Fresh install: bootloader, partition table and firmware.' }
+else            { Write-Detail 'bootloader, partition table and firmware only. No erase, so nvs is left alone.' }
 Invoke-EspTool -Tool $tool -Arguments @(
   '--chip', $Chip, '--port', $Port, '--baud', '921600',
   $verbs.Write, '-z', '--flash-mode', 'dio', '--flash-size', 'detect',
@@ -734,9 +821,71 @@ Invoke-EspTool -Tool $tool -Arguments @(
   '0x10000', $fwPath) | Out-Null
 Write-Ok 'Flash written and verified by esptool.'
 
-# ---- 4. prove the configuration migrated ----
+<# otadata decides which app slot the bootloader starts, and it is NOT touched
+   by writing app0. A 2.x board that has ever taken an over-the-air update is
+   booting from app1, and app1 in the new table lands where the old spiffs used
+   to be - so the board would come up on whatever bytes happen to be there
+   rather than on the firmware just written. Erasing otadata resets the choice
+   to app0, which is the slot the firmware went into.
+
+   Also done for a fresh install, where the region may hold a previous
+   occupant's ota state. Never done for an ordinary 3.x update, where the
+   running slot is already correct. #>
+if ($isInstall -or $state.Kind -eq 'Legacy') {
+  Write-Step 'Pointing the bootloader at the firmware just written'
+  $otaTarget = $newOta
+  if (-not $otaTarget) { $otaTarget = $state.Otadata }
+  if ($otaTarget) {
+    Clear-FlashRegion -Tool $tool -Verbs $verbs -Port $Port -ChipName $Chip -Partition $otaTarget -What 'otadata'
+    Write-Ok 'otadata cleared - the board will boot the slot that was just flashed.'
+  }
+  else { Write-Warn 'No otadata partition found; leaving boot selection alone.' }
+}
+
+<# A foreign board's nvs region holds another project's data, or in a fresh
+   install whatever was at that offset before. NVS would detect that as
+   unusable and format it on first boot anyway - doing it here means the first
+   boot is clean rather than recovering. Never on an upgrade: that region is
+   the settings. #>
+if ($isInstall -and $newNvs) {
+  Write-Step 'Clearing the settings area for a fresh start'
+  Clear-FlashRegion -Tool $tool -Verbs $verbs -Port $Port -ChipName $Chip -Partition $newNvs -What 'nvs'
+}
+
+# ---- 4. check what came up ----
 Write-Step 'Waiting for the board to boot'
 Start-Sleep -Seconds 12      # first boot after a flash also re-inits NVS pages
+
+if ($isInstall) {
+  Write-Step 'Reading the board back'
+  $instPart = Join-Path $BackupDir 'partitions-after.bin'
+  Invoke-EspTool -Tool $tool -Quiet -Arguments @('--port', $Port, '--baud', '921600', $verbs.Read, '0x8000', '0xC00', $instPart) | Out-Null
+  $instTable = @(Read-PartitionTable -Bytes ([IO.File]::ReadAllBytes($instPart)))
+  foreach ($p in $instTable) { Write-Detail (Format-Partition $p) }
+  $instNvs = $instTable | Where-Object { $_.Name -eq 'nvs' }
+  $fresh = @()
+  if ($instNvs) {
+    $instNvsPath = Join-Path $BackupDir 'nvs-after.bin'
+    Invoke-EspTool -Tool $tool -Quiet -Arguments @('--port', $Port, '--baud', '921600', $verbs.Read,
+      ('0x{0:x}' -f $instNvs.Offset), ('0x{0:x}' -f $instNvs.Size), $instNvsPath) | Out-Null
+    $fresh = @(Read-NvsEntries -Bytes ([IO.File]::ReadAllBytes($instNvsPath)))
+  }
+  $ours = @($fresh | Where-Object { $script:AppNamespaces -contains $_.Namespace })
+  Write-Host ''
+  if ($ours.Count -gt 0) {
+    Write-Ok ("Installed. The firmware booted and wrote {0} default setting(s)." -f $ours.Count)
+  }
+  else {
+    Write-Warn 'Installed, but the firmware has not written its defaults yet.'
+    Write-Detail 'Give it a moment and power-cycle; if nothing appears, watch the serial log.'
+  }
+  Write-Host ''
+  Write-Detail 'It has no WiFi credentials, so it starts an access point named after its'
+  Write-Detail 'hostname (DIY-BATTERY by default). Join that and open http://192.168.4.1'
+  Write-Detail 'to configure it - or apply a saved setup with -CloneFrom.'
+  Write-Detail ("Backups kept in {0}" -f $BackupDir)
+  exit 0
+}
 
 Write-Step 'Reading the configuration back'
 $nvsAfter = Join-Path $BackupDir 'nvs-after.bin'
