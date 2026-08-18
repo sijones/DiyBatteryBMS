@@ -131,12 +131,26 @@
       flex-wrap: wrap;
     }
 
-    .brand { display: flex; align-items: baseline; gap: 10px; flex: 1; min-width: 200px; }
+    .brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 200px; }
 
+    /* State-of-charge mark: three cells draining left to right, the full one
+       accented. Drawn from currentColor and --accent through classes rather
+       than fill= attributes, because CSS variables are not valid in SVG
+       presentation attributes - that is what lets one copy follow both themes. */
+    .brand-mark { width: 23px; height: 23px; flex: none; color: var(--text); }
+    .brand-mark .lvl-full { fill: var(--accent); }
+    .brand-mark .lvl      { fill: currentColor; }
+    .brand-mark .lvl-low  { fill: currentColor; opacity: .45; }
+
+    .brand-words { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+
+    /* Set the way the device already names itself - the hostname, the MQTT
+       client id, the discovery node - rather than as a product wordmark. */
     .brand h1 {
-      font-size: 17px;
-      font-weight: 600;
-      letter-spacing: .02em;
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 500;
+      letter-spacing: .01em;
       color: var(--text);
     }
     .brand h1 .accent { color: var(--accent); }
@@ -1277,8 +1291,15 @@
   <div class="container">
     <header class="header">
       <div class="brand">
-        <h1>DIY<span class="accent">/</span>BATTERY BMS</h1>
-        <span class="subtitle">Inverter Bridge</span>
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <rect class="lvl-full" x="3" y="4" width="18" height="4.6" rx="2.3"/>
+          <rect class="lvl" x="3" y="10.2" width="12.5" height="4.6" rx="2.3"/>
+          <rect class="lvl-low" x="3" y="16.4" width="7" height="4.6" rx="2.3"/>
+        </svg>
+        <div class="brand-words">
+          <h1>diy<span class="accent">-</span>battery<span class="accent">-</span>bms</h1>
+          <span class="subtitle">Inverter Bridge</span>
+        </div>
       </div>
       <div class="header-meta">
         <span class="meta-item" id="hostMeta" hidden><b id="hostName">--</b></span>
