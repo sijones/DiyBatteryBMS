@@ -58,6 +58,11 @@ public:
   uint32_t UptimeSecs() const;
 
   uint32_t HeapMin() const;                  // lowest free heap this run
+  /* Internal RAM, which on a PSRAM board is the only pool that can run out -
+     WiFi and lwIP need DMA-capable memory and cannot use PSRAM. The warning
+     thresholds are judged on these, not on the totals. */
+  uint32_t InternalFree() const;
+  uint32_t InternalMin() const;
   uint32_t BlockMin() const  { return _blockMin; }   // smallest largest-free-block this run
 
   // Zero when there is no history - a cold start, or a first boot on firmware

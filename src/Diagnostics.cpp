@@ -91,6 +91,27 @@ uint32_t DiagnosticsClass::HeapMin() const
   return (uint32_t)esp_get_minimum_free_heap_size();
 }
 
+/* Internal RAM only - the pool that actually runs out.
+
+   On a board with PSRAM the totals above are worse than useless for judging
+   safety: this S3 boots with 8,537,572 bytes free and 156,112 of it internal,
+   so a floor of 40,000 against the total can never be crossed no matter how
+   completely the internal pool is exhausted. WiFi and lwIP buffers must be
+   internal because they have to be DMA-capable, and those are exactly the
+   allocations that fail. Watch this one instead.
+
+   On a board without PSRAM it is the same number as the total, so nothing is
+   lost by using it everywhere. */
+uint32_t DiagnosticsClass::InternalFree() const
+{
+  return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+}
+
+uint32_t DiagnosticsClass::InternalMin() const
+{
+  return (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+}
+
 void DiagnosticsClass::Begin()
 {
   const esp_reset_reason_t reason = esp_reset_reason();
@@ -114,7 +135,9 @@ void DiagnosticsClass::Begin()
   _rtc.magic      = DIAG_RTC_MAGIC;
   _rtc.boots      = _bootCount;
   _rtc.uptimeSecs = 0;
-  _rtc.heapMin    = freeNow;
+  // Internal, to match what Loop() writes here a second from now and what the
+  // warnings are judged on. Only matters for a crash inside that first second.
+  _rtc.heapMin    = InternalFree();
   _rtc.blockMin   = blockNow;
   _lastTickMs     = millis();
   _lastMilestoneFree = freeNow;   // first milestone is measured from boot
@@ -126,8 +149,33 @@ void DiagnosticsClass::Begin()
      the browser loses its WebSocket every time it does. */
   Serial.printf("[boot] boot #%u, reset reason: %s%s\r\n",
                 (unsigned)_bootCount, _reasonName, _wasCrash ? "  <-- CRASH" : "");
-  Serial.printf("[boot] heap %u B free, largest block %u B\r\n",
-                (unsigned)freeNow, (unsigned)blockNow);
+  /* Internal alongside the total, because on a PSRAM board the total is the
+     wrong number to read: 8.5MB free means nothing when WiFi and lwIP can only
+     allocate from the 156KB of internal RAM behind it. On a board without
+     PSRAM the two are equal and the line simply says so twice. */
+  Serial.printf("[boot] heap %u B free (%u B internal), largest block %u B\r\n",
+                (unsigned)freeNow, (unsigned)InternalFree(), (unsigned)blockNow);
+
+  /* Say plainly whether PSRAM was found, because the failure is silent.
+     BOARD_HAS_PSRAM with no PSRAM present - or with the wrong memory_type for
+     the part, quad settings on an octal module - logs a failure deep in the
+     core and carries on with internal RAM only. The board then behaves exactly
+     like one that was never meant to have any, and the build looks correct. */
+  const size_t psramSize = ESP.getPsramSize();
+  if (psramSize) {
+    Serial.printf("[boot] PSRAM %u B total, %u B free\r\n",
+                  (unsigned)psramSize, (unsigned)ESP.getFreePsram());
+    WS_LOG_I("PSRAM %u KB total, %u KB free", (unsigned)(psramSize / 1024),
+             (unsigned)(ESP.getFreePsram() / 1024));
+  } else {
+#ifdef BOARD_HAS_PSRAM
+    // Built expecting it and did not get it - worth an error, not a shrug
+    Serial.println("[boot] PSRAM: NONE FOUND, but this build expects it - check memory_type");
+    WS_LOG_E("PSRAM expected by this build but not found - check board_build.arduino.memory_type");
+#else
+    Serial.println("[boot] PSRAM: none (not enabled in this build)");
+#endif
+  }
 
   if (_wasCrash)
     WS_LOG_E("Boot #%u after a CRASH - reset reason: %s", (unsigned)_bootCount, _reasonName);
@@ -137,7 +185,7 @@ void DiagnosticsClass::Begin()
   if (_haveHistory) {
     char dur[24];
     fmtDuration(_prevUptime, dur, sizeof(dur));
-    Serial.printf("[boot] previous run lasted %s, heap low water %u B, smallest block %u B\r\n",
+    Serial.printf("[boot] previous run lasted %s, internal low water %u B, smallest block %u B\r\n",
                   dur, (unsigned)_prevHeapMin, (unsigned)_prevBlockMin);
     /* The line that answers "was it the heap?". A run that ended with tens of
        kilobytes spare did not die of exhaustion and the cause is elsewhere; one
@@ -158,7 +206,8 @@ void DiagnosticsClass::Loop()
 
   const uint32_t freeNow  = (uint32_t)esp_get_free_heap_size();
   const uint32_t blockNow = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-  const uint32_t heapMin  = HeapMin();
+  // Warnings are judged on internal RAM, not the total - see InternalFree()
+  const uint32_t heapMin  = InternalMin();
   if (blockNow < _blockMin) _blockMin = blockNow;
 
   /* Written out every tick rather than saved on the way down, because there is
@@ -231,10 +280,10 @@ void DiagnosticsClass::Loop()
     /* Serial as well as the log macro. WS_LOG_W runs log_w, which this build
        discards at CORE_DEBUG_LEVEL=1, so the trail existed everywhere except
        the one channel still attached when the board dies. */
-    Serial.printf("[heap] low water %u B (now %u free, largest block %u B)\r\n",
-                  (unsigned)heapMin, (unsigned)freeNow, (unsigned)blockNow);
-    WS_LOG_W("Heap low water down to %u B (now %u free, largest block %u B)",
-             (unsigned)heapMin, (unsigned)freeNow, (unsigned)blockNow);
+    Serial.printf("[heap] internal low water %u B (now %u internal, %u total free)\r\n",
+                  (unsigned)heapMin, (unsigned)InternalFree(), (unsigned)freeNow);
+    WS_LOG_W("Internal RAM low water down to %u B (now %u internal free)",
+             (unsigned)heapMin, (unsigned)InternalFree());
   }
 }
 
@@ -295,6 +344,12 @@ void DiagnosticsClass::ReportTasks()
                   st[i].pcTaskName,
                   (int)((st[i].xCoreID == tskNO_AFFINITY) ? -1 : (int)st[i].xCoreID),
                   (unsigned)st[i].uxCurrentPriority, (unsigned)spare);
+    /* Flush between lines. Fifteen printf calls back to back overrun the
+       ESP32-S3's USB CDC buffer and the table comes out shredded - lines
+       merged, fields half-written - which is worse than useless for a
+       diagnostic whose whole job is to be read. Costs a few milliseconds,
+       once. */
+    Serial.flush();
   }
   Serial.printf("[task] %u B of stack has never been used\r\n", (unsigned)spareTotal);
   free(st);
