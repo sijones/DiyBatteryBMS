@@ -4,6 +4,9 @@
 #include <WiFi.h>
 #include <Update.h>
 #include <esp_ota_ops.h>   // running partition size, for the legacy-layout warning
+#include <esp_heap_caps.h> // largest free block, checked before the big broadcast
+#include <memory>
+#include <vector>
 #include "VictronBLE.h"
 
 // Defined in main.cpp. Cached at boot so the status JSON does not read NVS on
@@ -19,13 +22,39 @@ extern uint8_t shuntSource;
 
 volatile bool otaInProgress = false;
 
+// Broadcasts skipped for want of a big enough contiguous block. Non-zero means
+// the board is running too close to the edge - see notifyWSClients().
+static uint32_t wsSkippedLowHeap = 0;
+
+/* Two settings the full status payload reports, held in RAM rather than read
+   back out of NVS every time it is built.
+
+   Each getString() is a flash read that allocates a String, and both were being
+   done on every full broadcast - visible on the serial line as a pair of
+
+     nvs_get_str len fail: TimeZone NOT_FOUND
+     nvs_get_str len fail: SyslogSrv NOT_FOUND
+
+   every fifteen seconds, for settings that change perhaps twice in the life of
+   an install. Same reasoning as the VBLEMac lookup further down: it is not the
+   size of any one allocation that hurts, it is repeating it forever on a board
+   where the largest free block is the thing in short supply.
+
+   Refreshed by applyTimeZone() and applySyslogConfig(), which are already the
+   single funnel for "this setting changed" and are both called at boot. */
+static String g_tzCached;
+static String g_syslogServerCached;
+
 // Forward declarations for MQTT temperature subscriptions (defined in mqttFunctions.h)
 extern String sMqttBattTopic;
 extern String sMqttInvTopic;
 void mqttResubscribeTemp();
 void mqttRunCopyTest();   // diagnostic, see mqttFunctions.h
-// Re-publish HA discovery (defined in mqttFunctions.h) so number-control limits track config changes
-void publishHADiscovery();
+/* Re-publish HA discovery (defined in mqttFunctions.h) so number-control limits
+   track config changes. force = true says the configs are genuinely stale and
+   must go out now; an MQTT reconnect passes false and is answered with nothing,
+   because the configs are retained and the broker still has them. */
+void publishHADiscovery(bool force = false);
 
 /* Log buffer for web UI.
 
@@ -194,7 +223,8 @@ void saveUiSchedule() {
 // Re-read syslog settings from preferences and push them into the sender.
 // Called on boot and whenever any syslog field changes.
 void applySyslogConfig() {
-  Syslog.configure(pref.getString(ccSyslogServer, "").c_str(),
+  g_syslogServerCached = pref.getString(ccSyslogServer, "");
+  Syslog.configure(g_syslogServerCached.c_str(),
                    pref.getUInt16(ccSyslogPort, 514),
                    pref.getBool(ccSyslogEnabled, false),
                    wifiManager.GetWifiHostName().c_str());
@@ -296,6 +326,7 @@ int32_t ntpSecondsSinceSync() {
 void applyTimeZone() {
   String tz = pref.getString(ccTimeZone, initTimeZone);
   if (tz.length() == 0) tz = initTimeZone;
+  g_tzCached = tz;
   setenv("TZ", tz.c_str(), 1);
   tzset();
 }
@@ -439,10 +470,13 @@ void TaskSetClock(void * pointer) {
 
 }
 
-String generateDatatoJSON(bool All)
-{
-  JsonDocument doc;
+/* Fills doc with the current state.
 
+   Split out of generateDatatoJSON() so the WebSocket path can serialise
+   straight into the buffer it is about to send, rather than building a String
+   for the library to copy. See notifyWSClients(). */
+static void buildDataDoc(JsonDocument& doc, bool All)
+{
   // If ALL is true generate a json with all data
   if (All){
     doc["BMS"] = All;
@@ -495,14 +529,14 @@ String generateDatatoJSON(bool All)
     doc["lcdenabled"] = pref.getBool(ccLcdEnabled,false);
     doc["ntpserver"] = pref.getString(ccNTPServer,"");
     doc["ntpfromdhcp"] = pref.getBool(ccNTPFromDHCP, true);
-    doc["timezone"] = pref.getString(ccTimeZone, initTimeZone);
+    doc["timezone"] = g_tzCached;
 #ifndef DISABLE_SCHEDULER
     Schedule.uiToJson(doc["schedui"].to<JsonArray>());
     Schedule.mqttToJson(doc["schedmqtt"].to<JsonArray>());
     doc["overridetimeout"] = RemoteOverride.GetTimeout();
 #endif
     doc["requesttimeout"] = Inverter.GetRequestTimeout();
-    doc["syslogserver"] = pref.getString(ccSyslogServer,"");
+    doc["syslogserver"] = g_syslogServerCached;
     doc["syslogport"] = pref.getUInt16(ccSyslogPort, 514);
     doc["syslogenabled"] = pref.getBool(ccSyslogEnabled, false);
     doc["cansniffer"] = Inverter.CANSniffer();   // runtime only, never persisted
@@ -581,8 +615,10 @@ String generateDatatoJSON(bool All)
     doc["showtempdashboard"] = Inverter.ShowTempOnDashboard();
     doc["batttempsrc"] = Inverter.BattTempSource();
     doc["fantempsrc"] = Inverter.FanTempSource();
-    doc["mqttbatttopic"] = pref.getString(ccMQTTBattTopic, "");
-    doc["mqttinvtopic"] = pref.getString(ccMQTTInvTopic, "");
+    // The RAM copies mqttsetup() loaded at boot, kept in step by the two set
+    // handlers below - no reason to go back to flash for them on every payload
+    doc["mqttbatttopic"] = sMqttBattTopic;
+    doc["mqttinvtopic"] = sMqttInvTopic;
     doc["fanofftemp"] = Inverter.GetFanOffTemp();
     doc["fanfulltemp"] = Inverter.GetFanFullTemp();
     doc["fwversion_bms"] = FW_VERSION;
@@ -600,6 +636,18 @@ String generateDatatoJSON(bool All)
     doc["can_rx_pin"] = pref.getUInt8(ccCAN_RX_PIN, 0);
     doc["can_en_pin"] = pref.getUInt8(ccCAN_EN_PIN, 0);
     #endif
+    /* Fixed for the life of this boot, so they belong here rather than in the
+       payload that goes out several times a second. The previous run's figures
+       are the ones worth reading after an unexplained restart: a run that ended
+       with plenty of heap did not die of exhaustion, and the cause is elsewhere.
+       Zero when there is nothing to report - a cold start has no history. */
+    doc["resetreason"] = Diag.ResetReason();
+    doc["crashed"] = Diag.Crashed();
+    doc["bootcount"] = Diag.BootCount();
+    doc["prevuptime"] = Diag.PrevUptimeSecs();
+    doc["prevheapmin"] = Diag.PrevHeapMin();
+    doc["prevheapblock"] = Diag.PrevBlockMin();
+    doc["wsskipped"] = wsSkippedLowHeap;
   }
 
   doc["RealTime"] = true;
@@ -708,18 +756,89 @@ String generateDatatoJSON(bool All)
   doc["fanpwm"] = FAN_PWM;
   doc["totalheap"] = ESP.getHeapSize();
   doc["freeheap"] = ESP.getFreeHeap();
-  
+  /* Three fields, not seven. This runs on every notifyWSClients(), many times a
+     second, and each field costs an allocation - see the note above the BLE
+     block. These three move; the rest of the diagnostics are fixed for the life
+     of the boot and ride along in the All payload below instead.
+
+     Free heap alone does not predict the abort: what fails is a specific
+     allocation, so the largest contiguous block matters as much as the total,
+     and the low-water marks matter more than either, because the moment that
+     kills the board is over long before the next reading. */
+  doc["uptime"] = Diag.UptimeSecs();
+  doc["heapmin"] = Diag.HeapMin();
+  doc["heapblock"] = Diag.BlockMin();
+
+}
+
+/* The String form, for the MQTT publish of /Data - mqttPublish() wants a
+   null-terminated buffer.
+
+   reserve() first. A String grown by serializeJson() reallocates as it fills -
+   64, 128, 256, ... up past 4KB - claiming a fresh contiguous block each time
+   and releasing the one behind it. That leaks nothing, but run several times a
+   second it is a fragmentation engine, and what kills this board is not free
+   heap reaching zero: it is the largest contiguous block getting too small to
+   satisfy a request while kilobytes sit free in pieces. Measured first, the
+   whole payload lands in one exact-size allocation. */
+String generateDatatoJSON(bool All)
+{
+  JsonDocument doc;
+  buildDataDoc(doc, All);
   String outputJson;
-  int b = serializeJson(doc, outputJson);
+  outputJson.reserve(measureJson(doc) + 1);
+  serializeJson(doc, outputJson);
   outputJson.trim();  // Remove trailing newline and whitespace from serializeJson
   return outputJson;
 }
 
+/* cleanupClients() with no argument, so the library's default of 8 applies and
+   nothing of ours evicts anybody.
+
+   A tighter cap was tried here and removed. It was added on the theory that
+   browser tabs were consuming the heap, which the measurements then disproved:
+   a tab costs between 40 and 1,132 bytes, and the deep troughs blamed on tabs
+   turned out to be the MQTT discovery outbox draining in the same window. What
+   a cap would reliably do is evict the OLDEST client when a new one arrives -
+   and the oldest is exactly the long-lived socket an integration holds, so
+   three browser tabs would have quietly dropped it. */
 void notifyWSClients(bool sendalldata = true) {
   if(otaInProgress) return;
   ws.cleanupClients();
-  if(ws.count() > 0)
-    wsBroadcast(generateDatatoJSON(sendalldata));
+  if(ws.count() == 0) return;
+
+  JsonDocument doc;
+  buildDataDoc(doc, sendalldata);
+  const size_t n = measureJson(doc);
+  if (n == 0) return;
+
+  /* Refuse rather than abort. Exceptions are off, so a failed allocation is
+     not a thrown bad_alloc but a call to abort() - and the allocation below is
+     one of the largest this firmware makes, on the path that runs most often.
+     Skipping an update costs nothing: the next one is along in a moment and
+     carries the same state. Aborting costs the whole device. */
+  if (heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < n + 1024) {
+    /* Straight to serial and nothing else. Every other logging path on this
+       board allocates, which is precisely what is not available right now. */
+    static uint32_t lastMoan = 0;
+    wsSkippedLowHeap++;
+    if ((uint32_t)(millis() - lastMoan) > 5000) {
+      lastMoan = millis();
+      Serial.printf("[heap] skipped a %u B broadcast, largest block %u B (%u skipped)\r\n",
+                    (unsigned)n, (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                    (unsigned)wsSkippedLowHeap);
+    }
+    return;
+  }
+
+  /* Serialise into the send buffer itself. textAll(String) would allocate the
+     shared vector and copy the String into it, so both were live at the peak;
+     this way there is one allocation of exactly the right size and no copy.
+     The buffer is shared between clients, not duplicated per client - see the
+     note above wsBroadcast(). */
+  auto buf = std::make_shared<std::vector<uint8_t>>(n);
+  serializeJson(doc, buf->data(), n);
+  ws.textAll(std::move(buf));
 }
 
 String GetWSDataJson(const String& data, const String& value)
@@ -923,7 +1042,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           // Re-publish HA discovery so the Charge Current slider max tracks the
           // new limit. Only for saved changes - a supervisor retuning the limit
           // every few seconds must not spam discovery messages at the broker.
-          publishHADiscovery();
+          publishHADiscovery(true);   // configs are stale, this one must go out
         }
         Inverter.SetMaxChargeCurrent((uint32_t) doc["maxchargecurrent"]);
         WS_LOG_I("Set Max Charge Current to %u%s", (uint32_t) doc["maxchargecurrent"], persist ? "" : " (not saved)");
@@ -935,7 +1054,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           // Same as the charge limit above: the Discharge Current slider max is
           // built from this value, so a saved change has to be re-advertised or
           // Home Assistant keeps rejecting anything above the old ceiling.
-          publishHADiscovery();
+          publishHADiscovery(true);   // configs are stale, this one must go out
         }
         Inverter.SetMaxDischargeCurrent((uint32_t) doc["maxdischargecurrent"]);
         WS_LOG_I("Set Max Discharge Current to %u%s", (uint32_t) doc["maxdischargecurrent"], persist ? "" : " (not saved)");
@@ -1680,6 +1799,9 @@ void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEven
     WS_LOG_I("WebSocket Client %u connected", wsclient->id());
     //wsclient->printf("Your Client %u :)", wsclient->id());
     wsclient->ping();
+    // What a tab costs, which is the measurement that matters here - four of
+    // them took this board from 167KB free to a 4.6KB largest block
+    Diag.Milestone("WS client connected");
   } else if(type == WS_EVT_DISCONNECT){
     //client disconnected
     log_i("ws[%s][%u] disconnect: %u", wsserver->url(), wsclient->id());
@@ -1710,6 +1832,18 @@ void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEven
 // The payload is gzip-compressed at build time by embed_html.py, so it must go out
 // with Content-Encoding: gzip for the browser to inflate it.
 void sendEmbeddedHTML(AsyncWebServerRequest *request) {
+  /* Bracketed with heap readings because this is the prime suspect for the
+     deepest troughs measured on this board: a ~41KB dip with a browser in use
+     and no MQTT activity anywhere near it, on a device where a WebSocket client
+     costs 40 bytes. The page is ~53KB gzipped and goes out of PROGMEM through
+     TCP buffers, which is the only thing in the firmware big enough to explain
+     it. Suspicion is not measurement, so - measure it.
+
+     Serial only and no allocation of its own, since the point is to observe a
+     moment when there may be very little left to allocate from. */
+  const uint32_t freeBefore  = ESP.getFreeHeap();
+  const uint32_t blockBefore = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+
   AsyncWebServerResponse *response =
       request->beginResponse(200, "text/html; charset=utf-8", EMBEDDED_HTML, EMBEDDED_HTML_LEN);
   response->addHeader("Content-Encoding", "gzip");
@@ -1719,6 +1853,18 @@ void sendEmbeddedHTML(AsyncWebServerRequest *request) {
   // update. It is 18KB over LAN, so there is nothing worth caching.
   response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   request->send(response);
+
+  /* Taken straight after send(), which queues the response rather than
+     completing it - so this catches what setting it up cost, not the peak
+     while it drains. If the trough is really in the transfer, the low-water
+     line from Diag will report deeper than this does, and the gap between the
+     two is the answer. */
+  const uint32_t freeAfter  = ESP.getFreeHeap();
+  const uint32_t blockAfter = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  Serial.printf("[page] %u B page queued: free %u -> %u (%+d), largest %u -> %u\r\n",
+                (unsigned)EMBEDDED_HTML_LEN, (unsigned)freeBefore, (unsigned)freeAfter,
+                (int)((int32_t)freeAfter - (int32_t)freeBefore),
+                (unsigned)blockBefore, (unsigned)blockAfter);
 }
 
 void StartWebServices()

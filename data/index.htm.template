@@ -96,11 +96,6 @@
 
     body {
       background: var(--bg);
-      /* faint grid, like a panel meter face */
-      background-image:
-        linear-gradient(var(--line-soft) 1px, transparent 1px),
-        linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
-      background-size: 44px 44px, 44px 44px;
       min-height: 100vh;
       padding: 18px;
       color: var(--text);
@@ -1226,7 +1221,7 @@
     }
 
     @media (max-width: 640px) {
-      body { padding: 0; background-image: none; }
+      body { padding: 0; }
       .container { border-radius: 0; border-left: none; border-right: none; min-height: 100vh; }
       .header { padding: 12px 14px; gap: 10px; }
       .brand { min-width: 0; flex: 1 1 100%; }
@@ -2860,15 +2855,18 @@
       setConnStatus(true);
       if (wasDown) showToast('Reconnected', 'success');
 
-      // A dropped connection leaves a gap in the viewer, so allow one more backlog
-      // pull. Sitting on the Logs tab through a reconnect never triggers switchTab,
-      // so fetch here rather than waiting for a tab change that may not come.
+      /* The backlog is not pulled here, deliberately.
+
+         A reconnect used to re-request it whenever the Logs tab happened to be
+         the active one, which put a fifty-message replay into the same 200ms as
+         the full status payload - measured at ~24KB of transient heap on an
+         ESP32 with none to spare, and the largest single thing the socket does.
+         A connection coming up should cost the configuration blob and the live
+         readings, nothing else.
+
+         Clearing the flag means the backlog is still one tab click away: switch
+         away and back, or open the tab, and switchTab() fetches it. */
       logsRequested = false;
-      const logsPane = document.getElementById('logs');
-      if (logsPane && logsPane.classList.contains('active')) {
-        logsRequested = true;
-        websocket.send('GetLogs()');
-      }
     }
 
     function onError(event) {

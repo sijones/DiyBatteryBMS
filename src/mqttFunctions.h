@@ -53,7 +53,7 @@ bool mqttPublish(String topic, String payload, bool retain)
 
 /* qos 0 for the Home Assistant discovery burst.
 
-   Discovery is ~42 retained config messages sent back to back. At qos 1 every
+   Discovery is ~50 retained config messages sent back to back. At qos 1 every
    one of them is copied into esp-mqtt's outbox and held there until the broker
    sends a PUBACK, which on a heap-starved board is where it fell over:
      E (2070) outbox: outbox_enqueue(53): Memory exhausted
@@ -61,7 +61,11 @@ bool mqttPublish(String topic, String payload, bool retain)
    the broker keeps the last one on each topic, so a config that is lost in
    flight is replaced on the next connect anyway, and Home Assistant re-reads
    all of them when it subscribes. Live data keeps qos 1. */
-bool mqttPublishQos(const char* topic, const char* payload, bool retain, int qos);
+/* async = false sends the message on the calling task instead of handing it to
+   esp-mqtt's outbox. Only safe from the main loop - never from an MQTT callback,
+   which runs on the very task that would have to do the sending. See _haPublish. */
+bool mqttPublishQos(const char* topic, const char* payload, bool retain, int qos,
+                    bool async = true);
 
 bool mqttPublish(const char* topic, const char* payload, bool retain)
 {
@@ -93,12 +97,13 @@ bool mqttPublish(const char* topic, const char* payload, bool retain)
 #define MQTT_ASSUME_CLIENT_COPIES 1
 #endif
 
-bool mqttPublishQos(const char* topic, const char* payload, bool retain, int qos)
+bool mqttPublishQos(const char* topic, const char* payload, bool retain, int qos,
+                    bool async)
 {
   if (!mqttClient.connected()) return false;
 
 #if MQTT_ASSUME_CLIENT_COPIES
-  const int msg_id = mqttClient.publish(topic, qos, retain, payload, strlen(payload), true);
+  const int msg_id = mqttClient.publish(topic, qos, retain, payload, strlen(payload), async);
   if (msg_id < 0) {
     log_e("MQTT enqueue failed (%d) for %s", msg_id, topic);
     return false;
@@ -207,6 +212,31 @@ void publishScheduleStatus() {
 static inline void publishScheduleStatus() {}
 #endif
 
+/* Why the board last restarted, and how the run before it was doing for heap
+   when it went.
+
+   Retained, and published once per connect rather than with the live data:
+   none of it changes while the device is up, and a board that is rebooting is
+   exactly the case where the answer needs to be sitting on the broker already -
+   waiting for the next periodic update is waiting for an update that may never
+   come. The previous run's low-water mark is the one to read first: a run that
+   ended with plenty of heap did not die of exhaustion. */
+void publishBootDiagnostics() {
+  if (otaInProgress || !mqttClient.connected()) return;
+  const char* t = sTopic.c_str();
+  char buf[24];
+  auto pub = [&](const char* suffix, const char* val) {
+    snprintf(_mqTopicBuf, sizeof(_mqTopicBuf), "%s/Diag/%s", t, suffix);
+    mqttPublish(_mqTopicBuf, val, true);
+  };
+  pub("ResetReason", Diag.ResetReason());
+  pub("Crashed", Diag.Crashed() ? "ON" : "OFF");
+  snprintf(buf, sizeof(buf), "%u", (unsigned)Diag.BootCount());      pub("BootCount", buf);
+  snprintf(buf, sizeof(buf), "%u", (unsigned)Diag.PrevUptimeSecs()); pub("PrevUptime", buf);
+  snprintf(buf, sizeof(buf), "%u", (unsigned)Diag.PrevHeapMin());    pub("PrevHeapMin", buf);
+  snprintf(buf, sizeof(buf), "%u", (unsigned)Diag.PrevBlockMin());   pub("PrevHeapBlock", buf);
+}
+
 bool sendUpdateMQTTData()
 {
   if (otaInProgress) return false;
@@ -286,18 +316,91 @@ static bool haFits(int written, size_t cap, const char* id) {
   return false;
 }
 
+/* Paced against free heap, because that is the resource that actually runs out.
+   An earlier version gated on slots free in our own 40-entry table, which said
+   nothing about whether esp-mqtt could allocate - the table had room right up to
+   the moment the outbox reported "Memory exhausted" and the board aborted.
+
+   Checked per message, not per group of a dozen. The group gate let a whole
+   chunk through on the strength of one reading taken before any of it had been
+   sent: measured on an ESP32 with no PSRAM, at t+31 the board had 26,452 B free,
+   this gate passed by two kilobytes, and the group behind it drove the burst to
+   its peak - 26 KB held in esp-mqtt's outbox, free heap down to 16 KB, and the
+   largest contiguous block down from 73,716 to 26,612, where it stayed for the
+   rest of the boot. Checking between messages lets the outbox drain as the
+   burst goes out.
+
+   Resuming a paused group by re-running it is cheap on purpose: haSensor() and
+   the rest build their payloads into static buffers, so a message already sent
+   costs one snprintf on the way past and nothing at all from the heap. */
+#define HA_MIN_FREE_HEAP     24000
+
+/* ...and a cap on how many go out per pass, which turned out to be the part
+   that actually matters.
+
+   The heap gate alone is inert in the normal case: measured with the burst
+   delayed to t+60, the board had 51,324 B free, the fifty messages went out in
+   groups of a dozen, and free heap bottomed at 24,256 - some 250 bytes above
+   the 24,000 floor. The gate never fired, because the burst fits in the
+   headroom. It just does not fit *comfortably*.
+
+   What sets the peak is not how much heap is free, it is how many messages are
+   in esp-mqtt's outbox at once - which is a race between how fast we enqueue
+   and how fast the broker drains. Two per pass, with the existing gap between
+   passes, turns a 27 KB spike into a trickle the outbox keeps up with. Fifty
+   messages then take about four seconds, which nothing is waiting on. */
+#define HA_MSGS_PER_PASS     2
+
+static uint16_t haMsgSeq     = 0;   // message being considered in this group
+static uint16_t haResumeFrom = 0;   // ...and where to pick the group up again
+static uint16_t haSentThisPass = 0;
+static bool     haPaused     = false;
+
 void _haPublish(const char* type, const char* id, const char* payload,
                 const char* baseTopic, const char* nodeId) {
+  const uint16_t seq = haMsgSeq++;
+  if (seq < haResumeFrom) return;   // already went out on an earlier pass
+  if (haPaused) return;             // stopped short; the rest follow next pass
+
+  /* The per-message gate. Pausing here costs a repeat of the snprintf work on
+     the next pass; carrying on regardless is what filled the outbox. */
+  if (ESP.getFreeHeap() < HA_MIN_FREE_HEAP) {
+    haPaused = true;
+    haResumeFrom = seq;
+    return;
+  }
+
   const int n = snprintf(_haTopicBuf, sizeof(_haTopicBuf), "%s/%s/%s_%s/config",
                          baseTopic, type, nodeId, id);
   if (!haFits(n, sizeof(_haTopicBuf), id)) return;
-  /* qos 0. These are retained config messages: the broker keeps the last one
-     per topic and Home Assistant re-reads all of them whenever it subscribes,
-     so the delivery guarantee buys nothing, while at qos 1 every one of the 42
-     sat in esp-mqtt's outbox awaiting a PUBACK - which is where the board ran
-     out of memory and aborted. */
-  mqttPublishQos(_haTopicBuf, payload, true, 0);
+  /* qos 0, and sent rather than enqueued.
+
+     qos 0 alone was not enough, and the measurements say why. PsychicMqttClient's
+     publish() defaults to async, which calls esp_mqtt_client_enqueue() with its
+     `store` argument hard-coded true - and store=true means "enqueue ALL
+     messages", not just qos 1 and 2. So every one of these went into the outbox
+     anyway, which is exactly what moving to qos 0 was meant to avoid.
+
+     That is why pacing barely helped. Feeding them in two at a time stretched
+     the burst from under a second to six, and the cost only fell from 27,068 to
+     21,444 bytes: the outbox was not draining behind us, it was accumulating
+     all fifty regardless of how slowly they arrived, and releasing them in one
+     step when esp-mqtt next swept it.
+
+     async = false takes esp_mqtt_client_publish() instead, which writes the
+     message out on this task and keeps nothing. Safe here specifically because
+     haDiscoveryLoop() runs from the main loop - the same call from an MQTT
+     callback would deadlock against the task that does the sending. */
+  mqttPublishQos(_haTopicBuf, payload, true, 0, false);
   yield();
+
+  /* That is this pass's ration. Note haResumeFrom is seq+1, not seq: unlike the
+     heap gate above, this message did go out, so the next pass must start after
+     it rather than send it twice. */
+  if (++haSentThisPass >= HA_MSGS_PER_PASS) {
+    haPaused = true;
+    haResumeFrom = seq + 1;
+  }
 }
 
 void haSensor(const char* name, const char* id, const char* valueTpl, const char* extra,
@@ -348,7 +451,7 @@ void haNumber(const char* name, const char* id, const char* valueTpl, const char
   _haPublish("number", id, _haBuf, baseTopic, nodeId);
 }
 
-/* Discovery is ~42 config messages. Published in one go they overran the
+/* Discovery is ~50 config messages. Published in one go they overran the
    40-slot pending table and the tail was simply dropped - those entities then
    never appeared in Home Assistant until something else happened to republish
    them. Growing the table would spend RAM permanently on a burst that happens
@@ -362,14 +465,16 @@ void haNumber(const char* name, const char* id, const char* valueTpl, const char
    would unblock us. */
 #define HA_CHUNK_COUNT       5
 #define HA_CHUNK_GAP_MS      150
-/* Paced against free heap, because that is the resource that actually runs out.
-   An earlier version gated on slots free in our own 40-entry table, which said
-   nothing about whether esp-mqtt could allocate - the table had room right up to
-   the moment the outbox reported "Memory exhausted" and the board aborted. */
-#define HA_MIN_FREE_HEAP     24000
+
+/* Nothing needs discovery in the first minute, and it is the minute the board
+   can least afford it: WiFi, MQTT, mDNS and usually a browser all arrive in it.
+   Home Assistant is not waiting either - the configs are retained, so it is
+   reading the previous boot's copies off the broker throughout this delay. */
+#define HA_START_DELAY_MS    60000
 
 static uint8_t  haStep = 0;       // 0 = idle, otherwise the group to send next
 static uint32_t haLastStepMs = 0;
+static uint32_t haArmedMs = 0;    // when the sequence was armed, for the delay
 
 // Rebuilt per group rather than held across them: sTopic or the MAC could not
 // have changed, but a stale c_str() into a String that has gone is not worth
@@ -496,6 +601,46 @@ static void haChunk2(HaCtx& c) {
 static void haChunk3(HaCtx& c) {
   const char* base = c.base; const char* node = c.node;
   const char* dataTopic = c.dataTopic; const char* deviceJson = c.deviceJson;
+  const char* st = c.st;
+
+  /* Restart and heap diagnostics.
+
+     A board that is crash-rebooting is invisible from Home Assistant: the
+     entities keep updating, because the device comes back and resumes
+     publishing within a couple of seconds. Boot Count going up on its own is
+     the giveaway, and the rest say why. Heap Low Water is the number that
+     matters - with exceptions disabled a failed allocation aborts the board,
+     so the heap does not have to reach zero for this to be the cause.
+
+     The four fixed ones read a plain retained topic rather than the data JSON,
+     so "{{ value }}" is the whole template - see publishBootDiagnostics(). */
+  haSensor("Uptime", "uptime", "{{ value_json.uptime }}",
+    ",\"unit_of_measurement\":\"s\",\"device_class\":\"duration\",\"state_class\":\"measurement\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:timer-play-outline\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Heap Low Water", "heapmin", "{{ value_json.heapmin }}",
+    ",\"unit_of_measurement\":\"B\",\"state_class\":\"measurement\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:memory\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Largest Free Block", "heapblock", "{{ value_json.heapblock }}",
+    ",\"unit_of_measurement\":\"B\",\"state_class\":\"measurement\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:memory\"",
+    base, node, dataTopic, deviceJson);
+
+  char diagTopic[96];
+  snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/BootCount", st);
+  haSensor("Boot Count", "bootcount", "{{ value }}",
+    ",\"state_class\":\"total_increasing\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:restart\"",
+    base, node, diagTopic, deviceJson);
+  snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/ResetReason", st);
+  haSensor("Last Reset Reason", "resetreason", "{{ value }}",
+    ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:restart-alert\"",
+    base, node, diagTopic, deviceJson);
+  snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/PrevUptime", st);
+  haSensor("Previous Run Uptime", "prevuptime", "{{ value }}",
+    ",\"unit_of_measurement\":\"s\",\"device_class\":\"duration\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:timer-alert-outline\"",
+    base, node, diagTopic, deviceJson);
+  snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/PrevHeapMin", st);
+  haSensor("Previous Run Heap Low Water", "prevheapmin", "{{ value }}",
+    ",\"unit_of_measurement\":\"B\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:memory-arrow-down\"",
+    base, node, diagTopic, deviceJson);
 
   // Binary sensors
   haBinary("Charge Enabled Status", "chargeenabled", "chargeenabled", "", base, node, dataTopic, deviceJson);
@@ -577,13 +722,37 @@ static void haChunk5(HaCtx& c) {
 }
 
 /* Arms the sequence. Callers are MQTT and WebSocket callbacks, so this must
-   stay cheap - the messages themselves go out from haDiscoveryLoop(). */
-void publishHADiscovery() {
+   stay cheap - the messages themselves go out from haDiscoveryLoop().
+
+   force = a setting changed and the configs are genuinely stale, so send them
+   now regardless of having sent them already this boot, and without the boot
+   delay. An MQTT (re)connect passes false. */
+void publishHADiscovery(bool force) {
   if (!haDiscoveryEnabled) return;
+
+  /* Not on every connect. These are retained messages: the broker holds them
+     and Home Assistant re-reads them whenever it subscribes, so a reconnect
+     does not need them again. Sending them anyway meant every network flap ran
+     the most expensive thing this firmware does - and in a crash loop, where
+     each reboot reconnects, it ran it every twenty seconds, on a board that had
+     just died for want of memory. That is the loop feeding itself. */
+  static bool publishedThisBoot = false;
+  if (publishedThisBoot && !force) {
+    log_i("HA discovery already published this boot; retained on the broker");
+    return;
+  }
+  publishedThisBoot = true;
+
   haStep = 1;
+  haResumeFrom = 0;
+  haPaused = false;
+  // A forced republish is a response to something the user just did, so it
+  // should not sit out the boot delay
+  haArmedMs = force ? (millis() - HA_START_DELAY_MS) : millis();
   haLastStepMs = millis() - HA_CHUNK_GAP_MS;   // first group may go immediately
   log_i("Publishing Home Assistant Discovery configs...");
-  WS_LOG_I("Publishing Home Assistant Discovery configs...");
+  WS_LOG_I("Publishing Home Assistant Discovery configs%s...",
+           force ? "" : " (starting shortly)");
 }
 
 // Called every pass of the main loop; does nothing unless a sequence is armed.
@@ -593,6 +762,8 @@ void haDiscoveryLoop() {
     haStep = 0;                       // connection or OTA took it away; drop it
     return;
   }
+  // Held out of the boot window - see HA_START_DELAY_MS
+  if ((uint32_t)(millis() - haArmedMs) < HA_START_DELAY_MS) return;
   if ((millis() - haLastStepMs) < HA_CHUNK_GAP_MS) return;
   /* Wait rather than overrun. Holding here is safe: the sequence simply resumes
      on a later pass once the outbox has drained and the heap recovered, and if
@@ -602,6 +773,9 @@ void haDiscoveryLoop() {
   haLastStepMs = millis();
   HaCtx c;
   haBuildCtx(c);
+  haMsgSeq = 0;
+  haSentThisPass = 0;
+  haPaused = false;
   switch (haStep) {
     case 1: haChunk1(c); break;
     case 2: haChunk2(c); break;
@@ -610,10 +784,16 @@ void haDiscoveryLoop() {
     case 5: haChunk5(c); break;
   }
 
+  /* Stopped part way through on the heap gate. The group runs again next pass
+     and picks up at haResumeFrom, so haStep deliberately does not advance. */
+  if (haPaused) return;
+  haResumeFrom = 0;
+
   if (++haStep > HA_CHUNK_COUNT) {
     haStep = 0;
     log_i("Home Assistant Discovery published successfully.");
     WS_LOG_I("Home Assistant Discovery published successfully.");
+    Diag.Milestone("HA discovery");
   }
 }
 
@@ -681,7 +861,12 @@ void onMqttConnect(bool sessionPresent) {
   }
   mqttPublish((sTopic + "/status").c_str(), "online", true);
   yield();
-  
+
+  // Retained, so the reason for the last restart is on the broker from the
+  // first moment this connection exists rather than the first update
+  publishBootDiagnostics();
+  yield();
+
   // Arm Home Assistant Discovery - the main loop feeds it out from here
   publishHADiscovery();
   yield();
@@ -689,6 +874,9 @@ void onMqttConnect(bool sessionPresent) {
   // Send initial state updates. Retained, so Home Assistant picks them up when
   // it subscribes to each entity, whether that happens before or after this.
   sendUpdateMQTTData();
+  // Discovery has only been armed at this point, not sent - haDiscoveryLoop()
+  // reports its own cost when the last group goes out.
+  Diag.Milestone("MQTT connected");
 }
 
 void onMqttDisconnect(bool sessionPresent) {

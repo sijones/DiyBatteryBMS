@@ -38,6 +38,8 @@
 #include <Wire.h>
 
 #include "GPIOForbidden.h"
+// Before HTTPWSFunctions.h: the WebSocket payload reports the figures it keeps
+#include "Diagnostics.h"
 
 WiFiClient _wifiClient;
 
@@ -72,6 +74,8 @@ VeDirectFrameHandler veHandle;
 
 #include "HTTPWSFunctions.h"
 #include "mqttFunctions.h"
+// After HTTPWSFunctions.h: uses hexToBytes() and the wifiManager instance
+#include "SerialSetup.h"
 
 #ifdef USE_ONEWIRE
 #include "ONEWIRE.h"
@@ -101,6 +105,12 @@ void setup()
 #endif
 
   WS_LOG_I("=== DIY Battery BMS Starting ===");
+  // Straight to the serial line, not through a log macro - see SerialSetup.h
+  serialSetupBegin();
+  /* Straight after the banner, and before anything that could itself fail: the
+     first question about any restart is whether it was one we asked for, and
+     the answer sits unread in the RTC registers until this runs. */
+  Diag.Begin();
 
   if (!pref.isKey("EEPROMSetup"))
   {
@@ -220,6 +230,12 @@ void setup()
     log_d("NTP: accepting a server from the DHCP lease");
   }
 
+  /* Milestones through the rest of setup, because "setup complete" on its own
+     said 95KB had gone without saying to whom. The suspicion is the WiFi
+     driver's buffers, which is worth confirming rather than assuming - it is
+     the difference between tuning WiFi and looking somewhere else entirely. */
+  Diag.Milestone("settings loaded");
+
   if (!wifiManager.begin())
   {
     // Failed to configure, start the basics to enable web configuration
@@ -229,10 +245,14 @@ void setup()
     server.begin();
   }
 
+  // WiFi.mode()/WiFi.begin() bring the driver up in here, buffers and all
+  Diag.Milestone("WiFi stack up");
+
   // Load MQTT temp source settings before mqttsetup so onMqttConnect can subscribe
   Inverter.BattTempSource(pref.getUInt8(ccBattTempSrc, 0));
   Inverter.FanTempSource(pref.getUInt8(ccFanTempSrc, 0));
   mqttsetup();
+  Diag.Milestone("MQTT client made");
 #ifdef ESPCAN
   {
     uint8_t tx = pref.getUInt8(ccCAN_TX_PIN, 0);
@@ -276,6 +296,7 @@ void setup()
 #endif
   // Continue setup based on CAN init status
   bool canInitOK = Lcd.Data.CANInit.getValue();
+  Diag.Milestone("CAN driver up");
   
   Inverter.SetChargeVoltage((u_int16_t) pref.getUInt32(ccChargeVolt, initBattChargeVoltage));
   Inverter.SetOverVoltage((u_int16_t) pref.getUInt32(ccOverVoltage, initBattOverVoltage));
@@ -344,6 +365,7 @@ void setup()
 
   SendCanBusMQTTUpdates = millis();
   Lcd.UpdateScreenValues();
+  Diag.Milestone("CAN task started");
   xTaskCreate(&taskStartWebServices,"taskStartWebServices",4096, NULL, 6, NULL);
 
   // Start VE.Direct Serial Reading if Enabled
@@ -383,6 +405,7 @@ void setup()
   last_lcd_refresh = t;
   log_d("Setup complete, starting loop.");
   WS_LOG_I("System initialization complete, entering main loop");
+  Diag.Milestone("setup complete");
   return;
 }
 
@@ -540,11 +563,18 @@ void loop()
   time_t t = time(nullptr);
  
   if(WiFi.isConnected() && FirstRun && mqttEnabled) {
-    connectToMqtt();
     WS_LOG_I("WiFi connected, IP: %s", WiFi.localIP().toString().c_str());
+    // Before the MQTT connect, so association is billed separately from it
+    Diag.Milestone("WiFi associated");
+    connectToMqtt();
     FirstRun = false; }
   
   wifiManager.loop();
+  // Heap low-water marks, and the trail they leave on the way down. Ticks once
+  // a second; returns immediately the rest of the time.
+  Diag.Loop();
+  // WiFi setup over USB, and the address announced when it joins
+  serialSetupLoop();
   ScheduleApply(t);
 
   // Feeds out the Home Assistant discovery burst a group at a time - see the
