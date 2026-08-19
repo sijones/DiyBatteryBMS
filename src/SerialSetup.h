@@ -57,6 +57,7 @@ static void serialAnnounceNetwork() {
 static void serialHelp() {
   Serial.println();
   Serial.println("WiFi setup:");
+  Serial.println("  scan              list the networks in range");
   Serial.println("  ssid <name>       network name, rest of the line, spaces kept");
   Serial.println("  ssidhex <hex>     network name as exact bytes, for a name that");
   Serial.println("                    is not UTF-8 (some routers in JP/CN/KR/EU)");
@@ -107,6 +108,49 @@ static void serialHandle(char* line) {
       Serial.printf("%s\r\n", WiFi.localIP().toString().c_str());
     else
       Serial.println("not connected");
+  }
+  else if (!strcasecmp(line, "scan")) {
+    /* Synchronous on purpose. Everything else on this console answers on the
+       line after the command, and a scan that returned later would arrive in
+       the middle of whatever was typed next. It blocks the loop for a couple of
+       seconds; nothing here is time-critical while the board has no network.
+
+       Printed widest-useful-first: signal, whether it needs a passphrase, then
+       the name last because it is the only field that can contain spaces. A
+       reader - human or otherwise - can split the first two off the front and
+       take the rest of the line as the name, the same rule 'ssid' itself uses. */
+    Serial.println("[scan] scanning...");
+    Serial.flush();
+    const int n = WiFi.scanNetworks();
+    if (n <= 0) {
+      Serial.println(n == 0 ? "[scan] no networks found" : "[scan] scan failed");
+      WiFi.scanDelete();
+      return;
+    }
+    Serial.printf("[scan] %d network(s)\r\n", n);
+    for (int i = 0; i < n; i++) {
+      const String nm = WiFi.SSID(i);
+      /* A name that is not valid UTF-8 cannot be typed back in, so give the
+         hex form alongside it - that is exactly what 'ssidhex' takes. Hidden
+         networks scan with an empty name and have to be typed from memory. */
+      if (nm.length() == 0) {
+        Serial.printf("[scan] %4d  %-4s  (hidden)\r\n",
+                      WiFi.RSSI(i),
+                      WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "open" : "lock");
+        continue;
+      }
+      Serial.printf("[scan] %4d  %-4s  %s\r\n",
+                    WiFi.RSSI(i),
+                    WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "open" : "lock",
+                    nm.c_str());
+      if (!isValidUTF8(nm)) {
+        Serial.print("[scan]             hex ");
+        for (unsigned k = 0; k < nm.length(); k++) Serial.printf("%02x", (uint8_t)nm[k]);
+        Serial.println("   <- use 'ssidhex' for this one");
+      }
+    }
+    // The results hold heap until dropped, and this board has little to spare
+    WiFi.scanDelete();
   }
   else if (!strcasecmp(line, "ssid")) {
     if (!arg) { Serial.println("usage: ssid <name>"); return; }

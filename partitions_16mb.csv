@@ -1,0 +1,28 @@
+# DIY Battery BMS - 16MB flash (esp32s3-ESPCAN-PSRAM, and any N16 module)
+#
+# The S3 N16R8 carries 16MB but was built against partitions_8mb.csv, so the
+# upper half of the chip was not addressed by any partition - the same waste
+# partitions_8mb.csv was written to fix on the 8MB boards.
+#
+# Same reasoning as the other two tables otherwise: no SPIFFS, because nothing
+# in this project is stored outside NVS, and two OTA app slots so the firmware
+# update page still has somewhere to write an incoming image.
+#
+# Sized generously on purpose. Changing a partition table costs every user a
+# serial re-flash, so app slots of 0x7F0000 (7.9375MB) mean the question does
+# not come back for these boards. A 1.7MB firmware uses a fifth of one slot;
+# the empty remainder costs nothing but flash that has no other claim on it.
+#
+# nvs and otadata keep default.csv's offsets and sizes EXACTLY, so settings
+# survive the re-flash this table requires. Do not move them.
+#
+# Ends exactly on 0x1000000. Check the arithmetic when editing: a table that
+# overruns the flash is rejected at build time, but one that overlaps is not,
+# and partitions_8mb.csv shipped once with an end 128KB past the chip.
+#
+# Name,   Type, SubType, Offset,    Size,     Flags
+nvs,      data, nvs,     0x9000,    0x5000,
+otadata,  data, ota,     0xe000,    0x2000,
+app0,     app,  ota_0,   0x10000,   0x7F0000,
+app1,     app,  ota_1,   0x800000,  0x7F0000,
+coredump, data, coredump,0xFF0000,  0x10000,
