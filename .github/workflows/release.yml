@@ -2,8 +2,14 @@
 #
 # The whole release, from a tag to a board someone can flash in a browser:
 #
-#   enumerate -> build every env in parallel -> collect -> manifests -> GitHub
-#   release -> Cloudflare Pages
+#   enumerate -> build every env in parallel -> collect -> restore what is
+#   already published -> manifests -> GitHub release -> Cloudflare Pages
+#
+# The restore step is not optional and is not a CI detail: a Pages deployment is
+# a complete snapshot of site/firmware, and site/firmware is gitignored, so a
+# fresh checkout would publish a site containing only the version it just built
+# and quietly delete every older one. It runs as part of `npm run deploy` so a
+# person deploying from a fresh clone is protected by the same step.
 #
 # It exists because doing this by hand takes about seventy-five minutes on one
 # machine and depends on that machine having the toolchain, the Cloudflare
