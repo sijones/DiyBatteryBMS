@@ -857,6 +857,10 @@
     .sched-count { align-self: center; font-size: 12px; color: var(--text-faint); flex: none; }
     .sched-count.full { color: var(--warn); }
 
+    .fw-download { margin-bottom: 12px; }
+    .fw-download a { font-size: 13px; font-weight: 500; }
+    .fw-download-note { display: block; margin-top: 2px; font-size: 11.5px; color: var(--text-faint); }
+
     .sched-row {
       display: grid;
       /* Fields group left; the slack column keeps Remove pinned right instead of
@@ -2153,6 +2157,15 @@
           </div>
         </div>
         <div class="form-group">
+          <!-- Where to get the file, next to the box that wants one. The device
+               cannot fetch its own firmware - TLS plus a 1.7MB image needs more
+               internal heap than a board without PSRAM has - but it knows
+               exactly which of the builds it is, so it hands that to the site
+               and the site hands back the one right file. -->
+          <div id="fwDownloadRow" class="fw-download" hidden>
+            <a id="fwDownloadLink" href="#" target="_blank" rel="noopener">Get the latest firmware for this board</a>
+            <span class="fw-download-note">opens diy.power-pilot.uk, then choose the downloaded file below</span>
+          </div>
           <label for="firmwareFile">Firmware image (.bin or .bin.gz)</label>
           <input type="file" accept=".bin,.bin.gz" id="firmwareFile" style="margin-bottom:10px">
           <button id="firmwareBtn" class="btn-primary" onclick="uploadFirmware()">Update Firmware</button>
@@ -3297,14 +3310,17 @@
         // Mirror into the header so you can tell two devices apart at a glance
         var h=document.getElementById('fwHeader');
         if(h) { h.textContent=obj.fwversion_bms; document.getElementById('fwMeta').hidden = false; }
+        fwLink.from = obj.fwversion_bms; updateFwDownloadLink();
       }
       if(obj.hasOwnProperty('fwbuild')) {
         var e=document.getElementById('fwBuild');
         if(e) e.textContent=obj.fwbuild;
       }
+      if(obj.hasOwnProperty('pioenv')) { fwLink.env = obj.pioenv; updateFwDownloadLink(); }
       if(obj.hasOwnProperty('apppartkb')) {
         var e=document.getElementById('fwPartition');
         if(e) e.textContent = obj.apppartkb ? (obj.apppartkb/1024).toFixed(2) + ' MB' : '--';
+        fwLink.slot = obj.apppartkb; updateFwDownloadLink();
       }
       if(obj.hasOwnProperty('legacypartitions')) {
         var w=document.getElementById('partitionWarn');
@@ -3671,6 +3687,27 @@
 
     function showFeedback(message) {
       showToast(message, 'pending', 2500);
+    }
+
+    /* The three things the download page needs, which arrive together in the
+       static payload but are read by three separate handlers above - so keep
+       what has been seen and rebuild the link whenever another piece lands.
+       Only the env is required. Without it the site cannot tell which of the
+       builds this board is running, and a link that guesses at that is worse
+       than no link: the wrong image flashes cleanly and does not boot. A
+       firmware built before this define existed simply never shows the row. */
+    var fwLink = { env: '', from: '', slot: 0 };
+
+    function updateFwDownloadLink() {
+      var row = document.getElementById('fwDownloadRow');
+      var a = document.getElementById('fwDownloadLink');
+      if (!row || !a) return;
+      if (!fwLink.env) { row.hidden = true; return; }
+      var q = 'env=' + encodeURIComponent(fwLink.env);
+      if (fwLink.from) q += '&from=' + encodeURIComponent(fwLink.from);
+      if (fwLink.slot) q += '&slot=' + encodeURIComponent(fwLink.slot);
+      a.href = 'https://diy.power-pilot.uk/update.html?' + q;
+      row.hidden = false;
     }
 
     function uploadFirmware() {

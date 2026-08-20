@@ -623,6 +623,15 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["fanfulltemp"] = Inverter.GetFanFullTemp();
     doc["fwversion_bms"] = FW_VERSION;
     doc["fwbuild"] = FW_BUILD;
+    /* Which of the builds this is, exactly - scripts/build_env.py puts the env
+       name in at compile time. FW_BUILD above is the wiring only ("ESP32
+       TWAI"), which no longer identifies a build now that flash size and PSRAM
+       vary too, and those are the parts that decide which image this board can
+       accept. The web UI puts it in the download link so the site can hand back
+       the right file rather than a directory to guess from. */
+    #ifdef PIO_ENV
+    doc["pioenv"] = PIO_ENV;
+    #endif
     /* 3.0 moved to app slots of 1.9375MB (4MB flash) or 3.9375MB (8MB). An OTA
        cannot rewrite the partition table, so a device updated over the air from
        2.x is running 3.x code inside 2.x's 1.25MB slot and will one day refuse
