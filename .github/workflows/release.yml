@@ -2,14 +2,14 @@
 #
 # The whole release, from a tag to a board someone can flash in a browser:
 #
-#   enumerate -> build 30 envs in parallel -> collect -> manifests -> GitHub
+#   enumerate -> build every env in parallel -> collect -> manifests -> GitHub
 #   release -> Cloudflare Pages
 #
 # It exists because doing this by hand takes about seventy-five minutes on one
 # machine and depends on that machine having the toolchain, the Cloudflare
 # credentials and every env built in the same pass. The last of those is the one
 # that actually went wrong: a bare `pio run` builds only default_envs, so a
-# release cut locally could contain one board out of thirty and say nothing
+# release cut locally could contain one board out of twenty-one and say nothing
 # about it. Here the env list is read out of platformio.ini and each one is a
 # job, so a missing build is a red X rather than a quiet omission.
 #

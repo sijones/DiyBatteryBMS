@@ -1,8 +1,8 @@
 {
 	"version": "2.0.0",
-	// Thirty envs, five tasks. The per-env tasks that used to live here listed
-	// seven by hand and had already fallen behind the ini; at thirty that stops
-	// being a maintenance annoyance and becomes a guarantee of being wrong. The
+	// Twenty-one envs, five tasks. The per-env tasks that used to live here
+	// listed seven by hand and had already fallen behind the ini; at twenty-one
+	// that stops being an annoyance and becomes a guarantee of being wrong. The
 	// two tasks that need an env ask for one instead, from the list in "inputs"
 	// at the bottom - which is the only place a new env has to be added.
 	"tasks": [
@@ -40,8 +40,8 @@
 			// Enumerating from the ini keeps it from falling behind the way a
 			// hand-written list already had.
 			//
-			// Thirty builds is minutes, not a minute. Use the pick-env task while
-			// working; this one is for cutting a release.
+			// Twenty-one builds is minutes, not a minute. Use the pick-env task
+			// while working; this one is for cutting a release.
 			"label": "Release: Build+Zip (All Envs)",
 			"type": "shell",
 			"command": "$envs = Get-Content \"${workspaceFolder}\\platformio.ini\" | Select-String '^\\[env:(.+)\\]' | ForEach-Object { '--environment', $_.Matches[0].Groups[1].Value }; Write-Host \"Building $($envs.Count / 2) environments\"; & C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run @envs; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
@@ -75,21 +75,12 @@
 				"esp32dev-4mb",
 				"esp32dev-8mb",
 				"esp32dev-16mb",
-				"esp32dev-4mb-psram",
-				"esp32dev-8mb-psram",
-				"esp32dev-16mb-psram",
 				"esp32plus-4mb",
 				"esp32plus-8mb",
 				"esp32plus-16mb",
-				"esp32plus-4mb-psram",
-				"esp32plus-8mb-psram",
-				"esp32plus-16mb-psram",
 				"esp32-ESPCAN-4mb",
 				"esp32-ESPCAN-8mb",
 				"esp32-ESPCAN-16mb",
-				"esp32-ESPCAN-4mb-psram",
-				"esp32-ESPCAN-8mb-psram",
-				"esp32-ESPCAN-16mb-psram",
 				"esp32s3-ESPCAN-8mb",
 				"esp32s3-ESPCAN-16mb",
 				"esp32s3-ESPCAN-8mb-psram",

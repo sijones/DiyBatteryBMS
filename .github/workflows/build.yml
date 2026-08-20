@@ -1,13 +1,13 @@
 # Does it still compile?
 #
-# Four envs, not thirty. This runs on every push and its job is to fail fast
+# Four envs, not twenty-one. This runs on every push and its job is to fail fast
 # when something stops building - and a break is almost never confined to one
 # flash size, because flash size changes a partition table and nothing else.
 # What DOES vary between builds is the chip and whether PSRAM is on, so the four
 # here are one per chip family plus a PSRAM one, which is the smallest set that
 # still covers every distinct compile.
 #
-# The full thirty are built at release time in release.yml. Running them here
+# All twenty-one are built at release time in release.yml. Running them here
 # would cost nothing on a public repo, but it would put a twenty-minute wait on
 # every push to catch what these four catch in five.
 

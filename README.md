@@ -344,6 +344,12 @@ out everything that would not work.
   `board_build.arduino.memory_type = qio_qspi` instead.
 - **No PSRAM variants** for `esp32c3-ESPCAN`, which has no external RAM interface at all, or for
   `xiao-esp32s3`, which has 8MB of flash and 8MB of PSRAM soldered in package.
+- **No PSRAM on the classic ESP32 either** — `esp32dev`, `esp32plus` and `esp32-ESPCAN` are
+  4MB/8MB/16MB only. WROVER modules are real, but the build does not fit: switching PSRAM on brings
+  in the cache-issue workaround, which needs about 3.9KB more IRAM than the chip has left. The
+  non-PSRAM firmware already fills 130,423 bytes of the ESP32's 131,072-byte IRAM, and all of it
+  belongs to the Arduino and WiFi libraries. A WROVER runs the ordinary build; its extra RAM simply
+  goes unused.
 
 The sections below give the pins for each wiring; they apply to every flash and PSRAM variant of it.
 
