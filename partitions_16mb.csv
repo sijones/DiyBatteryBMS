@@ -1,4 +1,4 @@
-# DIY Battery BMS - 16MB flash (esp32s3-ESPCAN-PSRAM, and any N16 module)
+# DIY Battery BMS - 16MB flash (every -16mb env, and any N16 module)
 #
 # The S3 N16R8 carries 16MB but was built against partitions_8mb.csv, so the
 # upper half of the chip was not addressed by any partition - the same waste

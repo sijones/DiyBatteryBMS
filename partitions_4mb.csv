@@ -1,4 +1,4 @@
-# DIY Battery BMS - 4MB flash (esp32dev, esp32plus, esp32-ESPCAN, esp32c3-ESPCAN)
+# DIY Battery BMS - 4MB flash (every -4mb env)
 #
 # Replaces the Arduino default.csv, which spent 0x160000 (1.375MB) on a SPIFFS
 # partition this project has never used - the web UI is compiled into the

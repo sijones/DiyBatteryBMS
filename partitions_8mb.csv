@@ -1,4 +1,4 @@
-# DIY Battery BMS - 8MB flash (esp32s3-ESPCAN, esp32s3-MCP, xiao-esp32s3)
+# DIY Battery BMS - 8MB flash (every -8mb env, and xiao-esp32s3)
 #
 # These boards carry 8MB but were running the 4MB default.csv, so half the chip
 # was not addressed by any partition at all. Same reasoning as partitions_4mb.csv

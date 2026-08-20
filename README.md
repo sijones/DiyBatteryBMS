@@ -220,9 +220,13 @@ is compiled into the firmware and every setting lives in NVS. That space now goe
 | SPIFFS | 1.375MB, unused | removed |
 | NVS | 20KB @ `0x9000` | unchanged, deliberately |
 
-8MB boards (`esp32s3-ESPCAN`, `esp32s3-MCP`, `xiao-esp32s3`) were running the 4MB table, so half the
-chip was not addressed at all. They are sized generously now on purpose: a partition change costs
-every user a re-flash, so the one forced at 3.0 should be the last one those boards ever need.
+The 8MB boards were running the 4MB table, so half the chip was not addressed at all, and the 16MB
+S3 was running the 8MB one. They are sized generously now on purpose: a partition change costs every
+user a re-flash, so the one forced at 3.0 should be the last one those boards ever need.
+
+Which table a build uses is now stated in its environment name — see
+[Choosing an environment](#choosing-an-environment) — rather than being a property of the board name
+that nobody could see.
 
 Two OTA app slots are kept throughout, so the firmware update page still works as before.
 
@@ -316,35 +320,62 @@ esp32dev, esp32plus, lilygo CAN485, ESP32-S3 with built-in CAN (TWAI) or without
 
 Please use the recommended hardware, as a personal project it's difficult to support other configurations.
 
+## Choosing an environment
+
+An environment name is the wiring, then the flash size, then whether the module has PSRAM:
+
+```
+esp32s3-ESPCAN-16mb-psram
+└──────┬─────┘ └─┬─┘ └─┬─┘
+   wiring     flash   PSRAM
+```
+
+Pick the one that matches the module in your hand. Flash size is not cosmetic: a 16MB partition
+table on a 4MB chip is the fastest way to end up with a board that does not boot, and a build that
+addresses only 4MB of a 16MB chip wastes three quarters of it. If you are unsure what you have, the
+browser flasher at [diy.power-pilot.uk](https://diy.power-pilot.uk) reads it off the chip and greys
+out everything that would not work.
+
+- **Flash sizes**: `-4mb`, `-8mb`, `-16mb`. All three tables keep NVS at the same offset, so moving a
+  board between them keeps your settings.
+- **PSRAM**: add `-psram`. It is in the name because PSRAM is a property of the module, not the
+  wiring — a board without it builds from a `-psram` env and then quietly runs on internal RAM only.
+  The S3 `-psram` builds are for the R8 (octal) modules; an R2 part is quad and needs
+  `board_build.arduino.memory_type = qio_qspi` instead.
+- **No PSRAM variants** for `esp32c3-ESPCAN`, which has no external RAM interface at all, or for
+  `xiao-esp32s3`, which has 8MB of flash and 8MB of PSRAM soldered in package.
+
+The sections below give the pins for each wiring; they apply to every flash and PSRAM variant of it.
+
 ## Recommended PIN Configuration
 
-### esp32dev Environment
+### esp32dev-* Environments
 - **CAN_BUS_CS_PIN**: 2
 - **CAN0_INT**: 22
 - **VEDIRECT_RX**: 33
 - **VEDIRECT_TX**: 32 (optional)
 
-### esp32plus Environment
+### esp32plus-* Environments
 - **CAN_BUS_CS_PIN**: 5
 - **CAN0_INT**: 13
 - **VEDIRECT_RX**: 33
 - **VEDIRECT_TX**: 32 (optional)
 
-### esp32-ESPCAN Environment (Built-in CAN)
+### esp32-ESPCAN-* Environments (Built-in CAN)
 - **CAN_TX_PIN**: 27
 - **CAN_RX_PIN**: 26
 - **CAN_EN_PIN**: 23
 - **VEDIRECT_RX**: 33
 - **VEDIRECT_TX**: 32 (optional)
 
-### esp32s3-ESPCAN Environment (Built-in CAN)
+### esp32s3-ESPCAN-* Environments (Built-in CAN)
 - **CAN_TX_PIN**: 27
 - **CAN_RX_PIN**: 26
 - **CAN_EN_PIN**: 23
 - **VEDIRECT_RX**: 33
 - **VEDIRECT_TX**: 32 (optional)
 
-### esp32c3-ESPCAN Environment (Built-in CAN)
+### esp32c3-ESPCAN-* Environments (Built-in CAN)
 - **CAN_TX_PIN**: 6
 - **CAN_RX_PIN**: 7
 - **CAN_EN_PIN**: 5

@@ -1,5 +1,10 @@
 {
 	"version": "2.0.0",
+	// Thirty envs, five tasks. The per-env tasks that used to live here listed
+	// seven by hand and had already fallen behind the ini; at thirty that stops
+	// being a maintenance annoyance and becomes a guarantee of being wrong. The
+	// two tasks that need an env ask for one instead, from the list in "inputs"
+	// at the bottom - which is the only place a new env has to be added.
 	"tasks": [
 		{
 			"type": "PlatformIO",
@@ -11,54 +16,26 @@
 			"label": "PlatformIO: Build"
 		},
 		{
-			"label": "Release: Build+Zip (esp32-ESPCAN)",
+			// No `buildfs`: there is no filesystem image to build. The web UI is
+			// gzipped into the firmware by embed_html.py and every setting lives
+			// in NVS, which is why none of the partition tables carry a SPIFFS
+			// partition for it to write into.
+			"label": "Release: Build+Zip (pick env)",
 			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32-ESPCAN; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
-			"group": "build"
-		},
-		{
-			"label": "Release: Build+Zip (esp32dev)",
-			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32dev; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32dev; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
-			"group": "build"
-		},
-		{
-			"label": "Release: Build+Zip (esp32plus)",
-			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32plus; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32plus; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
-			"group": "build"
-		},
-		{
-			"label": "Release: Build+Zip (esp32s3-ESPCAN)",
-			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32s3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32s3-ESPCAN; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
-			"group": "build"
-		},
-		{
-			"label": "Release: Build+Zip (esp32c3-ESPCAN)",
-			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32c3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target buildfs --environment esp32c3-ESPCAN; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment ${input:env}; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
 			"group": "build"
 		},
 		{
 			// Every env in platformio.ini, in one pass. `pio run` with no
 			// --environment builds them all, so this does not need editing when
-			// an env is added - the previous version listed seven by hand and had
-			// already fallen behind.
+			// an env is added.
 			//
-			// No `buildfs`: there is no filesystem image to build. The web UI is
-			// gzipped into the firmware by embed_html.py and every setting lives
-			// in NVS, which is why none of the partition tables carry a SPIFFS
-			// partition for it to write into.
+			// It is thirty builds now rather than seven, so it is minutes rather
+			// than a minute. Use the pick-env task while working; this one is for
+			// cutting a release.
 			"label": "Release: Build+Zip (All Envs)",
 			"type": "shell",
 			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
-			"group": "build"
-		},
-		{
-			"label": "Release: Build+Zip (esp32s3-ESPCAN-PSRAM)",
-			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --environment esp32s3-ESPCAN-PSRAM; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
 			"group": "build"
 		},
 		{
@@ -68,43 +45,55 @@
 			"group": "build"
 		},
 		{
-			"label": "Erase+Upload (esp32dev)",
+			// Erase first, because moving a board between flash sizes changes its
+			// partition table: one coming from the 8MB table has app1 and coredump
+			// in the wrong places, and nvs is the only thing at a matching offset.
+			// An erase takes the settings with it - scripts/Upgrade-DiyBatteryBMS.ps1
+			// is the path that keeps them.
+			"label": "Erase+Upload (pick env)",
 			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32dev; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32dev",
+			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment ${input:env}; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment ${input:env}",
 			"group": "build"
-		},
+		}
+	],
+	"inputs": [
 		{
-			"label": "Erase+Upload (esp32plus)",
-			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32plus; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32plus",
-			"group": "build"
-		},
-		{
-			"label": "Erase+Upload (esp32-ESPCAN)",
-			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32-ESPCAN",
-			"group": "build"
-		},
-		{
-			"label": "Erase+Upload (esp32s3-ESPCAN)",
-			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32s3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32s3-ESPCAN",
-			"group": "build"
-		},
-		{
-			"label": "Erase+Upload (esp32c3-ESPCAN)",
-			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32c3-ESPCAN; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32c3-ESPCAN",
-			"group": "build"
-		},
-		{
-			// Erase, because this env changed partition table: a board coming from
-			// the 8MB table has app1 and coredump in the wrong places, and NVS is
-			// the only thing at a matching offset.
-			"label": "Erase+Upload (esp32s3-ESPCAN-PSRAM)",
-			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target erase --environment esp32s3-ESPCAN-PSRAM; C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run --target upload --environment esp32s3-ESPCAN-PSRAM",
-			"group": "build"
+			"id": "env",
+			"type": "pickString",
+			"description": "Which environment? Flash size and PSRAM are part of the name - pick the one that matches the module in your hand, not the one that sounds closest.",
+			"default": "esp32-ESPCAN-4mb",
+			"options": [
+				"esp32dev-4mb",
+				"esp32dev-8mb",
+				"esp32dev-16mb",
+				"esp32dev-4mb-psram",
+				"esp32dev-8mb-psram",
+				"esp32dev-16mb-psram",
+				"esp32plus-4mb",
+				"esp32plus-8mb",
+				"esp32plus-16mb",
+				"esp32plus-4mb-psram",
+				"esp32plus-8mb-psram",
+				"esp32plus-16mb-psram",
+				"esp32-ESPCAN-4mb",
+				"esp32-ESPCAN-8mb",
+				"esp32-ESPCAN-16mb",
+				"esp32-ESPCAN-4mb-psram",
+				"esp32-ESPCAN-8mb-psram",
+				"esp32-ESPCAN-16mb-psram",
+				"esp32s3-ESPCAN-8mb",
+				"esp32s3-ESPCAN-16mb",
+				"esp32s3-ESPCAN-8mb-psram",
+				"esp32s3-ESPCAN-16mb-psram",
+				"esp32s3-MCP-8mb",
+				"esp32s3-MCP-16mb",
+				"esp32s3-MCP-8mb-psram",
+				"esp32s3-MCP-16mb-psram",
+				"esp32c3-ESPCAN-4mb",
+				"esp32c3-ESPCAN-8mb",
+				"esp32c3-ESPCAN-16mb",
+				"xiao-esp32s3"
+			]
 		}
 	]
 }
