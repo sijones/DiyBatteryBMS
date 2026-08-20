@@ -13,3 +13,13 @@ data/index-ap.htm.template.hidden
 data/index.htm.template.hidden
 src/embedded_html.h
 .claude/
+
+# Web flasher. site/ is a deploy directory, not a source directory: app.js is
+# the esbuild bundle of web/src, and firmware/ is filled by build-manifests.mjs
+# from .pio/build. Both are rebuilt by `npm run deploy` before wrangler uploads
+# them, so git tracks what they are built from and nothing else.
+node_modules/
+.wrangler/
+site/app.js
+site/firmware/
+design/

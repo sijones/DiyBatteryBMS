@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DIY Battery BMS — web flasher</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='4' width='18' height='4.6' rx='2.3' fill='%2335c9d4'/%3E%3Crect x='3' y='10.2' width='12.5' height='4.6' rx='2.3' fill='%23e6edf5'/%3E%3Crect x='3' y='16.4' width='7' height='4.6' rx='2.3' fill='%23e6edf5' opacity='0.45'/%3E%3C/svg%3E">
+<style>
+  /* Lifted from the device's own web UI so the two read as one product. */
+  :root {
+    --bg:#10151c; --panel:#171e27; --panel-2:#1e2732; --raised:#26313f;
+    --line:#2c3746; --line-soft:#232d3a;
+    --text:#e6edf5; --text-dim:#94a3b4; --text-faint:#6b7889;
+    --accent:#35c9d4; --accent-dim:#1d7f88; --accent-ink:#06222a;
+    --ok:#3fbf6a; --warn:#e0a33a; --err:#e5544b;
+    --r-sm:4px; --r:7px;
+    --mono: ui-monospace,'Cascadia Mono','SF Mono','JetBrains Mono',Consolas,'DejaVu Sans Mono',monospace;
+    --sans:'Segoe UI Variable Text','Segoe UI',-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh; display:flex; flex-direction:column; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+
+  header { display:flex; align-items:center; gap:10px; height:52px; padding:0 20px; border-bottom:1px solid var(--line-soft); flex:none; }
+  header svg { width:23px; height:23px; flex:none; }
+  .words { font-family:var(--mono); font-size:15px; font-weight:500; }
+  .words span { color:var(--accent); }
+  .tag { font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--text-faint); padding-top:2px; }
+
+  main { flex-grow:1; width:100%; max-width:820px; margin:0 auto; padding:36px 20px 28px; }
+  h1 { font-size:clamp(21px,4vw,26px); font-weight:600; letter-spacing:-.01em; margin-bottom:12px; text-wrap:pretty; }
+  p { font-size:14.5px; line-height:1.6; color:var(--text-dim); margin-bottom:14px; text-wrap:pretty; }
+
+  button {
+    padding:11px 20px; background:var(--raised); color:var(--text); border:1px solid var(--line);
+    border-radius:var(--r-sm); cursor:pointer; font-family:var(--sans); font-size:13px; font-weight:500;
+  }
+  button:hover:not(:disabled) { border-color:var(--accent-dim); color:var(--accent); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .primary { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); font-weight:600; }
+  .primary:hover:not(:disabled) { color:var(--accent-ink); }
+  .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:20px; }
+
+  .card { background:var(--panel); border:1px solid var(--line-soft); border-radius:var(--r); padding:18px 20px; margin-bottom:14px; }
+  .card h2 { font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--text-faint); margin-bottom:14px; }
+  .kv { display:flex; justify-content:space-between; align-items:baseline; gap:16px; padding:5px 0; }
+  .kv .k { font-size:13px; color:var(--text-dim); flex:none; }
+  .kv .v { font-family:var(--mono); font-size:13px; text-align:right; word-break:break-all; }
+  .v-ok { color:var(--ok); } .v-dim { color:var(--text-dim); }
+
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-faint); padding:0 10px 8px 0; }
+  td { padding:5px 10px 5px 0; font-size:13px; border-top:1px solid var(--line-soft); }
+  .mono { font-family:var(--mono); } .dim { color:var(--text-dim); }
+
+  .note { font-size:13px; line-height:1.55; margin:14px 0 0; }
+  .note.ok { color:var(--ok); } .note.warn { color:var(--warn); }
+  .banner { display:flex; gap:12px; padding:14px 16px; background:var(--panel); border:1px solid var(--line-soft); border-radius:var(--r); margin-bottom:18px; }
+  .banner.warn { border-left:2px solid var(--warn); }
+  .banner.err { border-left:2px solid var(--err); }
+
+  .fields { display:flex; flex-direction:column; gap:13px; }
+  .fields label { display:flex; flex-direction:column; gap:6px; }
+  .fields span { font-size:12px; font-weight:600; color:var(--text-dim); }
+  .fields input {
+    background:var(--panel-2); color:var(--text); border:1px solid var(--line); border-radius:var(--r-sm);
+    padding:10px 12px; font-family:var(--mono); font-size:13.5px;
+  }
+  .fields input:focus { outline:none; border-color:var(--accent); }
+  .fields input:disabled { opacity:.45; }
+
+  pre#wifi-log {
+    background:var(--panel-2); border:1px solid var(--line-soft); border-radius:var(--r);
+    padding:12px 14px; margin-top:16px; font-family:var(--mono); font-size:12px; line-height:1.7;
+    color:var(--text-dim); max-height:200px; overflow:auto; white-space:pre-wrap; word-break:break-word;
+  }
+
+  pre#boot-log {
+    background:var(--panel-2); border:1px solid var(--line-soft); border-radius:var(--r);
+    padding:12px 14px; margin-top:14px; font-family:var(--mono); font-size:12px; line-height:1.7;
+    color:var(--text-dim); max-height:220px; overflow:auto; white-space:pre-wrap; word-break:break-word;
+  }
+  pre#log {
+    background:var(--panel-2); border:1px solid var(--line-soft); border-radius:var(--r);
+    padding:12px 14px; font-family:var(--mono); font-size:12px; line-height:1.7; color:var(--text-dim);
+    max-height:260px; overflow:auto; white-space:pre-wrap; word-break:break-word;
+  }
+
+  footer { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; width:100%; max-width:820px;
+           margin:0 auto; padding:16px 20px 22px; font-size:12px; color:var(--text-faint); }
+  footer .spacer { flex-grow:1; }
+
+  /* Build chooser. Incompatible rows stay visible with their reason - hiding
+     them turns "this build needs 16MB" into "why isn't my board listed". */
+  .choice { display:flex; align-items:flex-start; gap:13px; padding:14px 16px; background:var(--panel);
+            border:1px solid var(--line-soft); border-radius:var(--r); margin-bottom:9px; cursor:pointer; }
+  .choice:hover:not(.disabled) { border-color:var(--accent-dim); }
+  .choice.disabled { opacity:.5; cursor:not-allowed; }
+  .choice input { margin-top:3px; accent-color:var(--accent); flex:none; }
+  .choice-body { flex-grow:1; min-width:0; }
+  .choice-head { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:3px; }
+  .choice-name { font-size:14px; font-weight:600; }
+  .choice-env { font-size:11px; }
+  .choice-detail { font-size:12.5px; color:var(--text-dim); }
+  .choice-detail.bad { color:var(--err); }
+
+  /* The scan list scrolls at five rows. A scan in a terraced street came back
+     with twenty-odd networks, which pushed "Or type it in" and the Save button
+     off the bottom of the screen - the page then reads as though picking from
+     the list is the only thing on offer, and the one person who needs to type a
+     hidden SSID never finds out they can.
+
+     The cap itself is set in JS, not here, because a row is not a fixed height:
+     a long name carrying an "open" and a "3 radios" badge wraps its head line
+     and stands taller than the rest. Five of whatever THIS scan produced. */
+  #wifi-list { overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
+  /* Only when it actually scrolls, so a short list is not left with a gutter
+     down its right-hand side for a scrollbar that never appears. */
+  #wifi-list.scrolls { padding-right:9px; }
+  #wifi-list::-webkit-scrollbar { width:9px; }
+  #wifi-list::-webkit-scrollbar-track { background:transparent; }
+  #wifi-list::-webkit-scrollbar-thumb { background:var(--line); border-radius:5px; }
+  #wifi-list::-webkit-scrollbar-thumb:hover { background:var(--accent-dim); }
+
+  .banner.ok { border-left:2px solid var(--ok); }
+  .verdict-title { font-size:14px; font-weight:600; margin-bottom:5px; }
+  .verdict-detail { font-size:13px; line-height:1.55; color:var(--text-dim); }
+
+  .picker { display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
+  .tabs { display:flex; gap:2px; background:var(--panel-2); border:1px solid var(--line-soft); border-radius:var(--r-sm); padding:2px; }
+  .tab { padding:6px 14px; background:transparent; border:none; border-radius:3px; font-size:12.5px; font-weight:600; color:var(--text-dim); }
+  .tab:hover:not(:disabled) { color:var(--text); }
+  .tab.active { background:var(--accent); color:var(--accent-ink); }
+  .tab:disabled { opacity:.35; }
+  .version-pick { display:flex; align-items:center; gap:9px; font-size:12.5px; color:var(--text-dim); }
+  .version-pick select {
+    background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:var(--r-sm);
+    padding:7px 10px; font-family:var(--mono); font-size:12.5px;
+  }
+  .version-pick select:disabled { opacity:.6; }
+
+  .backup { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .check { display:flex; align-items:flex-start; gap:11px; flex-grow:1; min-width:220px; cursor:pointer; }
+  .check input { margin-top:3px; accent-color:var(--accent); flex:none; }
+  .choice.disabled, label.disabled { opacity:.5; cursor:not-allowed; }
+  .danger { background:transparent; border-color:#4a3038; color:var(--err); font-weight:600; }
+  .danger:hover:not(:disabled) { background:color-mix(in srgb, var(--err) 12%, transparent); color:var(--err); border-color:var(--err); }
+
+  .progress-head { display:flex; align-items:baseline; gap:12px; font-size:13px; font-weight:600; margin-bottom:10px; }
+  .progress-head .spacer { flex-grow:1; }
+  .progress-head .dim { font-weight:400; font-size:12px; }
+  .track { height:8px; background:var(--raised); border-radius:100px; overflow:hidden; }
+  .bar { height:100%; width:0; background:var(--accent); border-radius:100px; transition:width .2s linear; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="4.6" rx="2.3" fill="#35c9d4"/>
+    <rect x="3" y="10.2" width="12.5" height="4.6" rx="2.3" fill="#e6edf5"/>
+    <rect x="3" y="16.4" width="7" height="4.6" rx="2.3" fill="#e6edf5" opacity=".45"/>
+  </svg>
+  <div class="words">diy<span>-</span>battery<span>-</span>bms</div>
+  <div class="tag">web flasher</div>
+</header>
+
+<main>
+
+  <!-- The first thing anyone sees. Deliberately short: the detail belongs on the
+       step it applies to, where it can say something true about the board in
+       front of you rather than in general. -->
+  <section data-stage="idle" hidden>
+    <h1>Flash a board over USB</h1>
+
+    <!-- Shown in place of the fine print below when the browser has no Web
+         Serial. Its wording is filled in by JS so it can name the browser the
+         person is actually using - "Firefox cannot do this" lands, where a list
+         of five browsers leaves them to work out which line is theirs. -->
+    <div class="banner warn" id="no-serial" hidden>
+      <div>
+        <div class="verdict-title" id="no-serial-title">This browser cannot talk to a board</div>
+        <div class="verdict-detail" id="no-serial-detail"></div>
+      </div>
+    </div>
+
+    <p>
+      Plug an ESP32 in and this reads back what it is — chip, flash size, PSRAM, partition layout — then
+      writes the build that matches it and puts it on your WiFi. No drivers, no esptool, no zip to unpack.
+    </p>
+    <p>
+      Nothing is written until you have picked a build and seen the list of exactly what will be written.
+      Your settings are kept where the build allows it — it says which before it starts — and can be
+      saved to your machine first.
+    </p>
+    <div class="actions"><button id="connect" class="primary">Connect a board</button></div>
+    <p id="serial-note" style="margin-top:22px; font-size:13px">
+      Needs Chrome, Edge or Opera on a desktop. Safari has no Web Serial API and neither does Firefox,
+      though a Firefox add-on that adds one works here.
+    </p>
+  </section>
+
+  <section data-stage="working" hidden>
+    <h1>Talking to the board…</h1>
+    <p>Syncing with the bootloader and reading the flash layout.</p>
+    <pre id="log"></pre>
+  </section>
+
+  <section data-stage="identified" hidden>
+    <h1>What is on the other end of the cable</h1>
+    <div class="card"><h2>Chip</h2><div id="identity"></div></div>
+    <div class="card"><h2>Flash layout</h2><div id="layout"></div></div>
+    <div class="actions">
+      <button id="to-choose" class="primary">Choose a build</button>
+      <button id="disconnect">Disconnect</button>
+    </div>
+    <p style="margin-top:22px; font-size:13px">Read from the board itself, not guessed from what you told us.</p>
+  </section>
+
+  <section data-stage="choose" hidden>
+    <h1>Which board is it?</h1>
+    <p>
+      The chip cannot tell us this — an MCP2515 on SPI and a built-in CAN controller look identical from here.
+      Builds that cannot run on what was detected are shown with the reason.
+    </p>
+    <div class="picker">
+      <div class="tabs">
+        <button id="tab-release" class="tab">Release</button>
+        <button id="tab-beta" class="tab">Beta</button>
+      </div>
+      <label class="version-pick">
+        <span>Version</span>
+        <select id="version"></select>
+      </label>
+    </div>
+
+    <div class="banner warn" id="beta-note" hidden>
+      <div>Beta builds are what is being worked on. They may misbehave — the release channel is the one to use on a battery you rely on.</div>
+    </div>
+    <div class="banner warn" id="older-note" hidden>
+      <div>This is not the newest build in this channel. Going back is the right move when a newer one misbehaved.</div>
+    </div>
+
+    <div id="builds"></div>
+    <div class="actions">
+      <button id="to-confirm" class="primary" disabled>Continue</button>
+      <button id="back-to-identified">Back</button>
+    </div>
+  </section>
+
+  <section data-stage="confirm" hidden>
+    <h1>Before it writes anything</h1>
+    <p id="chosen-name" class="mono" style="color:var(--text); font-size:13.5px"></p>
+    <div id="verdict" class="banner"></div>
+    <div class="card"><h2>What gets written</h2><div id="plan"></div></div>
+
+    <div class="card" id="settings-choice" hidden>
+      <h2>Your settings</h2>
+      <label class="choice" id="keep-label">
+        <input type="radio" name="settings" id="keep-settings" checked>
+        <div class="choice-body">
+          <div class="choice-head"><span class="choice-name">Keep them</span></div>
+          <div class="choice-detail" id="keep-why"></div>
+        </div>
+      </label>
+      <label class="choice">
+        <input type="radio" name="settings" id="erase-settings">
+        <div class="choice-body">
+          <div class="choice-head"><span class="choice-name">Erase everything</span></div>
+          <div class="choice-detail">The board starts blank — no network, no limits, no MQTT. Set up from scratch.</div>
+        </div>
+      </label>
+    </div>
+
+    <div class="card" id="backup-choice" hidden>
+      <div class="backup">
+        <label class="check">
+          <input type="checkbox" id="want-backup" checked>
+          <div>
+            <div style="font-size:13.5px; font-weight:600; margin-bottom:3px">Save a copy of the settings first</div>
+            <div style="font-size:12.5px; color:var(--text-dim)">
+              A byte-level copy of nvs, downloaded to your machine. Remembered for next time.
+            </div>
+          </div>
+        </label>
+        <button id="do-backup">Download now</button>
+      </div>
+    </div>
+
+    <div class="banner err" id="erase-warning" hidden>
+      <div>Erasing removes the WiFi credentials too — the board will come back up on its own access point.</div>
+    </div>
+
+    <div class="actions">
+      <button id="do-flash" class="primary">Write firmware</button>
+      <button id="back-to-choose">Back</button>
+    </div>
+  </section>
+
+  <section data-stage="flashing" hidden>
+    <h1>Writing to the board</h1>
+    <p id="flash-what" class="mono" style="color:var(--text); font-size:13.5px"></p>
+    <p>Leave the cable alone until this finishes.</p>
+    <div class="card">
+      <div class="progress-head">
+        <span id="flash-step">Starting…</span>
+        <span class="spacer"></span>
+        <span class="mono" id="pct" style="color:var(--accent)">0%</span>
+        <span class="mono dim" id="bytes"></span>
+      </div>
+      <div class="track"><div class="bar" id="bar"></div></div>
+    </div>
+    <pre id="boot-log" hidden></pre>
+  </section>
+
+  <section data-stage="done" hidden>
+    <h1>Flashed, and the board has restarted</h1>
+    <p id="done-what" class="mono" style="color:var(--text); font-size:13.5px"></p>
+    <div class="banner ok"><div id="done-settings"></div></div>
+
+    <div class="card" id="done-address" hidden>
+      <h2>Now reachable at</h2>
+      <a id="done-ip" class="mono" style="font-size:18px" href="#"></a>
+    </div>
+
+    <p id="done-next"></p>
+
+    <div class="card" id="wifi-cta" hidden>
+      <h2>Network</h2>
+      <div class="backup">
+        <div id="wifi-cta-note" style="font-size:13px; color:var(--text-dim); line-height:1.55"></div>
+        <button id="to-wifi" class="primary">Set up WiFi</button>
+      </div>
+    </div>
+
+    <div class="actions"><button id="flash-another" class="primary">Flash another board</button></div>
+    <p style="margin-top:22px; font-size:13px">
+      This firmware is free and stays that way. If it saved you a weekend,
+      <a href="https://buymeacoffee.com/sijones2012">buy me a coffee</a>.
+    </p>
+  </section>
+
+  <section data-stage="wifi" hidden>
+    <h1>Put it on your network</h1>
+    <p>
+      The board is still on the cable, so it can take these now. Your passphrase goes down the USB lead to the
+      board and nowhere else — this page has no server to send it to.
+    </p>
+
+    <div class="picker">
+      <div id="wifi-status" style="font-size:13px; color:var(--text-dim)"></div>
+      <div class="spacer" style="flex-grow:1"></div>
+      <button id="wifi-rescan">Scan again</button>
+    </div>
+
+    <div id="wifi-list"></div>
+
+    <div class="card">
+      <h2>Or type it in</h2>
+      <div class="fields">
+        <label><span>Network name</span><input id="wifi-manual" type="text" placeholder="hidden or out of range"></label>
+        <label><span>Passphrase</span><input id="wifi-pass" type="password" placeholder="leave empty for an open network"></label>
+        <label><span>Name on the network</span><input id="wifi-host" type="text" placeholder="diy-battery"></label>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button id="wifi-connect" class="primary" disabled>Save and connect</button>
+      <button id="wifi-skip">Skip</button>
+    </div>
+
+    <pre id="wifi-log"></pre>
+  </section>
+
+  <section data-stage="failed" hidden>
+    <h1>That did not work</h1>
+    <div class="banner err"><div id="error" class="mono" style="font-size:13px"></div></div>
+    <!-- Written by showFailure(): a port that would not open and a board that
+         would not answer need different advice, and the generic version sent
+         people looking for a hardware fault they did not have. -->
+    <p id="fail-advice">
+      A board already open in a serial monitor cannot be opened here as well — close it and try again.
+      Some boards also need the boot button held while connecting.
+    </p>
+    <div class="actions"><button id="retry" class="primary">Try again</button></div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="mono">diy.power-pilot.uk</div>
+  <div class="spacer"></div>
+  <div>Powered by <a href="https://nexion.uk">Nexion Software Solutions</a></div>
+</footer>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
