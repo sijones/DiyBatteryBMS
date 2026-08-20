@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DIY Battery BMS — firmware download</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='4' width='18' height='4.6' rx='2.3' fill='%2335c9d4'/%3E%3Crect x='3' y='10.2' width='12.5' height='4.6' rx='2.3' fill='%23e6edf5'/%3E%3Crect x='3' y='16.4' width='7' height='4.6' rx='2.3' fill='%23e6edf5' opacity='0.45'/%3E%3C/svg%3E">
+<style>
+  /* Lifted from the device's own web UI so the two read as one product. */
+  :root {
+    --bg:#10151c; --panel:#171e27; --panel-2:#1e2732; --raised:#26313f;
+    --line:#2c3746; --line-soft:#232d3a;
+    --text:#e6edf5; --text-dim:#94a3b4; --text-faint:#6b7889;
+    --accent:#35c9d4; --accent-dim:#1d7f88; --accent-ink:#06222a;
+    --ok:#3fbf6a; --warn:#e0a33a; --err:#e5544b;
+    --r-sm:4px; --r:7px;
+    --mono: ui-monospace,'Cascadia Mono','SF Mono','JetBrains Mono',Consolas,'DejaVu Sans Mono',monospace;
+    --sans:'Segoe UI Variable Text','Segoe UI',-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh; display:flex; flex-direction:column; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+
+  header { display:flex; align-items:center; gap:10px; height:52px; padding:0 20px; border-bottom:1px solid var(--line-soft); flex:none; }
+  header svg { width:23px; height:23px; flex:none; }
+  .words { font-family:var(--mono); font-size:15px; font-weight:500; }
+  .words span { color:var(--accent); }
+  .tag { font-size:11px; font-weight:700; letter-spacing:.09em; text-transform:uppercase; color:var(--text-faint); padding-top:2px; }
+
+  main { flex-grow:1; width:100%; max-width:700px; margin:0 auto; padding:36px 20px 28px; }
+  h1 { font-size:clamp(21px,4vw,26px); font-weight:600; letter-spacing:-.01em; margin-bottom:12px; text-wrap:pretty; }
+  h2 { font-size:13px; font-weight:600; letter-spacing:.02em; margin-bottom:10px; color:var(--text); }
+  p { font-size:14.5px; line-height:1.6; color:var(--text-dim); margin-bottom:14px; text-wrap:pretty; }
+
+  .card { background:var(--panel); border:1px solid var(--line-soft); border-radius:var(--r); padding:16px 18px; margin-bottom:16px; }
+  .kv { display:flex; gap:12px; padding:5px 0; font-size:13px; }
+  .kv .k { color:var(--text-faint); min-width:132px; flex:none; }
+  .kv .v { color:var(--text-dim); word-break:break-word; }
+  .mono { font-family:var(--mono); }
+  .dim { color:var(--text-faint); }
+
+  .banner { display:flex; gap:11px; padding:12px 14px; border-radius:var(--r-sm); font-size:13.5px; line-height:1.55;
+            background:var(--panel-2); border:1px solid var(--line); margin-bottom:16px; }
+  .banner.warn { border-color:#5a4520; background:#241d10; color:#e8cf9c; }
+  .banner.ok { border-color:#20502f; background:#122115; color:#a9dcb8; }
+  .banner.err { border-color:#5c2a27; background:#251413; color:#eda9a4; }
+
+  .dl {
+    display:inline-flex; align-items:center; gap:10px; padding:13px 22px; margin:2px 0 10px;
+    background:var(--accent); color:var(--accent-ink); border-radius:var(--r-sm);
+    font-size:14px; font-weight:600; border:0; cursor:pointer;
+  }
+  .dl:hover { text-decoration:none; filter:brightness(1.08); }
+  .dl .sz { font-weight:400; opacity:.75; }
+
+  ol { margin:0 0 4px 18px; color:var(--text-dim); font-size:14px; line-height:1.75; }
+  ol code { font-family:var(--mono); font-size:12.5px; color:var(--text); background:var(--panel-2);
+            padding:1px 5px; border-radius:3px; }
+
+  .pick { width:100%; padding:10px 12px; background:var(--panel-2); color:var(--text);
+          border:1px solid var(--line); border-radius:var(--r-sm); font-family:var(--sans); font-size:13.5px; }
+
+  footer { padding:18px 20px 26px; text-align:center; font-size:12px; color:var(--text-faint); }
+</style>
+</head>
+<body>
+
+<header>
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <rect x="3" y="4" width="18" height="4.6" rx="2.3" fill="#35c9d4"/>
+    <rect x="3" y="10.2" width="12.5" height="4.6" rx="2.3" fill="#e6edf5"/>
+    <rect x="3" y="16.4" width="7" height="4.6" rx="2.3" fill="#e6edf5" opacity="0.45"/>
+  </svg>
+  <div class="words">diy<span>·</span>battery<span>·</span>bms</div>
+  <div class="tag">firmware</div>
+</header>
+
+<main>
+  <div id="loading"><p>Looking up the newest firmware…</p></div>
+
+  <div id="found" hidden>
+    <h1 id="title">Firmware for your board</h1>
+    <p id="lede"></p>
+
+    <div class="banner" id="state" hidden><div id="state-text"></div></div>
+
+    <div class="card">
+      <div class="kv"><div class="k">Board</div><div class="v" id="r-board"></div></div>
+      <div class="kv"><div class="k">Build</div><div class="v mono" id="r-env"></div></div>
+      <div class="kv"><div class="k">Version</div><div class="v mono" id="r-version"></div></div>
+      <div class="kv" id="row-running" hidden><div class="k">You are running</div><div class="v mono" id="r-running"></div></div>
+    </div>
+
+    <a class="dl" id="dl" href="#" download>Download firmware.bin <span class="sz" id="dl-size"></span></a>
+
+    <div class="card">
+      <h2>Then, on the device</h2>
+      <ol>
+        <li>Open its web interface and go to the <strong>Firmware</strong> tab.</li>
+        <li>Under <em>Firmware image</em>, choose the <code>firmware.bin</code> you just downloaded.</li>
+        <li>Press <strong>Update Firmware</strong> and wait for it to restart.</li>
+      </ol>
+      <p style="margin:12px 0 0; font-size:13px">
+        Your settings live in NVS, which an over-the-air update never touches — they are kept.
+      </p>
+    </div>
+
+    <div class="banner warn" id="legacy-note" hidden>
+      <div>
+        This build is larger than the 1.25MB app slot used before 3.0. If your device still reports the
+        pre-3.0 partition table on the Firmware tab, this update will not fit and has to be written over
+        USB instead — the <a href="./">browser flasher</a> does that, and keeps your settings.
+      </div>
+    </div>
+  </div>
+
+  <div id="choose" hidden>
+    <h1>Which build do you need?</h1>
+    <p id="choose-why">Pick the board this firmware is going on. If you are not sure, the
+      <a href="./">browser flasher</a> reads it off the chip for you.</p>
+    <select class="pick" id="pick"></select>
+  </div>
+
+  <div id="failed" hidden>
+    <h1>Cannot reach the firmware list</h1>
+    <p id="failed-why"></p>
+    <p>The <a href="./">browser flasher</a> is the other way in — it talks to the board directly.</p>
+  </div>
+</main>
+
+<footer>Flash a new board with the <a href="./">browser flasher</a></footer>
+
+<script type="module">
+/* The download side of the flasher.
+ *
+ * A device cannot fetch its own updates - that was tried, and TLS plus an
+ * 1.7MB image is more than the internal heap on a board with no PSRAM has to
+ * spare. What a device CAN do is say what it is, which costs nothing: its
+ * Firmware tab links here with its env name and its running version in the
+ * query string, and this page does the part that needs a network.
+ *
+ * So the split is: the board knows which build it is, the site knows which
+ * version is newest, and the person carries a file between them. No firmware
+ * change is needed when a release comes out.
+ *
+ * It serves firmware.bin, the app image, NOT the merged firmware.factory.bin.
+ * The update page writes what it is given into the spare OTA slot, so handing
+ * it the merged image would write a bootloader and a partition table into a
+ * partition meant for an app - which fails in a way that needs a USB cable to
+ * undo. The two files differ by about 65KB and nothing in their names says
+ * which is which, so the choice is made here rather than left to a directory
+ * listing.
+ */
+
+const $ = (id) => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const wantEnv = params.get("env");
+const running = params.get("from");
+
+const fmtSize = (n) => `${(n / 1024 / 1024).toFixed(2)} MB`;
+
+/* Same ordering as the flasher's index: numeric parts numerically, and a
+   release ahead of its own pre-release. */
+function compareVersions(a, b) {
+  const split = (v) => {
+    const [core, pre] = v.split("-", 2);
+    return { nums: core.split(".").map((n) => parseInt(n, 10) || 0), pre: pre ?? null };
+  };
+  const A = split(a), B = split(b);
+  for (let i = 0; i < Math.max(A.nums.length, B.nums.length); i++) {
+    const d = (B.nums[i] ?? 0) - (A.nums[i] ?? 0);
+    if (d) return d;
+  }
+  if (A.pre === B.pre) return 0;
+  if (!A.pre) return -1;
+  if (!B.pre) return 1;
+  return A.pre < B.pre ? -1 : 1;
+}
+
+/**
+ * The newest published build of one env.
+ *
+ * Release wins over beta whenever there is one, even if a beta is numerically
+ * newer: someone arriving from a device's update tab wants the firmware that is
+ * meant to work. A device already running a pre-release is the exception - it
+ * is on the beta channel by choice, and offering it an older stable build as
+ * "the newest" would be a downgrade dressed up as an update.
+ */
+function newestFor(index, env, from) {
+  const prefersBeta = !!from && from.includes("-");
+  const order = prefersBeta ? ["beta", "release"] : ["release", "beta"];
+
+  for (const channel of order) {
+    const versions = [...(index.channels?.[channel] ?? [])].sort((a, b) => compareVersions(a.version, b.version));
+    for (const v of versions) {
+      const build = v.builds.find((b) => b.env === env);
+      if (build) return { channel, version: v.version, build };
+    }
+  }
+  return null;
+}
+
+/** Every env published anywhere, newest build of each, for the picker. */
+function allEnvs(index) {
+  const seen = new Map();
+  for (const channel of ["release", "beta"]) {
+    for (const v of [...(index.channels?.[channel] ?? [])].sort((a, b) => compareVersions(a.version, b.version))) {
+      for (const b of v.builds) if (!seen.has(b.env)) seen.set(b.env, { channel, version: v.version, build: b });
+    }
+  }
+  return [...seen.entries()].sort((a, b) => a[1].build.board.localeCompare(b[1].build.board) || a[0].localeCompare(b[0]));
+}
+
+function showChoices(index, why) {
+  $("loading").hidden = true;
+  $("choose").hidden = false;
+  if (why) $("choose-why").innerHTML = why + ' If you are not sure, the <a href="./">browser flasher</a> reads it off the chip for you.';
+
+  const pick = $("pick");
+  pick.innerHTML =
+    `<option value="">Choose a board…</option>` +
+    allEnvs(index)
+      .map(([env, hit]) => `<option value="${env}">${hit.build.board} — ${env}</option>`)
+      .join("");
+  pick.addEventListener("change", () => {
+    if (!pick.value) return;
+    const q = new URLSearchParams({ env: pick.value });
+    if (running) q.set("from", running);
+    location.search = q.toString();
+  });
+}
+
+async function main() {
+  let index;
+  try {
+    const res = await fetch("./firmware/releases.json", { cache: "no-cache" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    index = await res.json();
+  }
+  catch (err) {
+    $("loading").hidden = true;
+    $("failed").hidden = false;
+    $("failed-why").textContent = `The list of published firmware could not be read (${err.message}).`;
+    return;
+  }
+
+  if (!wantEnv) return showChoices(index);
+
+  const hit = newestFor(index, wantEnv, running);
+  if (!hit) {
+    /* An env this site has never published. The honest cases are a device on a
+       build older than the naming change, or one flashed from a branch. Saying
+       so beats an error, and the picker is right there. */
+    return showChoices(
+      index,
+      `Nothing published for <code>${wantEnv}</code> — that build may predate the current naming.`,
+    );
+  }
+
+  let manifest;
+  try {
+    const res = await fetch(`./firmware/${hit.build.path}`, { cache: "no-cache" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    manifest = await res.json();
+  }
+  catch (err) {
+    $("loading").hidden = true;
+    $("failed").hidden = false;
+    $("failed-why").textContent = `Found ${hit.version} for this board, but could not read its manifest (${err.message}).`;
+    return;
+  }
+
+  if (!manifest.ota) {
+    $("loading").hidden = true;
+    $("failed").hidden = false;
+    $("failed-why").textContent =
+      `${hit.version} was published without an over-the-air image, so there is nothing to upload here.`;
+    return;
+  }
+
+  const dir = `./firmware/${hit.build.path}`.replace(/\/[^/]+$/, "");
+
+  $("loading").hidden = true;
+  $("found").hidden = false;
+
+  $("r-board").textContent = manifest.detail ? `${manifest.board} — ${manifest.detail}` : manifest.board;
+  $("r-env").textContent = manifest.env;
+  $("r-version").textContent = hit.version;
+
+  $("dl").href = `${dir}/${manifest.ota.path}`;
+  $("dl").setAttribute("download", `${manifest.env}-${hit.version}-firmware.bin`);
+  $("dl-size").textContent = `· ${fmtSize(manifest.ota.size)}`;
+
+  if (running) {
+    $("row-running").hidden = false;
+    $("r-running").textContent = running;
+  }
+
+  /* Three states worth telling apart, because "there is a download button" says
+     nothing about whether pressing it achieves anything. */
+  const state = $("state"), text = $("state-text");
+  if (running && running === hit.version) {
+    state.hidden = false;
+    state.className = "banner ok";
+    text.textContent = `This device is already running ${hit.version}. There is nothing newer to install.`;
+    $("lede").textContent = "Up to date.";
+  }
+  else if (running && compareVersions(running, hit.version) < 0) {
+    state.hidden = false;
+    state.className = "banner warn";
+    text.textContent =
+      `This device is running ${running}, which is NEWER than anything published here. Installing ${hit.version} would move it backwards.`;
+    $("lede").textContent = "Newer than the published build.";
+  }
+  else {
+    $("lede").textContent = running
+      ? `Version ${hit.version} is available for this board.`
+      : `The newest firmware published for this board.`;
+    if (hit.channel === "beta") {
+      state.hidden = false;
+      state.className = "banner warn";
+      text.textContent =
+        "This is a beta build - what is being worked on, and not yet the one to put on a battery you rely on.";
+    }
+  }
+
+  /* The old 1.25MB slot cannot hold a 3.x image, and every 3.x image is over
+     it - so testing the image size alone would show this warning to everybody,
+     including the large majority for whom it is not true. The device is the
+     only one that knows its slot size, so it sends it, and the warning is
+     aimed rather than sprayed. No slot in the query means someone navigated
+     here by hand: nothing to warn about, because nothing is known. */
+  const slotKb = Number(params.get("slot"));
+  $("legacy-note").hidden = !(slotKb > 0 && slotKb * 1024 < manifest.ota.size);
+}
+
+main();
+</script>
+</body>
+</html>
