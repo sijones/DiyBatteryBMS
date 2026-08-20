@@ -223,9 +223,19 @@ static void serialSetupLoop() {
     else _serOverflow = true;      // keep draining, report once at end of line
   }
 
-  // Announce the address as soon as there is one, and again if it comes back
+  /* Announce the address as soon as there is one, and again if it comes back.
+     "As soon as there is one" has to include actually having one: isConnected()
+     goes true at association, which is before DHCP has answered, so announcing
+     on that alone printed
+
+       [net] IP 0.0.0.0
+
+     - true, useless to a reader, and taken at face value by anything parsing
+     this output. Waiting for a real address costs a second and makes the line
+     mean what it says. A static configuration has its address immediately and
+     is unaffected. */
   const bool sta = (WiFi.getMode() == WIFI_MODE_STA);
-  const bool up = sta && WiFi.isConnected();
+  const bool up = sta && WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0);
   if (up != _serLastConnected) {
     _serLastConnected = up;
     if (up) serialAnnounceNetwork();
