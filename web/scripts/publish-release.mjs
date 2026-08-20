@@ -16,9 +16,14 @@
  * an unpushed commit stops the whole deploy rather than leaving a site
  * advertising a version with no archive behind it.
  *
- *   node scripts/publish-release.mjs [--dry-run]
+ *   node scripts/publish-release.mjs [--dry-run] [--force]
  *
  * Wants GITHUB_TOKEN (or GH_TOKEN) with `contents: write` on this repository.
+ *
+ * A bare version is only published from a commit that is on the default branch,
+ * and only from a clean tree. A suffixed one goes out from anywhere, which is
+ * the whole point of a beta. See the guards below for why those are the two
+ * rules and not more.
  */
 
 import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
@@ -31,6 +36,7 @@ const ROOT = join(HERE, "..", "..");
 const OUT = join(ROOT, "site", "firmware");
 
 const DRY = process.argv.includes("--dry-run");
+const FORCE = process.argv.includes("--force");
 const TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 
 const API = "https://api.github.com";
@@ -163,6 +169,46 @@ function releaseNotes(version, builds) {
   ].join("\n");
 }
 
+/* ---- what is allowed to be published, and from where -------------------- */
+
+/* The remote's own idea of its default branch, rather than a hard-coded "main",
+   so renaming it does not silently turn the rule below off. */
+function defaultBranch() {
+  try {
+    return git("symbolic-ref", "refs/remotes/origin/HEAD").replace(/^refs\/remotes\/origin\//, "");
+  }
+  catch {
+    return "main";
+  }
+}
+
+/* Anything git would not recognise in a fresh clone of HEAD: modified tracked
+   files, staged changes, and untracked files too. Untracked counts because
+   PlatformIO compiles src/ off the disk, not out of git - a src/foo.cpp that
+   was never added is in the binary and in no commit. Ignored files are already
+   excluded by --porcelain, which is why site/firmware does not show up here. */
+function dirtyPaths() {
+  return git("status", "--porcelain")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/* HEAD is contained in the remote default branch. Deliberately a containment
+   test rather than "which branch am I standing on": what is being published is
+   a commit, and a commit merged to main is on main whether or not the checkout
+   says so. It also proves the commit was pushed, which release creation needs
+   anyway. */
+function mergedToDefault(branch) {
+  try {
+    git("merge-base", "--is-ancestor", "HEAD", `refs/remotes/origin/${branch}`);
+    return true;
+  }
+  catch {
+    return false;
+  }
+}
+
 const version = fwVersion();
 const slug = repoSlug();
 const builds = collect(version);
@@ -173,11 +219,73 @@ for (const b of builds) {
   console.log(`  ${b.manifest.board.padEnd(38)} ${b.files.map((f) => f.name).join(", ")}`);
 }
 
+/* Two rules, and the difference between them is the difference between the
+   channels the flasher offers.
+ *
+ * A pre-release is a build handed to someone who volunteered to test it, cut
+ * mid-cycle from whatever branch the work is on. Both of those are fine and the
+ * rules stay out of the way.
+ *
+ * A bare version is the build the flasher offers by default to a person who
+ * arrived with no opinion, and it gets one guarantee: the source is on main and
+ * the source is what was built. A dirty tree breaks the second - the binaries
+ * came from files no commit contains, and the tag points at source that never
+ * produced them - and nothing about the result ever shows it, because a release
+ * built from uncommitted work looks exactly like one that was not. */
+const problems = [];
+const warnings = [];
+const dirty = dirtyPaths();
+const main = defaultBranch();
+
+if (dirty.length) {
+  const shown = dirty.slice(0, 8).join("\n    ");
+  const more = dirty.length > 8 ? `\n    ... and ${dirty.length - 8} more` : "";
+  const what = `the working tree has ${dirty.length} uncommitted change${dirty.length === 1 ? "" : "s"}:\n    ${shown}${more}`;
+  if (prerelease) warnings.push(`${what}\n  A pre-release may not match its tag. Publishing anyway.`);
+  else problems.push(`${what}\n  Commit or stash, rebuild, and publish again.`);
+}
+
+if (!prerelease) {
+  try {
+    git("fetch", "origin", main, "--quiet");
+  }
+  catch {
+    // Offline, or the remote is unreachable. The check below still runs against
+    // whatever origin/main was last known to be; it can only be too strict.
+    warnings.push(`could not reach origin, so "is it on ${main}" is being judged on a stale ref`);
+  }
+  if (!mergedToDefault(main)) {
+    problems.push(
+      `${version} is a release, and HEAD is not on ${main}.\n` +
+        `  Releases are what the flasher hands to someone with no opinion, so they come\n` +
+        `  off the branch everybody has. Merge to ${main}, push, and publish from there -\n` +
+        `  or give this version a suffix and it goes out as a beta from here.`,
+    );
+  }
+}
+
+for (const w of warnings) console.warn(`  ! ${w}`);
+
+/* --dry-run reports the verdict rather than acting on it. It sends nothing
+   either way, and "what would stop this" is most of what anyone runs it to
+   find out. */
 if (DRY) {
-  console.log("\n--dry-run: nothing sent. Notes would read:\n");
+  if (problems.length) {
+    console.log(`\n--dry-run: this would ${FORCE ? "be refused without --force" : "be refused"}:\n`);
+    for (const p of problems) console.log(`  - ${p}\n`);
+  }
+  console.log("--dry-run: nothing sent. Notes would read:\n");
   console.log(releaseNotes(version, builds));
   process.exit(0);
 }
+
+if (problems.length && !FORCE) {
+  console.error("\nNot publishing:\n");
+  for (const p of problems) console.error(`  - ${p}\n`);
+  console.error("Nothing has been sent. --force overrides this, and means what it says.");
+  process.exit(1);
+}
+if (problems.length) console.warn("  ! --force: publishing over the checks above");
 
 if (!TOKEN) {
   console.error(
