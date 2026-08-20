@@ -79,6 +79,19 @@ export function compatibility(manifest, info) {
 export function rank(entries) {
   return [...entries].sort((a, b) => {
     if (a.compat.ok !== b.compat.ok) return a.compat.ok ? -1 : 1;
-    return a.manifest.board.localeCompare(b.manifest.board);
+
+    const byBoard = a.manifest.board.localeCompare(b.manifest.board);
+    if (byBoard) return byBoard;
+
+    /* Same wiring, different module. Several builds fit a 16MB board with
+       PSRAM - the 8MB one runs perfectly well on it - so the tie is broken
+       towards the build that uses what the board actually has. Anything that
+       does NOT fit has already sorted below on compat.ok, so a PSRAM build
+       still in the running here is one this board can run.
+       Order still decides nothing on its own: nothing is auto-selected, and
+       every row carries its env name and its detail line. This only means the
+       best fit is the first thing read, not the first thing found. */
+    if (a.manifest.psramRequired !== b.manifest.psramRequired) return a.manifest.psramRequired ? -1 : 1;
+    return (b.manifest.minFlashBytes ?? 0) - (a.manifest.minFlashBytes ?? 0);
   });
 }

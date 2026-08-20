@@ -35,31 +35,102 @@ const MERGED_OFFSET = { esp32: 0x1000, esp32s3: 0x0, esp32c3: 0x0, esp32s2: 0x0 
 /** What esptool-js reports as chip.CHIP_NAME, per board family. */
 const CHIP_FAMILY = { esp32: "ESP32", esp32s3: "ESP32-S3", esp32c3: "ESP32-C3", esp32s2: "ESP32-S2" };
 
-/* Which physical board each env is for, in words a person recognises. The env
-   name alone ("esp32-ESPCAN") tells a user nothing about whether it is theirs. */
+/* Which physical WIRING each env is for, in words a person recognises. The env
+   name alone ("esp32-ESPCAN") tells a user nothing about whether it is theirs.
+ *
+ * Keyed by the family, not the env: an env name is a family plus a flash size
+ * plus whether the module has PSRAM, and those last two are read off the build
+ * rather than written down twice. Thirty envs sharing seven wirings would
+ * otherwise be thirty lines here, drifting apart one careless edit at a time. */
 const BOARDS = {
   "esp32dev": { label: "ESP32 with MCP2515", detail: "CAN over SPI · CS 2, INT 22" },
   "esp32plus": { label: "ESP32 'plus' board", detail: "CAN over SPI · CS 5, INT 13" },
   "esp32-ESPCAN": { label: "LilyGo T-CAN485", detail: "Built-in CAN · TX 27, RX 26, EN 23" },
   "esp32s3-ESPCAN": { label: "ESP32-S3 DevKit, built-in CAN", detail: "TWAI · TX 27, RX 26, EN 23" },
-  "esp32s3-ESPCAN-PSRAM": { label: "ESP32-S3 DevKit, built-in CAN, PSRAM", detail: "TWAI · 16MB flash · 8MB octal PSRAM" },
   "esp32s3-MCP": { label: "ESP32-S3 with MCP2515", detail: "CAN over SPI" },
   "xiao-esp32s3": { label: "XIAO ESP32-S3 + CAN expansion", detail: "MCP2515 over SPI · CS 44" },
   "esp32c3-ESPCAN": { label: "ESP32-C3 with built-in CAN", detail: "TWAI · TX 6, RX 7" },
 };
 
+/* Read platformio.ini the way PlatformIO reads it, which is more than reading
+   the lines under [env:name].
+ *
+ * Three things have to be handled or an env comes back missing the very fields
+ * this script exists to publish:
+ *
+ *   - `extends` pulls options in from other sections, and an env may extend
+ *     several. Nearly every env in this project now gets its board and its
+ *     partition table that way and defines neither itself.
+ *   - a value continues onto following indented lines, which is how build_flags
+ *     and lib_deps are written.
+ *   - ${section.option} interpolates, which is how a family adds a flag to its
+ *     base without repeating it.
+ *
+ * A parser that skipped any of those would not fail - it would quietly report
+ * `undefined` for the partition table, and the manifest would carry a wrong
+ * minimum flash size or no nvs offset. That is the failure this file's header
+ * warns about: flashes cleanly, produces a board that never boots. */
 function parseIni(text) {
-  const envs = {};
+  const sections = {};
   let current = null;
+  let key = null;
+
   for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (!line || line.startsWith(";") || line.startsWith("#")) continue;
-    const sec = /^\[env:(.+)\]$/.exec(line);
-    if (sec) { current = sec[1]; envs[current] = {}; continue; }
-    if (/^\[/.test(line)) { current = null; continue; }
+    if (!raw.trim() || /^\s*[;#]/.test(raw)) continue;
+
+    const sec = /^\[(.+)\]\s*$/.exec(raw.trim());
+    if (sec) {
+      current = sec[1];
+      sections[current] = sections[current] ?? {};
+      key = null;
+      continue;
+    }
     if (!current) continue;
-    const kv = /^([\w.]+)\s*=\s*(.*)$/.exec(line);
-    if (kv) envs[current][kv[1]] = kv[2].trim();
+
+    const kv = /^([\w.]+)\s*=\s*(.*)$/.exec(raw.trim());
+    if (kv && !/^\s/.test(raw)) {
+      key = kv[1];
+      sections[current][key] = kv[2].trim();
+      continue;
+    }
+    // An indented line with no key of its own continues the previous value.
+    if (key) sections[current][key] += " " + raw.trim();
+  }
+
+  /* Resolve extends depth-first. Later sections in the list win, and the env's
+     own options win over all of them - the same order PlatformIO applies. */
+  const resolved = {};
+  const resolve = (name, seen = new Set()) => {
+    if (resolved[name]) return resolved[name];
+    if (seen.has(name)) throw new Error(`platformio.ini: extends loops through [${name}]`);
+    seen.add(name);
+
+    const own = sections[name] ?? {};
+    let out = {};
+    for (const parent of (own.extends ?? "").split(",").map((s) => s.trim()).filter(Boolean)) {
+      out = { ...out, ...resolve(parent, seen) };
+    }
+    out = { ...out, ...own };
+    delete out.extends;
+    resolved[name] = out;
+    return out;
+  };
+
+  const interpolate = (value, depth = 0) =>
+    depth > 8
+      ? value
+      : value.replace(/\$\{([^.}]+)\.([^}]+)\}/g, (whole, sec, opt) => {
+          const from = sections[sec] ? resolve(sec) : null;
+          return from?.[opt] !== undefined ? interpolate(from[opt], depth + 1) : whole;
+        });
+
+  const envs = {};
+  for (const name of Object.keys(sections)) {
+    if (!name.startsWith("env:")) continue;
+    const opts = resolve(name);
+    envs[name.slice(4)] = Object.fromEntries(
+      Object.entries(opts).map(([k, v]) => [k, interpolate(v)]),
+    );
   }
   return envs;
 }
@@ -91,6 +162,48 @@ function chipOf(env, ini) {
   if (board.includes("c3")) return "esp32c3";
   if (board.includes("s2")) return "esp32s2";
   return "esp32";
+}
+
+/**
+ * How much flash the build is laid out for, in bytes.
+ *
+ * board_upload.flash_size is the authority because it is what the image is
+ * actually built for. The partition table name is the fallback for an env that
+ * has not been given one, and it is only a naming convention - which is exactly
+ * why it is second and not first.
+ */
+function flashBytesOf(opts) {
+  const declared = /^(\d+)MB$/i.exec(opts["board_upload.flash_size"] ?? "");
+  if (declared) return Number(declared[1]) * 1024 * 1024;
+  const csv = opts["board_build.partitions"] ?? "";
+  if (csv.includes("16mb")) return 16 * 1024 * 1024;
+  if (csv.includes("8mb")) return 8 * 1024 * 1024;
+  return 4 * 1024 * 1024;
+}
+
+/**
+ * What the board is, for someone reading a list of builds.
+ *
+ * The wiring comes from BOARDS, keyed by the env name with its -8mb / -16mb /
+ * -psram suffixes taken off. Everything else is read off the resolved build:
+ * PSRAM from the flag that actually enables it rather than from the name, so an
+ * env that says psram and does not set the flag is described as what it builds,
+ * not as what it is called; and octal vs quad from memory_type, because the two
+ * are different parts and the wrong one silently yields no PSRAM at all.
+ */
+function describe(env, opts) {
+  const family = /^(.*?)(?:-\d+mb)?(?:-psram)?$/i.exec(env)[1];
+  const base = BOARDS[family] ?? BOARDS[env] ?? { label: env, detail: "" };
+
+  const psram = /-DBOARD_HAS_PSRAM\b/.test(opts.build_flags ?? "");
+  const octal = (opts["board_build.arduino.memory_type"] ?? "").includes("opi");
+  const mb = Math.round(flashBytesOf(opts) / 1024 / 1024);
+
+  const detail = [base.detail, `${mb}MB flash`, psram ? `${octal ? "octal" : "quad"} PSRAM` : null]
+    .filter(Boolean)
+    .join(" · ");
+
+  return { label: base.label, detail, psram };
 }
 
 /**
@@ -137,7 +250,7 @@ for (const env of Object.keys(ini)) {
   copyFileSync(factory, join(destDir, "firmware.factory.bin"));
 
   const size = readFileSync(factory).length;
-  const board = BOARDS[env] ?? { label: env, detail: "" };
+  const board = describe(env, ini[env]);
 
   /* The app image as well as the merged one. They are for different jobs and
      are NOT interchangeable:
@@ -168,8 +281,11 @@ for (const env of Object.keys(ini)) {
         chipFamily: CHIP_FAMILY[chip],
         // Minimum flash the partition table needs. A 16MB table on a 4MB chip
         // is the fastest way to brick a board, so the flasher greys those out.
-        minFlashBytes: csv?.includes("16mb") ? 16 * 1024 * 1024 : csv?.includes("8mb") ? 8 * 1024 * 1024 : 4 * 1024 * 1024,
-        psramRequired: env.includes("PSRAM"),
+        minFlashBytes: flashBytesOf(ini[env]),
+        // Read from the flag that turns PSRAM on, not from the env name. The
+        // name is a label someone types; the flag is what the image was built
+        // with, and it is the flag the board has to live up to.
+        psramRequired: board.psram,
         nvs,
         published: new Date().toISOString(),
         // What the serial flasher writes

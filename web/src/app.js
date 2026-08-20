@@ -212,7 +212,11 @@ function renderConfirm() {
       ? `<div class="kv"><div class="k mono">${fmtHex(session.nvs.offset)}</div><div class="v v-ok">nvs · not touched</div></div>`
       : "");
 
-  $("chosen-name").textContent = `${m.board} · ${m.version}`;
+  /* The env, not just the board, because several builds now share a wiring and
+     differ only in flash size and PSRAM. This is the screen after which the
+     write happens, so it names exactly what is about to be written rather than
+     the family it belongs to. */
+  $("chosen-name").textContent = `${m.board} · ${m.env} · ${m.version}`;
 
   /* Two separate choices, both the user's:
        - keep the settings, or erase them
