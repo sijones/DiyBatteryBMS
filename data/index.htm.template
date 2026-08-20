@@ -854,6 +854,8 @@
     .sched-topic { font-family: var(--mono); color: var(--text-dim); }
 
     .sched-table { display: flex; flex-direction: column; gap: 9px; }
+    .sched-count { align-self: center; font-size: 12px; color: var(--text-faint); flex: none; }
+    .sched-count.full { color: var(--warn); }
 
     .sched-row {
       display: grid;
@@ -1747,8 +1749,9 @@
         <div class="sched-table" id="schedRows"></div>
 
         <div class="button-group">
-          <button onclick="addScheduleRow()">Add Window</button>
+          <button id="schedAdd" onclick="addScheduleRow()">Add Window</button>
           <button class="btn-primary" onclick="saveSchedule()">Save Schedule</button>
+          <span id="schedCount" class="sched-count"></span>
         </div>
 
         <div class="section-title">From Home Assistant</div>
@@ -2183,6 +2186,10 @@
         <div class="section-title">ESP32 Diagnostics</div>
         <div class="stat-grid">
           <div class="stat-box stat-status">
+            <div class="stat-label">Uptime</div>
+            <div class="stat-value sm" id="uptimeInfo">--</div>
+          </div>
+          <div class="stat-box stat-status">
             <div class="stat-label">Heap Free / Total</div>
             <div class="stat-value sm" id="heapInfo">--</div>
           </div>
@@ -2419,11 +2426,37 @@
         + '<div class="f-discharge"><label>Discharge</label>' + triSelect('s-discharge', w.discharge) + '</div>'
         + '<div class="f-force"><label>Force</label>' + triSelect('s-force', w.force) + '</div>'
         + '<div class="f-soc"><label>Target %</label><input type="number" class="s-soc" min="0" max="100" value="' + (w.targetsoc || '') + '" placeholder="off"></div>'
-        + '<button class="row-remove" title="Remove this window" aria-label="Remove window" onclick="this.parentElement.remove()">&times;</button>';
+        + '<button class="row-remove" title="Remove this window" aria-label="Remove window" onclick="this.parentElement.remove(); updateSchedCount();">&times;</button>';
+    }
+
+    /* Matches SCHED_MAX_UI in Schedule.h. The device keeps the first eight and
+       drops the rest without a word - setUiFromJson() simply breaks out of its
+       loop - so a ninth window could be filled in, saved, and quietly vanish.
+       Stopping at the limit here is the difference between a rule and a
+       disappearance. Keep the two in step if the firmware's limit changes. */
+    const SCHED_MAX_UI = 8;
+
+    function schedRowCount() {
+      return document.querySelectorAll('#schedRows .sched-row').length;
+    }
+
+    function updateSchedCount() {
+      const n = schedRowCount();
+      const add = document.getElementById('schedAdd');
+      const label = document.getElementById('schedCount');
+      if (add) add.disabled = n >= SCHED_MAX_UI;
+      if (label) {
+        label.textContent = n + ' of ' + SCHED_MAX_UI + ' window' + (SCHED_MAX_UI === 1 ? '' : 's');
+        label.classList.toggle('full', n >= SCHED_MAX_UI);
+      }
     }
 
     function addScheduleRow(w) {
       if (!w || w.type === 'click') w = { start: 120, end: 300, days: 127, charge: -1, discharge: -1, force: 1, targetsoc: 0 };
+      if (schedRowCount() >= SCHED_MAX_UI) {
+        showToast('The device holds ' + SCHED_MAX_UI + ' repeating windows. Remove one to add another.', 'error', 4000);
+        return;
+      }
       const host = document.getElementById('schedRows');
       const empty = host.querySelector('.sched-empty');
       if (empty) empty.remove();
@@ -2431,6 +2464,7 @@
       row.className = 'sched-row';
       row.innerHTML = scheduleRowHtml(w);
       host.appendChild(row);
+      updateSchedCount();
     }
 
     function renderSchedule(list) {
@@ -2442,6 +2476,7 @@
         e.className = 'sched-empty';
         e.textContent = 'No repeating windows yet. Add one, or push a schedule from Home Assistant.';
         host.appendChild(e);
+        updateSchedCount();
         return;
       }
       list.forEach(function (w) {
@@ -2453,6 +2488,7 @@
           targetsoc: w.targetsoc || 0
         });
       });
+      updateSchedCount();
     }
 
     function saveSchedule() {
@@ -3199,6 +3235,20 @@
 
       var devFields = {modelstring:'devModel',fwversion:'devFW',serialnumber:'devSerial',pidstring:'devPID'};
       for(var k in devFields) { if(obj[k] !== undefined) { var e=document.getElementById(devFields[k]); if(e) e.textContent=obj[k]||'--'; } }
+      /* Uptime rides in the frequent payload alongside the heap figures, and is
+         the first thing to read when a board is behaving oddly: a device that
+         says minutes when it should say days restarted while nobody was
+         watching, and the heap low-water marks beside it say whether that was
+         the reason. Flagged under a minute: on a device meant to run for months,
+         an uptime in seconds is the single most interesting thing on the tab -
+         including for the minute after you deliberately restarted it. */
+      if(obj.hasOwnProperty('uptime')) {
+        var e=document.getElementById('uptimeInfo');
+        if(e) {
+          e.textContent = fmtDuration(obj.uptime);
+          e.className = 'stat-value sm ' + (obj.uptime < 60 ? 'v-warn' : '');
+        }
+      }
       if(obj.hasOwnProperty('freeheap') && obj.hasOwnProperty('totalheap')) {
         var e=document.getElementById('heapInfo');
         if(e) e.textContent=(obj.freeheap/1024).toFixed(0) + 'K / ' + (obj.totalheap/1024).toFixed(0) + 'K';
@@ -4193,7 +4243,12 @@
       const m = Math.floor(s / 60), r = s % 60;
       if (m < 60) return r ? m + 'm ' + r + 's' : m + 'm';
       const h = Math.floor(m / 60);
-      return (m % 60) ? h + 'h ' + (m % 60) + 'm' : h + 'h';
+      // Days, matching what fmtDuration() in Diagnostics.cpp prints to serial,
+      // so uptime reads the same in both places. A board up for a fortnight
+      // saying "336h" is a number nobody converts in their head.
+      if (h < 24) return (m % 60) ? h + 'h ' + (m % 60) + 'm' : h + 'h';
+      const d = Math.floor(h / 24);
+      return (h % 24) ? d + 'd ' + (h % 24) + 'h' : d + 'd';
     }
 
     function updateAbsorption() {
