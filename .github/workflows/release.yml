@@ -1,0 +1,172 @@
+# Build every env, publish the binaries, put the flasher live.
+#
+# The whole release, from a tag to a board someone can flash in a browser:
+#
+#   enumerate -> build 30 envs in parallel -> collect -> manifests -> GitHub
+#   release -> Cloudflare Pages
+#
+# It exists because doing this by hand takes about seventy-five minutes on one
+# machine and depends on that machine having the toolchain, the Cloudflare
+# credentials and every env built in the same pass. The last of those is the one
+# that actually went wrong: a bare `pio run` builds only default_envs, so a
+# release cut locally could contain one board out of thirty and say nothing
+# about it. Here the env list is read out of platformio.ini and each one is a
+# job, so a missing build is a red X rather than a quiet omission.
+#
+# The publish step runs `npm run deploy`, which is the same command a person
+# would run locally. That is deliberate: a CI-only path drifts from the manual
+# one and is discovered to have drifted at the worst possible time.
+
+name: Release
+
+on:
+  push:
+    tags: ["*"]
+  workflow_dispatch:
+
+# One at a time. Two publishes racing would have them overwriting each other's
+# release assets and deploying in an order neither of them chose.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write # publish-release.mjs creates the release and uploads to it
+
+jobs:
+  envs:
+    name: Enumerate environments
+    runs-on: ubuntu-latest
+    outputs:
+      list: ${{ steps.read.outputs.list }}
+      count: ${{ steps.read.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Read from the ini rather than listing them here. A hand-written list in
+      # this file is the same mistake the VS Code tasks made, with a slower
+      # feedback loop.
+      - id: read
+        run: |
+          names=$(sed -n 's/^\[env:\(.*\)\]$/\1/p' platformio.ini)
+          list=$(printf '%s\n' "$names" | python3 -c "import json,sys; print(json.dumps(sys.stdin.read().split()))")
+          count=$(printf '%s\n' "$names" | wc -l)
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "Found $count environments" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    name: ${{ matrix.pioenv }}
+    needs: envs
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # one broken env should not hide the state of the rest
+      matrix:
+        pioenv: ${{ fromJson(needs.envs.outputs.list) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build
+        run: pio run --environment ${{ matrix.pioenv }}
+
+      # Both images, because they are for different jobs: firmware.factory.bin
+      # is what the browser flasher writes over serial, firmware.bin is what an
+      # over-the-air update takes. build-manifests.mjs expects to find them
+      # exactly where pio left them.
+      - name: Upload images
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.pioenv }}
+          path: |
+            .pio/build/${{ matrix.pioenv }}/firmware.bin
+            .pio/build/${{ matrix.pioenv }}/firmware.factory.bin
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish and deploy
+    needs: [envs, build]
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: publish-release.mjs asks whether HEAD is contained in
+      # origin/main before it will publish a release, and a shallow clone cannot
+      # answer that.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # A tag that disagrees with the firmware's own idea of its version would
+      # publish binaries reporting one number under a release named another, and
+      # nothing downstream would ever show it. Cheap to check, impossible to
+      # spot later.
+      - name: Tag must match FW_VERSION
+        if: github.ref_type == 'tag'
+        run: |
+          fw=$(sed -n 's/.*#define[[:space:]]\{1,\}FW_VERSION[[:space:]]\{1,\}"\([^"]*\)".*/\1/p' src/config.h)
+          if [ "$fw" != "${{ github.ref_name }}" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match FW_VERSION $fw in src/config.h"
+            exit 1
+          fi
+          echo "Releasing $fw" >> "$GITHUB_STEP_SUMMARY"
+
+      # Each artifact is named after its env, so this restores them to
+      # .pio/build/<env>/ - which is where build-manifests.mjs looks.
+      - name: Collect every build
+        uses: actions/download-artifact@v4
+        with:
+          path: .pio/build
+
+      - name: Check every env arrived
+        run: |
+          want=${{ needs.envs.outputs.count }}
+          got=$(find .pio/build -name firmware.factory.bin | wc -l)
+          echo "$got of $want environments produced an image" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$got" -ne "$want" ]; then
+            echo "::error::Only $got of $want builds arrived - refusing to publish a partial release"
+            exit 1
+          fi
+
+      # publish-release.mjs refuses to publish a bare version unless HEAD is
+      # contained in origin/main. A tag checkout has the history but not
+      # necessarily that remote-tracking ref, and the script's own fetch relies
+      # on a refspec actions/checkout may not have configured - so put the ref
+      # there explicitly rather than have a correct release refused.
+      - name: Make origin/main available to the release guard
+        run: git fetch origin +refs/heads/main:refs/remotes/origin/main --quiet
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      # The same command a person runs locally: bundle the flasher, publish the
+      # manifests, create the GitHub release, deploy to Pages. GITHUB_TOKEN is
+      # injected by Actions, so the release needs no personal token.
+      - name: Build, release and deploy
+        working-directory: web
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run deploy

@@ -1,0 +1,69 @@
+# Does it still compile?
+#
+# Four envs, not thirty. This runs on every push and its job is to fail fast
+# when something stops building - and a break is almost never confined to one
+# flash size, because flash size changes a partition table and nothing else.
+# What DOES vary between builds is the chip and whether PSRAM is on, so the four
+# here are one per chip family plus a PSRAM one, which is the smallest set that
+# still covers every distinct compile.
+#
+# The full thirty are built at release time in release.yml. Running them here
+# would cost nothing on a public repo, but it would put a twenty-minute wait on
+# every push to catch what these four catch in five.
+
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["**.md", "site/**", "web/**", "design/**"]
+  pull_request:
+    paths-ignore: ["**.md", "site/**", "web/**", "design/**"]
+  workflow_dispatch:
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pioenv:
+          - esp32-ESPCAN-4mb          # classic ESP32, built-in CAN
+          - esp32dev-4mb              # classic ESP32, MCP2515 over SPI
+          - esp32s3-ESPCAN-16mb-psram # S3 with PSRAM, the octal path
+          - esp32c3-ESPCAN-4mb        # C3, the RISC-V core
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The toolchain and the pioarduino platform are hundreds of megabytes and
+      # do not change between runs. Keyed on platformio.ini because that is the
+      # file that pins the platform version.
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build ${{ matrix.pioenv }}
+        run: pio run --environment ${{ matrix.pioenv }}
+
+      # Flash use is worth seeing on every build: an image that grows past its
+      # app slot fails at the worst possible moment, which is on a user's board
+      # part way through an update.
+      - name: Report image size
+        run: |
+          bin=".pio/build/${{ matrix.pioenv }}/firmware.bin"
+          [ -f "$bin" ] || { echo "no image produced"; exit 1; }
+          echo "### ${{ matrix.pioenv }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "firmware.bin: $(( $(stat -c%s "$bin") / 1024 )) KB" >> "$GITHUB_STEP_SUMMARY"
