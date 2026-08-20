@@ -95,3 +95,35 @@ export function rank(entries) {
     return (b.manifest.minFlashBytes ?? 0) - (a.manifest.minFlashBytes ?? 0);
   });
 }
+
+/**
+ * One entry per wiring, which is the only thing left for a person to decide.
+ *
+ * Detection answers chip, flash size and PSRAM off the ROM. It cannot answer
+ * how CAN is wired, because an MCP2515 on SPI and a built-in controller are
+ * indistinguishable from down there - so that is the question the list should
+ * ask, and it is the only one. Everything else that separates two builds of the
+ * same wiring has a right answer the flasher already knows: on a 16MB module
+ * with PSRAM, the 16MB PSRAM build is simply better than the 8MB one, and
+ * asking a person to choose between them is asking them to guess at something
+ * that was already worked out.
+ *
+ * Takes a ranked list, so the first entry for each wiring is the best fit for
+ * this board - and, when a wiring has nothing compatible at all, the first
+ * entry is the one whose reason best explains why. Those stay in the list
+ * rather than vanishing: "why isn't my board here" is a worse failure than a
+ * greyed-out row that says what is wrong.
+ *
+ * @returns {Array<{entry: object, index: number, hidden: number}>} `index` is
+ *   the position in the ranked list it came from, so selection still refers to
+ *   one build; `hidden` is how many others share that wiring.
+ */
+export function collapseToWirings(ranked) {
+  const seen = new Map();
+  ranked.forEach((entry, index) => {
+    const key = entry.manifest.board;
+    if (seen.has(key)) seen.get(key).hidden++;
+    else seen.set(key, { entry, index, hidden: 0 });
+  });
+  return [...seen.values()];
+}

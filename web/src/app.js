@@ -22,6 +22,7 @@ import {
   loadManifest,
   compatibility,
   rank,
+  collapseToWirings,
   defaultSelection,
   versionsIn,
   buildsFor,
@@ -164,27 +165,75 @@ async function renderBuildsFor(channel, version) {
     manifests.filter(Boolean).map((manifest) => ({ manifest, compat: compatibility(manifest, session.info) })),
   );
 
-  list.innerHTML = choices
-    .map(
-      (c, idx) => `
+  renderChoiceList();
+}
+
+/* Collapsed by default, showing one build per wiring.
+ *
+ * There are thirty builds now, and on a 16MB S3 with PSRAM nine of them will
+ * run. Listing all nine does not give a person more control, it gives them a
+ * choice they have no way to make: eight of those nine differ only in things
+ * the flasher has already read off the chip. What is left after collapsing is
+ * the single question the silicon cannot answer - how CAN is wired - with the
+ * best build for this board already picked behind each answer.
+ *
+ * The full list is one click away and never disappears. Someone who wants the
+ * 8MB image on a 16MB board, or an older partition layout, has a real reason
+ * for it and should not be argued with. */
+let showAllBuilds = false;
+
+function renderChoiceList() {
+  const list = $("builds");
+  const wirings = collapseToWirings(choices);
+  const rows = showAllBuilds ? choices.map((entry, index) => ({ entry, index, hidden: 0 })) : wirings;
+
+  /* A ruled-out wiring shows its name and why, and nothing else.
+   *
+   * Which of its builds happens to represent it is an accident of sorting, and
+   * naming one would suggest the others might work - they cannot: a wiring is
+   * ruled out here on chip family, which every build of it shares. Same for the
+   * count. What the row is for is answering "why isn't my board in this list",
+   * and the reason alone answers it. */
+  const buildRow = ({ entry: c, index, hidden }) => `
       <label class="choice${c.compat.ok ? "" : " disabled"}">
-        <input type="radio" name="build" value="${idx}"${c.compat.ok ? "" : " disabled"}>
+        <input type="radio" name="build" value="${index}"${c.compat.ok ? "" : " disabled"}${
+          chosen && choices[index] === chosen ? " checked" : ""
+        }>
         <div class="choice-body">
           <div class="choice-head">
             <span class="choice-name">${esc(c.manifest.board)}</span>
-            <span class="mono dim choice-env">${esc(c.manifest.env)}</span>
+            ${c.compat.ok || !hidden ? `<span class="mono dim choice-env">${esc(c.manifest.env)}</span>` : ""}
           </div>
           <div class="choice-detail${c.compat.ok ? "" : " bad"}">${esc(c.compat.ok ? c.manifest.detail : c.compat.reason)}</div>
+          ${c.compat.ok && hidden ? `<div class="choice-note">Best match of ${hidden + 1} builds for this board</div>` : ""}
         </div>
-      </label>`,
-    )
-    .join("");
+      </label>`;
+
+  list.innerHTML =
+    rows.map(buildRow).join("") +
+    (choices.length > wirings.length
+      ? `<button type="button" class="link-more" id="toggle-all">${
+          showAllBuilds ? "Show best match per board" : `Show all ${choices.length} builds`
+        }</button>`
+      : "");
+
+  $("toggle-all")?.addEventListener("click", () => {
+    showAllBuilds = !showAllBuilds;
+    renderChoiceList();
+  });
 
   for (const input of list.querySelectorAll("input[name=build]")) {
     input.addEventListener("change", () => {
       chosen = choices[Number(input.value)];
       $("to-confirm").disabled = false;
     });
+  }
+
+  // Expanding or collapsing must not leave Continue enabled for a build that is
+  // no longer on screen to be checked.
+  if (chosen && !list.querySelector("input[name=build]:checked")) {
+    chosen = null;
+    $("to-confirm").disabled = true;
   }
 }
 
