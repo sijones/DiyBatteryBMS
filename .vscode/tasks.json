@@ -26,16 +26,25 @@
 			"group": "build"
 		},
 		{
-			// Every env in platformio.ini, in one pass. `pio run` with no
-			// --environment builds them all, so this does not need editing when
-			// an env is added.
+			// Every env in platformio.ini, read out of the file and passed in
+			// explicitly.
 			//
-			// It is thirty builds now rather than seven, so it is minutes rather
-			// than a minute. Use the pick-env task while working; this one is for
-			// cutting a release.
+			// A bare `pio run` does NOT do this, which is worth knowing because it
+			// looks exactly like it does: when [platformio] sets default_envs, a
+			// run with no --environment builds only those. This task used to be a
+			// bare `pio run` and was building one env out of seven while reporting
+			// success - and the release script publishes whatever it finds in
+			// .pio/build, so that is a release with one board in it and nothing
+			// anywhere saying so.
+			//
+			// Enumerating from the ini keeps it from falling behind the way a
+			// hand-written list already had.
+			//
+			// Thirty builds is minutes, not a minute. Use the pick-env task while
+			// working; this one is for cutting a release.
 			"label": "Release: Build+Zip (All Envs)",
 			"type": "shell",
-			"command": "C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
+			"command": "$envs = Get-Content \"${workspaceFolder}\\platformio.ini\" | Select-String '^\\[env:(.+)\\]' | ForEach-Object { '--environment', $_.Matches[0].Groups[1].Value }; Write-Host \"Building $($envs.Count / 2) environments\"; & C:\\Users\\sijon\\.platformio\\penv\\Scripts\\platformio.exe run @envs; Start-Process explorer.exe \"${workspaceFolder}\\dist\"",
 			"group": "build"
 		},
 		{
