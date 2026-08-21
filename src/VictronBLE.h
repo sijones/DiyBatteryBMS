@@ -75,6 +75,39 @@ class VictronBLE {
     volatile uint32_t AdvertsSeen = 0;
     volatile uint32_t DecryptFailures = 0;
 
+    /* What the advertisement says the device IS, rather than what it is
+       reading. Every advert carries these and they were parsed and thrown
+       away for the configured shunt - only the discovery scan kept them, so a
+       board that had finished setting up knew nothing about the device it was
+       listening to. On a BLE-only install this is the only identity there is:
+       Instant Readout carries no serial number and no firmware version, those
+       exist only on the VE.Direct wire. */
+    volatile uint16_t ProductId = 0;      // 0 until an advert has been seen
+    volatile int8_t   Rssi = 0;
+    String            DeviceName;         // as set in VictronConnect
+
+    /* Product id -> the name on the box.
+
+       Victron publishes these ids and they are the only model information an
+       advertisement carries, so this is what fills the Model field on a board
+       with no VE.Direct cable. Deliberately a short list of the monitors this
+       firmware is for, not a copy of the whole Victron catalogue: an id that
+       is not here is reported as its hex value rather than guessed at, which
+       is honest and still tells a user something they can search for. */
+    static const char* ModelFromProductId(uint16_t pid) {
+      switch (pid) {
+        case 0xA381: return "BMV-712 Smart";
+        case 0xA382: return "BMV-712 Smart Rev2";
+        case 0xA383: return "SmartShunt 500A/50mV";
+        case 0xA389: return "SmartShunt 500A/50mV";
+        case 0xA38A: return "SmartShunt 1000A/50mV";
+        case 0xA38B: return "SmartShunt 2000A/50mV";
+        case 0xA384: return "SmartShunt IP65 500A/50mV";
+        case 0xA385: return "SmartShunt IP65 1000A/50mV";
+        default:     return nullptr;
+      }
+    }
+
     bool Enabled() { return _enabled; }
     bool Configured() { return _haveMac && _haveKey; }
     bool Sniffer() { return _sniffer; }

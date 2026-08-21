@@ -530,6 +530,8 @@
        is flagging a newer version. */
     .stat-value a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--text-faint); }
     .stat-value a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+    .shunt-link { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: none;
+                  color: var(--text-faint); margin-left: 6px; }
 
     /* semantic state classes (replaces inline .style.color writes) */
     .v-ok    { color: var(--ok) !important; }
@@ -2212,7 +2214,7 @@
           </div>
         </div>
 
-        <div class="section-title">Victron Smart Shunt</div>
+        <div class="section-title">Victron Smart Shunt <span class="shunt-link" id="shuntLink"></span></div>
         <div class="stat-grid">
           <div class="stat-box stat-status">
             <div class="stat-label">Model</div>
@@ -2229,6 +2231,17 @@
           <div class="stat-box stat-status">
             <div class="stat-label">Product ID</div>
             <div class="stat-value sm" id="devPID">--</div>
+          </div>
+          <!-- Both are BLE-only: the name is what was set in VictronConnect and
+               the signal is the advert that carried it. Hidden on a VE.Direct
+               install, where neither exists rather than being unknown. -->
+          <div class="stat-box stat-status" id="devNameBox" hidden>
+            <div class="stat-label">Bluetooth Name</div>
+            <div class="stat-value sm" id="devName">--</div>
+          </div>
+          <div class="stat-box stat-status" id="devRssiBox" hidden>
+            <div class="stat-label">Signal</div>
+            <div class="stat-value sm" id="devRssi">--</div>
           </div>
         </div>
 
@@ -3289,6 +3302,46 @@
 
       var devFields = {modelstring:'devModel',fwversion:'devFW',serialnumber:'devSerial',pidstring:'devPID'};
       for(var k in devFields) { if(obj[k] !== undefined) { var e=document.getElementById(devFields[k]); if(e) e.textContent=obj[k]||'--'; } }
+
+      /* Fill the shunt panel from whichever link is actually answering.
+         VE.Direct sends model, firmware and serial as text. BLE sends none of
+         the three - it has a product id and the name set in VictronConnect, and
+         that is the whole of the identity available. So on a BLE install the
+         two it cannot send say so, rather than showing a dash that reads like a
+         fault or a cable someone then goes looking for. */
+      if(obj.shuntlink !== undefined) {
+        var viaBle = obj.shuntlink === 'ble';
+        var badge = document.getElementById('shuntLink');
+        if(badge) badge.textContent = viaBle ? 'over Bluetooth'
+                                    : obj.shuntlink === 'vedirect' ? 'over VE.Direct' : 'not seen yet';
+
+        /* The name box appears only when a name actually arrived. Victron does
+           not put the local name in the manufacturer-data advert - it comes in
+           a scan response, which this passive listener does not ask for - so on
+           most installs there is no name to show, and an empty box labelled
+           Bluetooth Name is a question rather than an answer. */
+        var nameBox = document.getElementById('devNameBox');
+        var rssiBox = document.getElementById('devRssiBox');
+        if(nameBox) nameBox.hidden = !(viaBle && obj.blename);
+        if(rssiBox) rssiBox.hidden = !viaBle;
+
+        if(viaBle) {
+          var m = document.getElementById('devModel');
+          if(m) m.textContent = obj.blemodel || ('Unknown (' + (obj.bleproductid || '?') + ')');
+          var pid = document.getElementById('devPID');
+          if(pid) pid.textContent = obj.bleproductid || '--';
+          var nm = document.getElementById('devName');
+          if(nm) nm.textContent = obj.blename || '--';
+          var rs = document.getElementById('devRssi');
+          if(rs && obj.blerssi !== undefined) rs.textContent = obj.blerssi + ' dBm';
+          /* Not sent over BLE at all - saying so beats a dash, which reads as
+             "should be here and is missing". */
+          var fw = document.getElementById('devFW');
+          if(fw) fw.textContent = 'not sent over BLE';
+          var sn = document.getElementById('devSerial');
+          if(sn) sn.textContent = 'not sent over BLE';
+        }
+      }
       /* Uptime rides in the frequent payload alongside the heap figures, and is
          the first thing to read when a board is behaving oddly: a device that
          says minutes when it should say days restarted while nobody was

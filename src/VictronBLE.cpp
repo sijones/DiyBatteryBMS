@@ -237,6 +237,17 @@ void VictronBLE::ParseAdvert(const NimBLEAdvertisedDevice* dev)
 
   AdvertsSeen++;
 
+  /* Identity, kept from the same advert that carries the readings. The name
+     is only re-copied when it changes, because this runs about once a second
+     and a String assignment that reallocates every time is not free on a
+     board with 70KB of heap. */
+  ProductId = (len >= 4) ? (uint16_t)(raw[2] | (raw[3] << 8)) : 0;
+  Rssi = (int8_t) dev->getRSSI();
+  {
+    const std::string n = dev->getName();
+    if (!n.empty() && DeviceName != n.c_str()) DeviceName = n.c_str();
+  }
+
   if (raw[4] != VICTRON_REC_BATTERY_MON) return;  // a Victron device, but not a shunt
 
   if (raw[7] != _key[0]) {

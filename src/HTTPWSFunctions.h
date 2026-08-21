@@ -685,6 +685,37 @@ static void buildDataDoc(JsonDocument& doc, bool All)
   doc["fwversion"] = Inverter.FWVersion();
   doc["serialnumber"] = Inverter.SerialNumber();
   doc["modelstring"] = Inverter.ModelString();
+
+  /* Who the shunt is, from whichever link is carrying it.
+
+     VE.Direct sends model, firmware and serial as text; BLE Instant Readout
+     sends none of the three - it has a product id and whatever name was set
+     in VictronConnect, and nothing else about identity. So the panel needs to
+     know which link answered, or a BLE-only install reads as a broken cable:
+     four empty fields and no clue why. shuntlink lets the UI say "over
+     Bluetooth" and name the two fields that are simply not sent that way.
+
+     Named shuntlink, not shuntsource: shuntsource already exists and is the
+     CONFIGURED source, a uint8_t the settings handler writes back to NVS.
+     Reusing the name would have put a string where the UI round-trips a
+     number, which is the sort of thing that breaks a control silently. This
+     one is what is actually arriving, which is a different question. */
+  {
+    const bool serialSeen = Inverter.ModelString().length() > 0 ||
+                            Inverter.SerialNumber().length() > 0;
+    const bool bleSeen    = VictronBle.ProductId != 0;
+    doc["shuntlink"] = serialSeen ? "vedirect" : (bleSeen ? "ble" : "none");
+
+    if (bleSeen) {
+      char pid[8];
+      snprintf(pid, sizeof(pid), "0x%04X", (unsigned)VictronBle.ProductId);
+      doc["bleproductid"] = pid;
+      const char* model = VictronBLE::ModelFromProductId(VictronBle.ProductId);
+      if (model) doc["blemodel"] = model;
+      if (VictronBle.DeviceName.length()) doc["blename"] = VictronBle.DeviceName;
+      doc["blerssi"] = (int)VictronBle.Rssi;
+    }
+  }
   doc["chargevoltage"] = Inverter.GetChargeVoltage();
   doc["floatvoltage"] = Inverter.GetFloatVoltage();
   doc["floatcurrent"] = Inverter.GetFloatCurrent();
