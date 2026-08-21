@@ -52,6 +52,43 @@ jobs:
       # Read from the ini rather than listing them here. A hand-written list in
       # this file is the same mistake the VS Code tasks made, with a slower
       # feedback loop.
+      # Check the Cloudflare credentials before anything is built.
+      #
+      # They are used in the very last step of the very last job, so a missing
+      # or under-permissioned token costs twenty-one builds and a published
+      # GitHub release before it says so - which is exactly how 3.0.0-BETA1 went
+      # out with an archive but no site. Ten seconds here saves twelve minutes
+      # and a half-done release.
+      #
+      # Reading the project proves the token is valid, points at the right
+      # account, and carries Pages permission at all. It cannot prove Edit
+      # rather than Read - that would mean writing something - so the message
+      # below names the permission a deploy actually needs.
+      - name: Cloudflare credentials work
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=""
+          [ -n "$TOKEN" ] || missing="CLOUDFLARE_API_TOKEN"
+          [ -n "$ACCOUNT" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            exit 1
+          fi
+
+          code=$(curl -s -o /tmp/cf.json -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/pages/projects/diy-power-pilot-uk")
+
+          if [ "$code" != "200" ]; then
+            echo "::error::Cloudflare rejected the token (HTTP $code). A Pages deploy needs an API token with Account > Cloudflare Pages > Edit, scoped to account $ACCOUNT. The 'Edit Cloudflare Workers' template does not include it."
+            # Cloudflare puts a readable reason in the body; the token is never in it.
+            head -c 400 /tmp/cf.json || true
+            exit 1
+          fi
+          echo "Cloudflare project reachable" >> "$GITHUB_STEP_SUMMARY"
+
       - id: read
         run: |
           names=$(sed -n 's/^\[env:\(.*\)\]$/\1/p' platformio.ini)
