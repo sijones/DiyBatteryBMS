@@ -16,7 +16,7 @@ void BLEDataProcess()
 
   Inverter.BattVoltage((uint16_t)(VictronBle.VoltagemV / 10));      // mV -> centivolts
   Inverter.BattCurrentmA((int32_t)(VictronBle.CurrentmA / 100));    // mA -> deciamps
-  Inverter.BattSOC((uint8_t)(VictronBle.SOCPermille / 10));         // 0.1% -> %
+  Inverter.BattSOCPermille(VictronBle.SOCPermille);                 // kept at 0.1%
 
   // The shunt sends power as a derived figure over serial but not over BLE, so
   // it is computed here from the two readings that did arrive.
@@ -89,7 +89,9 @@ void VEDataProcess()
       log_i("Battery SOC Update: %s%%", parsedValue);
       if (dataValid) {
         taskENTER_CRITICAL(&(Inverter.CANMutex));
-        Inverter.BattSOC((uint8_t)(parsedNum / 10));
+        // VE.Direct sends SOC in 0.1%, so it is stored that way and the
+        // whole-percent figure the CAN frame needs is derived from it.
+        Inverter.BattSOCPermille((uint16_t)parsedNum);
         Lcd.Data.BattSOC.setValue(Inverter.BattSOC());
         taskEXIT_CRITICAL(&(Inverter.CANMutex));
       }

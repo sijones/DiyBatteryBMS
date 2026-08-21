@@ -119,6 +119,7 @@ enum Charging {
 };
 // Flags set to check all data has come before starting CANBUS sending
 bool _initialBattSOC = false;
+uint16_t _battSOCPermille = 0;   // 0.1% steps, as both sources send it
 bool _initialBattVoltage = false;
 bool _initialBattCurrent = false;
 bool _initialChargeVoltage = false;
@@ -543,7 +544,24 @@ public:
   bool Initialised(){return _initialised;}
   bool Configured();
 
-  void BattSOC(uint8_t soc){_initialBattSOC = true; _battSOC = soc;}
+  /* SOC is kept twice, at two resolutions, and they are not interchangeable.
+   *
+   * _battSOC is whole percent and stays exactly as it was: it is what goes into
+   * the Pylontech CAN frame, which has one byte for it, and what the schedule
+   * and SOC-trick thresholds compare against. Changing its rounding would
+   * change when this firmware asks an inverter to stop charging, which is not
+   * a display decision.
+   *
+   * _battSOCPermille is what both sources actually send - VE.Direct and the BLE
+   * advertisement are each in 0.1% - and exists so the web UI can report what
+   * was measured rather than what fitted in a byte. Truncation, not rounding,
+   * so the two never disagree about which percent it is. */
+  void BattSOC(uint8_t soc){_initialBattSOC = true; _battSOC = soc; _battSOCPermille = (uint16_t)soc * 10;}
+  void BattSOCPermille(uint16_t permille){
+    _initialBattSOC = true;
+    _battSOCPermille = permille;
+    _battSOC = (uint8_t)(permille / 10);
+  }
   void BattVoltage(uint16_t voltage){_initialBattVoltage = true; _battVoltage = voltage;}
   void BattSOH(uint8_t soh){_battSOH = soh;}
   void BattCurrentmA(int32_t currentmA){_initialBattCurrent = true; _battCurrentmA = currentmA;}
@@ -552,6 +570,7 @@ public:
   void EnableRequestFlags(bool State) {_enableRequestFlags = State;}
 
   uint8_t BattSOC(){return _battSOC;}
+  uint16_t BattSOCPermille(){return _battSOCPermille;}
   uint16_t BattVoltage(){return _battVoltage;}
   uint8_t BattSOH(){return _battSOH;}
   int32_t BattCurrentmA(){return _battCurrentmA;}

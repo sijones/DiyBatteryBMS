@@ -1335,7 +1335,11 @@
         </div>
       </div>
       <div class="header-meta">
-        <span class="meta-item" id="hostMeta" hidden><b id="hostName">--</b></span>
+        <!-- Labelled "host", because on its own it is a name with no stated
+             kind - and now that the hostname and the MQTT client id default to
+             the same word, a bare name in the header could plausibly be either.
+             This is the one you type into a browser. -->
+        <span class="meta-item" id="hostMeta" hidden>host <b id="hostName">--</b></span>
         <span class="meta-item" id="fwMeta" hidden>fw <b id="fwHeader">--</b></span>
         <span class="conn-status" id="connPill">
           <span class="dot" id="connDot"></span><span id="connText">Offline</span>
@@ -3012,9 +3016,14 @@
           const batteryPercentage = document.getElementById('batteryPercentage');
           const gauge = document.getElementById('batteryGauge');
 
+          /* One decimal on the reading, because the payload now carries one and
+             JavaScript drops a trailing .0 on its own - a pack at exactly 87.0%
+             would otherwise read 87% and look like a coarser figure than the
+             one beside it a moment earlier. The bar width stays unrounded; it
+             is a length, and nobody reads it to a tenth. */
           if(batteryLevel && batteryPercentage) {
             batteryLevel.style.width = soc + '%';
-            batteryPercentage.textContent = soc + '%';
+            batteryPercentage.textContent = Number(soc).toFixed(1) + '%';
 
             // Update battery color based on level
             batteryLevel.className = 'battery-level';
@@ -3026,7 +3035,7 @@
               batteryLevel.classList.add('high');
             }
           }
-          if(gauge) gauge.setAttribute('aria-label', 'Battery state of charge ' + soc + '%');
+          if(gauge) gauge.setAttribute('aria-label', 'Battery state of charge ' + Number(soc).toFixed(1) + '%');
 
           latestState.soc = soc;
         }

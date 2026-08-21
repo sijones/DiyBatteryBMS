@@ -661,7 +661,19 @@ static void buildDataDoc(JsonDocument& doc, bool All)
 
   doc["RealTime"] = true;
   taskENTER_CRITICAL(&(Inverter.CANMutex));
-  doc["battsoc"] = Inverter.BattSOC();
+  /* One decimal, always, including the .0.
+   *
+   * Both sources measure SOC in 0.1% and it was being truncated to a byte
+   * before anything saw it, so a pack sitting at 87.4% reported 87 and a
+   * browser had no way to know it was not exactly 87.
+   *
+   * serialized() rather than a float, because ArduinoJson writes a float that
+   * happens to be whole as "87" - which is the same JSON number, but a reader
+   * watching the frames cannot then tell a device that reports whole percent
+   * from one that measured exactly 87.0. Written out this way the field always
+   * has the same shape, and it is still a JSON number rather than a string, so
+   * nothing parsing it has to change. */
+  doc["battsoc"] = serialized(String(Inverter.BattSOCPermille() / 10.0f, 1));
   doc["battvoltage"] = Inverter.BattVoltage();
   doc["battcurrent"] = Inverter.BattCurrentmA();
   doc["battpower"] = Inverter.BattPower();
