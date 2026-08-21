@@ -495,6 +495,13 @@
       margin-left: 1px;
     }
     .stat-value.sm { font-size: 14px; }
+    /* A figure that happens to be a link still reads as a figure: same face,
+       same weight, same colour as its neighbours, with the underline left to
+       hover. Left to the browser it arrives blue and underlined and looks like
+       a mistake in a row of readings. The warn class still wins when the panel
+       is flagging a newer version. */
+    .stat-value a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--text-faint); }
+    .stat-value a:hover { color: var(--accent); border-bottom-color: var(--accent); }
 
     /* semantic state classes (replaces inline .style.color writes) */
     .v-ok    { color: var(--ok) !important; }
@@ -2137,6 +2144,13 @@
           <div class="stat-box stat-status">
             <div class="stat-label">Version</div>
             <div class="stat-value sm" id="fwVersionBms">--</div>
+          </div>
+          <!-- What the website has for this exact board, filled in by the
+               browser rather than the device. Stays "--" when there is no route
+               out, which is a truthful answer: this board does not know. -->
+          <div class="stat-box stat-status">
+            <div class="stat-label">Downloadable Version</div>
+            <div class="stat-value sm" id="fwDownloadable">--</div>
           </div>
           <div class="stat-box stat-status">
             <div class="stat-label">Build Target</div>
@@ -3788,7 +3802,9 @@
       }
       if (!newest) return;
 
-      if (fwNewer(newest, fwLink.from)) {
+      var isNew = fwNewer(newest, fwLink.from);
+
+      if (isNew) {
         a.textContent = 'Version ' + newest + ' is available - download it for this board';
         note.textContent = 'You are running ' + fwLink.from + '. Opens diy.power-pilot.uk; choose the downloaded file below.';
         note.className = 'fw-download-note new';
@@ -3797,6 +3813,22 @@
         a.textContent = 'Download ' + newest + ' again for this board';
         note.textContent = 'You are running ' + fwLink.from + ', which is the newest published for this board.';
         note.className = 'fw-download-note';
+      }
+
+      /* The same fact as a figure beside the running version, because that is
+         where someone looks to compare the two. Amber only when it is actually
+         newer - colouring it whenever it differs from nothing would make "up to
+         date" look like a warning. */
+      var box = document.getElementById('fwDownloadable');
+      if (box) {
+        box.innerHTML = '';
+        var link = document.createElement('a');
+        link.href = a.href;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = newest;
+        box.appendChild(link);
+        box.className = 'stat-value sm' + (isNew ? ' v-warn' : '');
       }
     }
 
