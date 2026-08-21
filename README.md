@@ -32,7 +32,7 @@ See the WIKI for more detailed documentation.
 With the help of the MQTT server you can integrate the monitoring data to virtually any Home Automation System. I use Home Assistant to automate off peak battery charging (using Force Charge) and can also enable and disable the charging and discharging.
 
 ## Features
-- Setup from a browser, flash to your ESP32 device then go to http://192.168.4.1 and connect it to your wifi, once connected go to http://diy-batterybms.local or it's IP address to configure all settings.
+- Setup from a browser, flash to your ESP32 device then go to http://192.168.4.1 and connect it to your wifi, once connected go to http://diy-battery-bms.local or it's IP address to configure all settings.
 - **NEW**: Improved WiFi Setup Experience:
   - WebSocket-based WiFi network scanning with automatic background refresh
   - Networks sorted by signal strength for easier selection
@@ -57,11 +57,7 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
   See [PowerPilot.md](PowerPilot.md) for the WebSocket interface, or the summary
   [below](#powerpilot-integration-websocket-api).
 
-> **Version note:** everything below marked *New in 2.8.0-BETA5* requires firmware **2.8.0-BETA5 or later**.
-> The version is shown in the top right of the web interface and on the Firmware tab.
-> If you are on an earlier build these sections will not match what you see.
-
-### New in 2.8.0-BETA5 — Redesigned Web Interface
+### Web Interface
 - Dark, light and automatic themes - the toggle is in the header and your choice is remembered
 - Laid out for phones as well as desktops; the dashboard packs two readouts per row in portrait
 - Charge and discharge are proper toggle switches, reachable by keyboard and screen reader
@@ -71,18 +67,18 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
 - Factory Reset now lives behind a "Danger Zone" section and asks you to type ERASE
 - **Voltages and currents are now entered in V, A and Ah** rather than mV and mA
 
-### New in 2.8.0-BETA5 — Charging Visibility
+### Charging Visibility
 The dashboard now shows what the firmware is actually doing rather than leaving you to infer it:
 - **SOC sent to the inverter** - when the reported value differs from the real pack SOC, the dashboard shows both and explains why (holding 99% until fully charged, "never send 100%", or the force-charge trick)
 - **Absorption progress** - both of the timers that can end absorption, side by side: the tail-current hold and the maximum absorption time. The tail timer resets whenever current rises back above the threshold, and the panel says so, along with which condition is currently holding things up
 
-### New in 2.8.0-BETA5 — Remote Logging (Syslog)
+### Remote Logging (Syslog)
 - Forwards the same log lines shown on the Logs tab to a syslog collector over UDP (RFC 3164)
 - Configured under Settings, applies immediately without a reboot
 - Enter the collector's IP address - hostnames are deliberately not resolved, so logging can never block on DNS
 - The Logs tab also gained level filtering, plus Copy and Download buttons for reporting problems
 
-### New in 2.8.0-BETA11 — CAN Sniffer
+### CAN Sniffer
 A **CAN sniffer** checkbox on the Logs tab logs every frame received on the bus, with its data
 bytes, so you can see exactly what another BMS puts on the wire. It exists for the question that
 comes up whenever an inverter misbehaves — *"but my JK/Pace/Seplos works fine"* — which can only
@@ -102,7 +98,7 @@ really be answered by looking at what the other BMS sends at the moment the two 
   CAN frames only selected you get just the capture.
 - Nothing on the Logs tab counts as configuration, so none of it raises the unsaved-changes bar.
 
-### New in 2.8.0-BETA5 — Clock and Timezone
+### Clock and Timezone
 - **Timezone support.** Log and syslog timestamps are now in your local time rather than UTC.
   Pick a region from the dropdown under Settings and daylight saving is handled automatically -
   the UK preset switches to BST and back on its own with no firmware update. The underlying
@@ -119,7 +115,7 @@ The device now supports **MQTT Discovery** which automatically creates all entit
 - **Binary Sensors**: Charge/Discharge/Force Charge status indicators  
 - **Switches**: Charge Enable, Discharge Enable, Force Charge, Request Full Charge, SOC Trick Enable, Request Flags Enable
 - **Number Controls**: Charge Voltage, Charge Current (with 0.1 precision), Float Voltage, Float Current
-- **New in 2.8.0-BETA5 — Charging detail**: SOC Sent To Inverter, SOC Override Reason, SOC Override Active, Absorption Elapsed, Absorption Remaining, Tail Current Held, Tail Current Remaining, Tail Current Active
+- **Charging detail**: SOC Sent To Inverter, SOC Override Reason, SOC Override Active, Absorption Elapsed, Absorption Remaining, Tail Current Held, Tail Current Remaining, Tail Current Active
 - All entities are grouped under one "DIY Battery BMS" device
 - No manual YAML configuration required (HomeAssistant.yaml is now optional for reference only)
 - Discovery messages published automatically on MQTT connect
@@ -132,7 +128,7 @@ knowing before you automate against it.
 - **SOC Trick Enable**: Sends 1/10 of the actual SOC to trick the inverter into force charging
 - **Request Flags Enable**: Controls charge/discharge request flags sent to inverter (allows different ways to control inverter response)
 
-### New in 2.8.0-BETA6 — Float Stage
+### Float Stage
 
 Until now the charge cycle ended at **Complete**: the charge current limit dropped to zero and the
 charge-enable flag cleared, while the voltage limit stayed at the absorption target. Several hybrid
@@ -166,8 +162,6 @@ while the voltage limit stays high, which produces the same symptom by a differe
 and earlier, check first that a float voltage is configured at all.
 
 ### PowerPilot Integration (WebSocket API)
-
-*New in 2.8.0-BETA6.*
 
 PowerPilot is a home energy manager that plans battery charge and discharge cycles against solar
 forecasts and tariff prices. It can use a DiyBatteryBMS device as a networked hardware interface,

@@ -109,7 +109,7 @@
 
     <div class="banner warn" id="legacy-note" hidden>
       <div>
-        This build is larger than the 1.25MB app slot used before 3.0. If your device still reports the
+        This build is larger than the 1.25MB app slot used before v3.0. If your device still reports the
         pre-3.0 partition table on the Firmware tab, this update will not fit and has to be written over
         USB instead — the <a href="./">browser flasher</a> does that, and keeps your settings.
       </div>
@@ -322,7 +322,7 @@ async function main() {
       state.hidden = false;
       state.className = "banner warn";
       text.textContent =
-        "This is a beta build - what is being worked on, and not yet the one to put on a battery you rely on.";
+        "This is a beta build - please use with caution.";
     }
   }
 

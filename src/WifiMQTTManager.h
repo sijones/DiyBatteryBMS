@@ -27,7 +27,13 @@ class WifiMQTTManagerClass {
         String _wifiSSID = "";
         String _wifiPass = "";
         String _mqttServer = "";
-        String _wifiHostName = "DIY-BATTERY";
+        /* Doubles as the mDNS name and, on a board with no credentials yet, the
+           SSID of the access point it raises - so it is the first thing a new
+           user ever sees this device called. Lower case because that is how it
+           appears in a browser bar either way, and it matches the -bms name used
+           everywhere else. Only new devices take this: an existing one has its
+           name in NVS and keeps it. */
+        String _wifiHostName = "diy-battery-bms";
         String _mqttUser = "";
         String _mqttPass = "";
         uint16_t _mqttPort = 1883;

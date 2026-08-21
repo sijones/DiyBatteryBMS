@@ -194,17 +194,16 @@
 
     <p>
       Plug an ESP32 in and this reads back what it is — chip, flash size, PSRAM, partition layout — then
-      writes the build that matches it and puts it on your WiFi. No drivers, no esptool, no zip to unpack.
+      writes the build that matches it and sets it up on your WiFi. No drivers, no esptool, no zip to unpack.
     </p>
     <p>
-      Nothing is written until you have picked a build and seen the list of exactly what will be written.
+      Nothing is written until you have picked a build and confirmed the details.
       Your settings are kept where the build allows it — it says which before it starts — and can be
-      saved to your machine first.
+      saved to your PC first.
     </p>
     <div class="actions"><button id="connect" class="primary">Connect a board</button></div>
     <p id="serial-note" style="margin-top:22px; font-size:13px">
-      Needs Chrome, Edge or Opera on a desktop. Safari has no Web Serial API and neither does Firefox,
-      though a Firefox add-on that adds one works here.
+      Needs Chrome, Edge or Opera on a desktop, Firefox can work with a Firefox add-on to enable Web Serial.
     </p>
   </section>
 
@@ -222,16 +221,14 @@
       <button id="to-choose" class="primary">Choose a build</button>
       <button id="disconnect">Disconnect</button>
     </div>
-    <p style="margin-top:22px; font-size:13px">Read from the board itself, not guessed from what you told us.</p>
+    <p style="margin-top:22px; font-size:13px">Read from the board.</p>
   </section>
 
   <section data-stage="choose" hidden>
     <h1>How is CAN wired?</h1>
     <p>
-      This is the one thing the chip cannot tell us — an MCP2515 on SPI and a built-in CAN controller look
-      identical from here. Everything else was read off the board, so each option below already carries the
-      right build for the flash and PSRAM that were found. Anything that cannot run on this board is shown
-      with the reason.
+      Do you have an MCP2515 on SPI or a built-in (ESP)CAN controller — this cannot be automatically detected. 
+      Please make a selection to continue, note if you are unsure, try ESPCAN if the CAN wiring is integrated, otherwise select MCP2515.
     </p>
     <div class="picker">
       <div class="tabs">
@@ -287,7 +284,7 @@
         <label class="check">
           <input type="checkbox" id="want-backup" checked>
           <div>
-            <div style="font-size:13.5px; font-weight:600; margin-bottom:3px">Save a copy of the settings first</div>
+            <div style="font-size:13.5px; font-weight:600; margin-bottom:3px">Save a copy of the settings</div>
             <div style="font-size:12.5px; color:var(--text-dim)">
               A byte-level copy of nvs, downloaded to your machine. Remembered for next time.
             </div>
@@ -298,7 +295,7 @@
     </div>
 
     <div class="banner err" id="erase-warning" hidden>
-      <div>Erasing removes the WiFi credentials too — the board will come back up on its own access point.</div>
+      <div>Erasing removes the WiFi credentials — the board will come back up as an access point.</div>
     </div>
 
     <div class="actions">
@@ -310,7 +307,7 @@
   <section data-stage="flashing" hidden>
     <h1>Writing to the board</h1>
     <p id="flash-what" class="mono" style="color:var(--text); font-size:13.5px"></p>
-    <p>Leave the cable alone until this finishes.</p>
+    <p>DO NOT REMOVE the cable until this finishes.</p>
     <div class="card">
       <div class="progress-head">
         <span id="flash-step">Starting…</span>
@@ -370,7 +367,7 @@
       <div class="fields">
         <label><span>Network name</span><input id="wifi-manual" type="text" placeholder="hidden or out of range"></label>
         <label><span>Passphrase</span><input id="wifi-pass" type="password" placeholder="leave empty for an open network"></label>
-        <label><span>Name on the network</span><input id="wifi-host" type="text" placeholder="diy-battery"></label>
+        <label><span>Name on the network</span><input id="wifi-host" type="text" placeholder="diy-battery-bms"></label>
       </div>
     </div>
 

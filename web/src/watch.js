@@ -9,7 +9,7 @@
  *
  *   [net] connected to 'J-iot'
  *   [net] IP 10.10.11.25   http://10.10.11.25/
- *   [net] no WiFi configured - access point 'diy-battery' at 192.168.4.1
+ *   [net] no WiFi configured - access point 'diy-battery-bms' at 192.168.4.1
  *
  * It reads the port DIRECTLY rather than through esptool-js's transport. Two
  * reasons, both learned the hard way:
