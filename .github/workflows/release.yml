@@ -52,6 +52,22 @@ jobs:
       # Read from the ini rather than listing them here. A hand-written list in
       # this file is the same mistake the VS Code tasks made, with a slower
       # feedback loop.
+      # Same Node the publish job uses, so "can wrangler run" is answered for
+      # the version that will actually run it.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # Wrangler has a minimum Node version and enforces it at startup, not at
+      # install. Pinned to 20 here, it printed three npm warnings, downloaded
+      # itself, and then refused - in the last step of the last job, after
+      # twenty-one builds and a published GitHub release. Asking it for its
+      # version first costs seconds and fails where it is cheap to fix.
+      - name: Wrangler runs on this Node
+        run: |
+          node --version
+          npx --yes wrangler@latest --version
+
       # Check the Cloudflare credentials before anything is built.
       #
       # They are used in the very last step of the very last job, so a missing
@@ -154,9 +170,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # 24, not 20: wrangler requires Node 22 or newer and says so only when it
+      # starts. This is also what the project is developed on.
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
