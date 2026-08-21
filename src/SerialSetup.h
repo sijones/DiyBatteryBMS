@@ -37,15 +37,42 @@ static void serialBanner() {
   Serial.println("Type 'help' for WiFi setup over this cable.");
 }
 
-// What the board is on the network, printed the moment it becomes true.
+/* What the board is on the network, printed the moment it becomes true.
+ *
+ * The mode is tested by BIT, not by equality. WIFI_MODE_APSTA is both bits at
+ * once, and a board that raises an access point while still trying for a
+ * network is in exactly that state - so `== WIFI_MODE_AP` was false, the
+ * station wording ran instead, and a device with no network at all reported
+ *
+ *   [net] connected to ''
+ *   [net] IP 0.0.0.0   http://0.0.0.0/
+ *
+ * which is the line this file was edited to stop printing. Mode is also
+ * WIFI_MODE_NULL for the first moments after boot, which failed the same test
+ * the same way.
+ *
+ * So: describe the station only when there is a station connection with an
+ * address to show, describe the access point when one is up, and when neither
+ * is true say so plainly rather than describing a connection to ''. */
 static void serialAnnounceNetwork() {
-  if (WiFi.getMode() == WIFI_MODE_AP) {
-    Serial.printf("[net] no WiFi configured - access point '%s' at %s\r\n",
-                  wifiManager.GetWifiHostName().c_str(),
-                  WiFi.softAPIP().toString().c_str());
+  const wifi_mode_t mode = WiFi.getMode();
+  const bool apUp = (mode & WIFI_MODE_AP) != 0;
+  const bool staUp = (mode & WIFI_MODE_STA) != 0 && WiFi.isConnected() &&
+                     WiFi.localIP() != IPAddress(0, 0, 0, 0);
+
+  if (!staUp) {
+    if (apUp) {
+      Serial.printf("[net] no WiFi configured - access point '%s' at %s\r\n",
+                    wifiManager.GetWifiHostName().c_str(),
+                    WiFi.softAPIP().toString().c_str());
+    }
+    else {
+      Serial.println("[net] no network yet - not connected, no access point up");
+    }
     Serial.println("[net] set credentials here with: ssid <name>  pass <secret>  connect");
     return;
   }
+
   Serial.printf("[net] connected to '%s'\r\n", wifiManager.GetWifiSSID().c_str());
   Serial.printf("[net] IP %s   http://%s/\r\n",
                 WiFi.localIP().toString().c_str(),
@@ -234,15 +261,24 @@ static void serialSetupLoop() {
      this output. Waiting for a real address costs a second and makes the line
      mean what it says. A static configuration has its address immediately and
      is unaffected. */
-  const bool sta = (WiFi.getMode() == WIFI_MODE_STA);
-  const bool up = sta && WiFi.isConnected() && WiFi.localIP() != IPAddress(0, 0, 0, 0);
+  /* By bit rather than by equality, for the same reason as the announce above:
+     a board running an access point while it keeps trying for a network is
+     WIFI_MODE_APSTA, which is neither WIFI_MODE_STA nor WIFI_MODE_AP. Tested
+     for equality, such a board counted as "not a station", took the settled-AP
+     branch below, and had the station wording printed at it. */
+  const wifi_mode_t mode = WiFi.getMode();
+  const bool up = (mode & WIFI_MODE_STA) != 0 && WiFi.isConnected() &&
+                  WiFi.localIP() != IPAddress(0, 0, 0, 0);
   if (up != _serLastConnected) {
     _serLastConnected = up;
     if (up) serialAnnounceNetwork();
     else    Serial.println("[net] WiFi lost, reconnecting");
   }
-  // AP mode never "connects", so say where it is once, after it has settled
-  if (!sta && !_serAnnounced && millis() > 4000) {
+  /* Nothing connected. An access point never "connects", and a board that has
+     given up on a network never will either, so say where things stand once,
+     after they have settled. serialAnnounceNetwork() works out which of those
+     it is. */
+  if (!up && !_serAnnounced && millis() > 4000) {
     _serAnnounced = true;
     serialAnnounceNetwork();
   }
