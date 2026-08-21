@@ -12,7 +12,7 @@
     "release": "node scripts/publish-release.mjs",
     "pages": "npx --yes wrangler@latest pages deploy ../site --project-name diy-power-pilot-uk --branch main --commit-dirty=true",
     "deploy": "npm run build && npm run restore && npm run manifests && npm run release && npm run pages",
-    "deploy:site": "npm run build && npm run pages"
+    "deploy:site": "npm run build && npm run restore -- --all && npm run pages"
   },
   "dependencies": {
     "esptool-js": "^0.5.4"

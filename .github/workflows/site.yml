@@ -1,0 +1,77 @@
+# Deploy the flasher page, without touching the firmware.
+#
+# The site and the firmware move at different speeds. A release is twenty-one
+# builds, a GitHub release and a tag; changing a sentence on the landing page is
+# none of those, and having to cut a release to fix a typo means the typo stays.
+#
+# So this deploys site/ and web/ on their own, on a push, with no build, no
+# manifests and no release.
+#
+# The one thing it must not do is lose the firmware. A Pages deployment is a
+# COMPLETE SNAPSHOT of the directory, site/firmware is gitignored, and a CI
+# checkout therefore has none of it - so an innocent-looking copy edit would
+# publish a site with no builds on it at all and delete every published version
+# in the process. `restore --all` pulls back everything the site is currently
+# serving first. The --all matters: without it the newest version is skipped, on
+# the assumption that a release is about to write it, and here nothing is.
+#
+# Firmware still only ever changes through release.yml and a tag.
+
+name: Site
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "site/**"
+      - "web/**"
+      - ".github/workflows/site.yml"
+  workflow_dispatch:
+
+# Deployments are a snapshot of a directory, so two of them racing means the
+# later-finishing one wins regardless of which was newer. One at a time.
+concurrency:
+  group: site-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy the site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 24 because wrangler needs 22 or newer and refuses at startup, having
+      # installed perfectly happily first.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      # Same command a person would run locally, which is the point: bundle the
+      # flasher, pull back the published firmware, upload the lot.
+      - name: Build and deploy
+        working-directory: web
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run deploy:site
+
+      # What is actually being served now, so the run says what it did rather
+      # than only that it exited zero.
+      - name: Report what is live
+        run: |
+          curl -s --max-time 30 https://diy.power-pilot.uk/firmware/releases.json -o /tmp/live.json
+          python3 - >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json
+          d = json.load(open("/tmp/live.json"))
+          print("### Live at diy.power-pilot.uk\n")
+          for channel, versions in d.get("channels", {}).items():
+              for v in versions:
+                  print(f"- **{channel}** {v['version']} — {len(v['builds'])} builds")
+          PY

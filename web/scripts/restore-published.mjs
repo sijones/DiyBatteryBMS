@@ -18,9 +18,10 @@
  * archive, because the live site is exactly the thing being replaced: whatever
  * it is serving now is what must survive the deployment.
  *
- *   node scripts/restore-published.mjs [--dry-run]
+ *   node scripts/restore-published.mjs [--all] [--dry-run]
  *
- * SITE_BASE overrides where to read from, SITE_DIR where to write to.
+ * --all keeps the newest version too, for a deploy that is not rebuilding
+ * anything. SITE_BASE overrides where to read from, SITE_DIR where to write to.
  */
 
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -36,10 +37,21 @@ const BASE = (process.env.SITE_BASE || "https://diy.power-pilot.uk").replace(/\/
 const OUT = process.env.SITE_DIR || join(ROOT, "site", "firmware");
 const DRY = process.argv.includes("--dry-run");
 
-/* The version being built is deliberately NOT restored. It is about to be
-   written from .pio/build, and pulling the published copy first would drag back
-   any env that has since been removed - the nine classic-ESP32 PSRAM builds,
-   say - as though they were still current. Only older versions are wanted. */
+/* --all restores the version being built as well.
+ *
+ * Which one is right depends entirely on what happens next. Before a release,
+ * the current version must be skipped: it is about to be written from
+ * .pio/build, and pulling the published copy first would drag back any env
+ * since removed - the nine classic-ESP32 PSRAM builds, say - as though they
+ * were still current.
+ *
+ * A site-only deploy has no .pio/build and is not rebuilding anything, so
+ * skipping the current version does not leave it to be regenerated: it leaves
+ * it out of the snapshot, and the deploy deletes the newest firmware from the
+ * site. Editing a line of copy on the landing page would take every build with
+ * it. Hence the flag, and hence it being explicit rather than inferred. */
+const ALL = process.argv.includes("--all");
+
 function fwVersion() {
   const cfg = readFileSync(join(ROOT, "src", "config.h"), "utf8");
   const m = /#define\s+FW_VERSION\s+"([^"]+)"/.exec(cfg);
@@ -97,8 +109,11 @@ async function getBytes(url) {
    correct, and the process dies with code 127 anyway, which in CI is a failed
    release for no reason. Let the event loop drain instead. */
 async function main() {
-  const building = fwVersion();
-  console.log(`Restoring published firmware from ${BASE} (skipping ${building}, which is being rebuilt)`);
+  const building = ALL ? null : fwVersion();
+  console.log(
+    `Restoring published firmware from ${BASE}` +
+      (building ? ` (skipping ${building}, which is being rebuilt)` : " (everything, including the newest)"),
+  );
 
   const index = await getJson(`${BASE}/firmware/releases.json`);
   if (!index) {
@@ -111,13 +126,13 @@ async function main() {
   const wanted = [];
   for (const channel of ["release", "beta"]) {
     for (const v of index.channels?.[channel] ?? []) {
-      if (v.version === building) continue;
+      if (building && v.version === building) continue;
       for (const b of v.builds) wanted.push({ channel, version: v.version, build: b });
     }
   }
 
   if (!wanted.length) {
-    console.log("  nothing published other than the version being built");
+    console.log(`  nothing to restore${building ? " other than the version being built" : ""}`);
     return;
   }
 
