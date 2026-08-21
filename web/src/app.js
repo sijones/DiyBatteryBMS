@@ -90,6 +90,34 @@ function renderIdentity(s) {
       : `<p class="note warn">No nvs partition — there are no settings here to preserve.</p>`);
 }
 
+/* What is published, shown before a board is connected.
+ *
+ * Fetched on load rather than when the chooser opens, because the question it
+ * answers - "is there anything newer than what I am running?" - is one people
+ * arrive with, and making them plug a board in to find out is a poor trade for
+ * one small request. It also warms the index the chooser needs later.
+ *
+ * Failure is silent and leaves the row hidden. Nothing here is needed to flash
+ * a board: the chooser fetches the index again and reports its own errors in
+ * the place where they would actually stop someone. A red banner on the landing
+ * page for a fact nobody asked for yet would be noise. */
+async function showLatest() {
+  try {
+    releaseIndex = await loadReleases();
+  } catch {
+    return;
+  }
+
+  const set = (id, version) => {
+    const el = $(id);
+    el.textContent = version ?? "none published yet";
+    el.classList.toggle("none", !version);
+  };
+  set("latest-release", releaseIndex.latest?.release);
+  set("latest-beta", releaseIndex.latest?.beta);
+  $("latest").hidden = false;
+}
+
 /* ------------------------------------------------------------------ choose */
 
 async function loadChoices() {
@@ -818,6 +846,10 @@ function boot() {
   $("flash-another").addEventListener("click", onDisconnect);
 
   setStage("idle");
+
+  // Not awaited: the page is usable while it is in flight, and a slow or
+  // unreachable index must not hold up the Connect button.
+  showLatest();
 
   if (!webSerialSupported()) {
     explainNoSerial();
