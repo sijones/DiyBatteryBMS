@@ -594,6 +594,18 @@ static void buildDataDoc(JsonDocument& doc, bool All)
           o["name"] = f->name;
           o["rssi"] = f->rssi;
           o["shunt"] = (f->recordType == VICTRON_REC_BATTERY_MON);
+          /* What each device IS, which is what someone with several of them
+             needs to tell them apart. The name would be the obvious answer and
+             usually is not there: Victron sends it in a scan response, which
+             this passive listener never asks for, so the list reads "(no
+             name)". The product id is in the advert itself and is already
+             being read, so a SmartShunt says so, and an id with no entry in
+             the table shows its hex rather than a guess. */
+          char pid[8];
+          snprintf(pid, sizeof(pid), "0x%04X", (unsigned)f->productId);
+          o["productid"] = pid;
+          const char* model = VictronBLE::ModelFromProductId(f->productId);
+          if (model) o["model"] = model;
         }
       }
     }
@@ -1503,7 +1515,16 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
 
       if (!doc["blescan"].isNull()) {
         handled = true;
-        if (!VictronBle.StartDiscovery(8))
+        /* 20 seconds, not 8.
+
+           A shunt at the edge of range gets an advert through every twenty or
+           thirty seconds, not once a second, so an eight-second window was a
+           coin toss: measured on a bench shunt at -94 dBm, two scans in a row
+           found nothing while the live path was receiving perfectly well. The
+           result was "No Victron devices heard", which reads as "your shunt is
+           not there" rather than "ask again". Waiting longer costs nothing but
+           the wait, and only happens when someone presses Scan. */
+        if (!VictronBle.StartDiscovery(20))
           wsclient->printf("{\"ERROR\" : \"Could not start Bluetooth\"}");
         notifyWSClients();
       }

@@ -2055,7 +2055,7 @@
 
         <div class="form-row">
           <div class="form-group">
-            <label><span class="tip" data-tip="Listens for nearby Victron devices for 8 seconds. The advert header is not encrypted, so devices are found before any key is entered.">Find your shunt:</span></label>
+            <label><span class="tip" data-tip="Listens for nearby Victron devices for 20 seconds. The advert header is not encrypted, so devices are found before any key is entered. A shunt at the edge of range only gets an advert through every half minute or so, which is why the wait is long.">Find your shunt:</span></label>
             <button id="bleScanBtn" onclick="startBleScan()">Scan for Victron devices</button>
             <div id="bleScanStatus" class="field-error"></div>
             <div id="bleFoundList"></div>
@@ -2850,7 +2850,12 @@
       websocket.send('{"blescan" : true}');
       // The firmware closes the window and pushes results; this is only a
       // backstop so the button cannot stay stuck if that never arrives.
-      setTimeout(function() { if (btn && btn.disabled) renderBleFound([], true); }, 12000);
+      /* Must outlast the scan itself, which is 20s in handleWSRequest(). At
+         12s this fired first and told the user "No response from the device -
+         is Bluetooth available on this board?" while the board was still
+         listening perfectly happily. If the scan length changes, this changes
+         with it. */
+      setTimeout(function() { if (btn && btn.disabled) renderBleFound([], true); }, 26000);
     }
 
     function renderBleFound(list, timedOut) {
@@ -2876,8 +2881,16 @@
         var row = document.createElement('div');
         row.className = 'checkbox-row';
         var label = document.createElement('span');
-        // Signal strength is the only guide to which of several shunts is yours
-        label.textContent = d.name + '  ' + d.mac + '  ' + d.rssi + ' dBm' +
+        /* Model first, because it is the part someone recognises. Victron sends
+           the friendly name in a scan response and this listener is passive, so
+           d.name is usually "(no name)" and leading with it tells nobody
+           anything. The product id is in the advert, so a device says what it
+           is; one not in the model table shows its id, which is at least
+           searchable. Signal strength stays: with two of the same model, the
+           near one is yours. */
+        var what = d.model || ('Victron ' + (d.productid || 'device'));
+        var named = d.name && d.name !== '(no name)' ? '  "' + d.name + '"' : '';
+        label.textContent = what + named + '  ' + d.mac + '  ' + d.rssi + ' dBm' +
                             (d.shunt ? '  (battery monitor)' : '');
         var use = document.createElement('button');
         use.textContent = 'Use';
