@@ -304,6 +304,34 @@
       transition: border-color .15s, box-shadow .15s;
     }
     input[type="file"] { font-family: var(--sans); padding: 7px 10px; }
+
+    /* The file input's own button is drawn by the browser and arrives as a grey
+       OS control in the middle of a dark panel. It is the one part of this page
+       that cannot be replaced, only restyled, so it is dressed as the secondary
+       button it sits next to. */
+    input[type="file"]::file-selector-button {
+      margin: -1px 10px -1px -4px;
+      padding: 6px 12px;
+      background: var(--raised);
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      font-family: var(--sans);
+      font-size: 12.5px;
+      font-weight: 500;
+      transition: background .15s, border-color .15s, color .15s;
+    }
+    input[type="file"]:hover::file-selector-button { border-color: var(--accent-dim); color: var(--accent); }
+
+    /* Picker and Update on one row: choosing a file and writing it are one
+       action in two steps, and the button was previously a full page-width
+       apart from the thing it acts on. The input takes the slack and the button
+       keeps its size, so on a phone the button wraps underneath rather than
+       being squeezed to nothing. */
+    .fw-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .fw-pick input[type="file"] { flex: 1 1 240px; min-width: 0; width: auto; }
+    .fw-pick button { flex: none; }
     select { font-family: var(--sans); cursor: pointer; }
 
     input:focus, select:focus {
@@ -864,10 +892,6 @@
     .sched-count { align-self: center; font-size: 12px; color: var(--text-faint); flex: none; }
     .sched-count.full { color: var(--warn); }
 
-    .fw-download { margin-bottom: 12px; }
-    .fw-download a { font-size: 13px; font-weight: 500; }
-    .fw-download-note { display: block; margin-top: 2px; font-size: 11.5px; color: var(--text-faint); }
-    .fw-download-note.new { color: var(--warn); }
 
     .sched-row {
       display: grid;
@@ -2142,7 +2166,7 @@
         <div class="section-title">DIY Battery BMS</div>
         <div class="stat-grid">
           <div class="stat-box stat-status">
-            <div class="stat-label">Version</div>
+            <div class="stat-label">Firmware Version</div>
             <div class="stat-value sm" id="fwVersionBms">--</div>
           </div>
           <!-- What the website has for this exact board, filled in by the
@@ -2172,18 +2196,11 @@
           </div>
         </div>
         <div class="form-group">
-          <!-- Where to get the file, next to the box that wants one. The device
-               cannot fetch its own firmware - TLS plus a 1.7MB image needs more
-               internal heap than a board without PSRAM has - but it knows
-               exactly which of the builds it is, so it hands that to the site
-               and the site hands back the one right file. -->
-          <div id="fwDownloadRow" class="fw-download" hidden>
-            <a id="fwDownloadLink" href="#" target="_blank" rel="noopener">Get the latest firmware for this board</a>
-            <span class="fw-download-note" id="fwDownloadNote">opens diy.power-pilot.uk, then choose the downloaded file below</span>
-          </div>
           <label for="firmwareFile">Firmware image (.bin or .bin.gz)</label>
-          <input type="file" accept=".bin,.bin.gz" id="firmwareFile" style="margin-bottom:10px">
-          <button id="firmwareBtn" class="btn-primary" onclick="uploadFirmware()">Update Firmware</button>
+          <div class="fw-pick">
+            <input type="file" accept=".bin,.bin.gz" id="firmwareFile">
+            <button id="firmwareBtn" class="btn-primary" onclick="uploadFirmware()">Update Firmware</button>
+          </div>
           <div id="fwProgress" hidden style="margin-top:12px">
             <div class="progress-track">
               <div id="fwProgressBar" class="progress-bar">0%</div>
@@ -3713,16 +3730,19 @@
        firmware built before this define existed simply never shows the row. */
     var fwLink = { env: '', from: '', slot: 0 };
 
-    function updateFwDownloadLink() {
-      var row = document.getElementById('fwDownloadRow');
-      var a = document.getElementById('fwDownloadLink');
-      if (!row || !a) return;
-      if (!fwLink.env) { row.hidden = true; return; }
+    /* The download page, told which build is asking. env is the only required
+       part - without it the site cannot know which of the builds this board
+       takes, and a link that guesses is worse than none: the wrong image
+       flashes cleanly and does not boot. */
+    function fwDownloadUrl() {
+      if (!fwLink.env) return '';
       var q = 'env=' + encodeURIComponent(fwLink.env);
       if (fwLink.from) q += '&from=' + encodeURIComponent(fwLink.from);
       if (fwLink.slot) q += '&slot=' + encodeURIComponent(fwLink.slot);
-      a.href = 'https://diy.power-pilot.uk/update.html?' + q;
-      row.hidden = false;
+      return 'https://diy.power-pilot.uk/update.html?' + q;
+    }
+
+    function updateFwDownloadLink() {
       checkForNewFirmware();
     }
 
@@ -3778,9 +3798,8 @@
     }
 
     function showFirmwareVerdict(index) {
-      var a = document.getElementById('fwDownloadLink');
-      var note = document.getElementById('fwDownloadNote');
-      if (!a || !note) return;
+      var box = document.getElementById('fwDownloadable');
+      if (!box) return;
 
       /* A device on a pre-release is on the beta channel by choice, so it is
          told about betas. One on a release build is not: offering it a beta
@@ -3802,34 +3821,24 @@
       }
       if (!newest) return;
 
+      /* The figure sits beside the running version, because that is where
+         someone looks to compare the two, and it is its own link to the page
+         that serves it. Amber only when it is genuinely newer - colouring it
+         whenever it merely differs would leave "up to date" looking like a
+         warning. The title carries the sentence the panel has no room for. */
       var isNew = fwNewer(newest, fwLink.from);
 
-      if (isNew) {
-        a.textContent = 'Version ' + newest + ' is available - download it for this board';
-        note.textContent = 'You are running ' + fwLink.from + '. Opens diy.power-pilot.uk; choose the downloaded file below.';
-        note.className = 'fw-download-note new';
-      }
-      else {
-        a.textContent = 'Download ' + newest + ' again for this board';
-        note.textContent = 'You are running ' + fwLink.from + ', which is the newest published for this board.';
-        note.className = 'fw-download-note';
-      }
-
-      /* The same fact as a figure beside the running version, because that is
-         where someone looks to compare the two. Amber only when it is actually
-         newer - colouring it whenever it differs from nothing would make "up to
-         date" look like a warning. */
-      var box = document.getElementById('fwDownloadable');
-      if (box) {
-        box.innerHTML = '';
-        var link = document.createElement('a');
-        link.href = a.href;
-        link.target = '_blank';
-        link.rel = 'noopener';
-        link.textContent = newest;
-        box.appendChild(link);
-        box.className = 'stat-value sm' + (isNew ? ' v-warn' : '');
-      }
+      box.innerHTML = '';
+      var link = document.createElement('a');
+      link.href = fwDownloadUrl();
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = newest;
+      link.title = isNew
+        ? 'You are running ' + fwLink.from + '. Opens diy.power-pilot.uk to download ' + newest + ' for this board.'
+        : 'You are running ' + fwLink.from + ', the newest published for this board. Opens the download page.';
+      box.appendChild(link);
+      box.className = 'stat-value sm' + (isNew ? ' v-warn' : '');
     }
 
     function uploadFirmware() {
