@@ -2842,11 +2842,33 @@
       }
     }
 
+    var bleScanTicker = null;
+
     function startBleScan() {
       var btn = document.getElementById('bleScanBtn');
       var status = document.getElementById('bleScanStatus');
       if (btn) { btn.disabled = true; btn.textContent = 'Scanning…'; }
-      if (status) { status.textContent = 'Listening for 8 seconds…'; status.classList.add('show'); }
+
+      /* A counting-down message, not a static one. Twenty seconds of a disabled
+         button and a fixed line is indistinguishable from a hung page, and this
+         wait got longer precisely because a distant shunt needs it. Counting
+         shows the board is still working and sets the expectation that the wait
+         is meant to be this long.
+
+         .info rather than the default .field-error, which is red: nothing is
+         wrong while a scan is running, and a red line saying so invites someone
+         to press the button again. */
+      if (status) {
+        var left = 20;
+        status.className = 'field-error info show';
+        status.textContent = 'Listening for ' + left + ' seconds\u2026';
+        clearInterval(bleScanTicker);
+        bleScanTicker = setInterval(function () {
+          left--;
+          if (left <= 0 || !btn.disabled) { clearInterval(bleScanTicker); return; }
+          status.textContent = 'Listening\u2026 ' + left + 's left';
+        }, 1000);
+      }
       websocket.send('{"blescan" : true}');
       // The firmware closes the window and pushes results; this is only a
       // backstop so the button cannot stay stuck if that never arrives.
@@ -2862,6 +2884,7 @@
       var btn = document.getElementById('bleScanBtn');
       var status = document.getElementById('bleScanStatus');
       var box = document.getElementById('bleFoundList');
+      clearInterval(bleScanTicker);   // results are in, stop the countdown
       if (btn) { btn.disabled = false; btn.textContent = 'Scan for Victron devices'; }
       if (!box) return;
       box.textContent = '';
@@ -2871,7 +2894,9 @@
           status.textContent = timedOut
             ? 'No response from the device — is Bluetooth available on this board?'
             : 'No Victron devices heard. Move closer to the shunt and scan again.';
-          status.classList.add('show');
+          // Back to the red treatment: the scanning message uses .info, and a
+          // failure inheriting it would read as neutral guidance.
+          status.className = 'field-error show';
         }
         return;
       }
