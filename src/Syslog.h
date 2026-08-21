@@ -23,7 +23,11 @@ public:
   void configure(const char* server, uint16_t port, bool enabled,
                  const char* hostname) {
     _port = port ? port : 514;
-    _hostname = (hostname && *hostname) ? hostname : "diybms";
+    // In practice the caller passes the device's WiFi hostname, so this
+    // fallback only applies before one is set. Same name as everywhere else, so
+    // a line in a collector's log is attributable to the same device a browser
+    // and a broker would name.
+    _hostname = (hostname && *hostname) ? hostname : "diy-battery-bms";
     _hostname.replace(' ', '-');            // RFC 3164 HOSTNAME cannot contain spaces
     _valid = (server && *server) ? _ip.fromString(server) : false;
     _enabled = enabled && _valid;
@@ -83,7 +87,7 @@ public:
 private:
   WiFiUDP   _udp;
   IPAddress _ip;
-  String    _hostname = "diybms";
+  String    _hostname = "diy-battery-bms";
   uint16_t  _port = 514;
   bool      _enabled = false;
   bool      _valid = false;

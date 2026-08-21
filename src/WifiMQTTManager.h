@@ -37,7 +37,19 @@ class WifiMQTTManagerClass {
         String _mqttUser = "";
         String _mqttPass = "";
         uint16_t _mqttPort = 1883;
-        String _mqttClientID = "diy-battery";
+        /* Same name as the hostname, so one device answers to one word
+           everywhere: mDNS, the access point, and the client id a broker logs.
+           A broker drops the older session when two clients claim one id, so a
+           name that reads like the device and not like the project is worth
+           having when a second board turns up on the same broker.
+           Existing devices keep whatever is in NVS. */
+        String _mqttClientID = "diy-battery-bms";
+        /* Not renamed with the rest. This is the root of every topic the device
+           publishes, so changing it moves every reading to a new address:
+           dashboards stop updating, Home Assistant discovers a second copy of
+           the device, and automations quietly stop firing. It only bites new
+           installs, but there is nothing to gain in exchange - a topic root is
+           typed once and then only ever read by machines. */
         String _mqttTopic = "DIY-BATTERY";
         String _mqttParameter = "/Param";
 
