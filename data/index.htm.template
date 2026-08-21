@@ -860,6 +860,7 @@
     .fw-download { margin-bottom: 12px; }
     .fw-download a { font-size: 13px; font-weight: 500; }
     .fw-download-note { display: block; margin-top: 2px; font-size: 11.5px; color: var(--text-faint); }
+    .fw-download-note.new { color: var(--warn); }
 
     .sched-row {
       display: grid;
@@ -2164,7 +2165,7 @@
                and the site hands back the one right file. -->
           <div id="fwDownloadRow" class="fw-download" hidden>
             <a id="fwDownloadLink" href="#" target="_blank" rel="noopener">Get the latest firmware for this board</a>
-            <span class="fw-download-note">opens diy.power-pilot.uk, then choose the downloaded file below</span>
+            <span class="fw-download-note" id="fwDownloadNote">opens diy.power-pilot.uk, then choose the downloaded file below</span>
           </div>
           <label for="firmwareFile">Firmware image (.bin or .bin.gz)</label>
           <input type="file" accept=".bin,.bin.gz" id="firmwareFile" style="margin-bottom:10px">
@@ -3708,6 +3709,95 @@
       if (fwLink.slot) q += '&slot=' + encodeURIComponent(fwLink.slot);
       a.href = 'https://diy.power-pilot.uk/update.html?' + q;
       row.hidden = false;
+      checkForNewFirmware();
+    }
+
+    /* Is there anything newer published?
+     *
+     * THE BOARD DOES NOT ASK. This runs in the browser looking at this page,
+     * which already has an internet connection, a TLS stack and memory to
+     * spare - none of which the device has going spare. A board with no PSRAM
+     * has roughly 50KB of internal heap free and a TLS session wants most of
+     * it, which is why the firmware has no HTTPS client and why this is not one
+     * either: it is thirty lines of the page you are already looking at, and it
+     * works the same on every board.
+     *
+     * The device supplies what only it knows - which build it is running - and
+     * the browser supplies the network. Nothing is sent anywhere: it is a GET
+     * of a public file, and the file says nothing about who asked.
+     *
+     * Silent on failure, deliberately. Plenty of these devices sit on networks
+     * with no route out, and a red "cannot check for updates" on an appliance
+     * that is working perfectly is a fault report about nothing. The plain link
+     * stays, and it still works the moment someone with a connection clicks it. */
+    var fwCheckDone = false;
+
+    /* Newest first, matching the ordering the website uses: numbers compare as
+       numbers so 3.0.10 beats 3.0.9, and a plain release beats its own
+       pre-release, so 3.0.0 is newer than 3.0.0-BETA1. */
+    function fwNewer(a, b) {
+      function split(v) {
+        var parts = String(v).split('-');
+        var core = parts.shift();
+        return { nums: core.split('.').map(function (n) { return parseInt(n, 10) || 0; }),
+                 pre: parts.length ? parts.join('-') : null };
+      }
+      var A = split(a), B = split(b);
+      for (var i = 0; i < Math.max(A.nums.length, B.nums.length); i++) {
+        var d = (A.nums[i] || 0) - (B.nums[i] || 0);
+        if (d) return d > 0;
+      }
+      if (A.pre === B.pre) return false;
+      if (!A.pre) return true;   // 3.0.0 is newer than 3.0.0-BETA1
+      if (!B.pre) return false;
+      return A.pre > B.pre;
+    }
+
+    function checkForNewFirmware() {
+      if (fwCheckDone || !fwLink.env || !fwLink.from) return;
+      fwCheckDone = true;
+
+      fetch('https://diy.power-pilot.uk/firmware/releases.json', { cache: 'no-cache' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (index) { if (index) showFirmwareVerdict(index); })
+        .catch(function () { /* no route out - leave the plain link alone */ });
+    }
+
+    function showFirmwareVerdict(index) {
+      var a = document.getElementById('fwDownloadLink');
+      var note = document.getElementById('fwDownloadNote');
+      if (!a || !note) return;
+
+      /* A device on a pre-release is on the beta channel by choice, so it is
+         told about betas. One on a release build is not: offering it a beta
+         because the beta is numerically newer is how someone ends up testing
+         firmware on a battery they rely on without having agreed to. */
+      var channels = /-/.test(fwLink.from) ? ['beta', 'release'] : ['release'];
+
+      /* Only versions that actually published a build for THIS env count. A
+         release that skipped this board is not an update for this board, and
+         saying otherwise sends someone to a page with nothing on it. */
+      var newest = null;
+      for (var c = 0; c < channels.length; c++) {
+        var versions = (index.channels && index.channels[channels[c]]) || [];
+        for (var i = 0; i < versions.length; i++) {
+          var v = versions[i];
+          var hasEnv = (v.builds || []).some(function (b) { return b.env === fwLink.env; });
+          if (hasEnv && (!newest || fwNewer(v.version, newest))) newest = v.version;
+        }
+      }
+      if (!newest) return;
+
+      if (fwNewer(newest, fwLink.from)) {
+        a.textContent = 'Version ' + newest + ' is available - download it for this board';
+        note.textContent = 'You are running ' + fwLink.from + '. Opens diy.power-pilot.uk; choose the downloaded file below.';
+        note.className = 'fw-download-note new';
+      }
+      else {
+        a.textContent = 'Download ' + newest + ' again for this board';
+        note.textContent = 'You are running ' + fwLink.from + ', which is the newest published for this board.';
+        note.className = 'fw-download-note';
+      }
     }
 
     function uploadFirmware() {
