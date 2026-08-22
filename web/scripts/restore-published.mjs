@@ -26,7 +26,7 @@
  * site address, SITE_DIR where to write to.
  */
 
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { get as httpGet } from "node:http";
@@ -197,19 +197,41 @@ async function restoreFromReleases(building, out) {
 
     for (const [env, assets] of byEnv) {
       const dir = join(out, tag, env);
-      console.log(`  ${tag}/${env}: ${assets.map((a) => a.file).join(", ")}`);
-      builds++;
-      if (DRY) { files += assets.length; continue; }
+      if (DRY) {
+        console.log(`  ${tag}/${env}: ${assets.map((a) => a.file).join(", ")}`);
+        files += assets.length; builds++;
+        continue;
+      }
+
+      /* One stale asset on one HISTORICAL build must not take down the
+         release of a NEW one - this loop exists only to keep older versions
+         downloadable, and GitHub's release API has been observed to hand back
+         a browser_download_url that 404s (a stale/mismatched "untagged-*"
+         path) for an asset that is fine when queried again moments later.
+         Anything already written for this group is rolled back on failure,
+         so a manifest.json can never survive without the binaries it
+         describes - build-manifests.mjs trusts a manifest.json's presence
+         without checking what it points to. */
       mkdirSync(dir, { recursive: true });
-      for (const a of assets) {
-        const target = join(dir, a.file);
-        if (existsSync(target)) { console.log(`    ${a.file} already here`); continue; }
-        const data = await getBytes(a.url);
-        if (data.length !== a.size) {
-          throw new Error(`${tag}/${env}/${a.file}: got ${data.length} bytes, the release says ${a.size}`);
+      const written = [];
+      let groupFiles = 0, groupBytes = 0;
+      try {
+        for (const a of assets) {
+          const target = join(dir, a.file);
+          if (existsSync(target)) { console.log(`    ${a.file} already here`); continue; }
+          const data = await getBytes(a.url);
+          if (data.length !== a.size) {
+            throw new Error(`${a.file}: got ${data.length} bytes, the release says ${a.size}`);
+          }
+          writeFileSync(target, data);
+          written.push(target);
+          groupFiles++; groupBytes += data.length;
         }
-        writeFileSync(target, data);
-        files++; bytes += data.length;
+        console.log(`  ${tag}/${env}: ${assets.map((a) => a.file).join(", ")}`);
+        files += groupFiles; bytes += groupBytes; builds++;
+      } catch (err) {
+        for (const f of written) { try { rmSync(f); } catch {} }
+        console.warn(`  ! ${tag}/${env} could not be restored, skipping this build: ${err.message}`);
       }
     }
   }
