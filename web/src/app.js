@@ -118,6 +118,69 @@ async function showLatest() {
   $("latest").hidden = false;
 }
 
+/* How much the thing is actually used, shown beside what is published.
+ *
+ * Three aggregate numbers from /api/stats: firmware downloads, which is
+ * GitHub's own count on the release assets, and installs and upgrades, which
+ * are the counters reportFlash() below adds to. Nothing here identifies
+ * anybody - there is no per-visitor state to show, because none is kept.
+ *
+ * Same shape and the same silence as showLatest(): if the endpoint is missing,
+ * unbound or slow, the row stays hidden and the page carries on. Nobody came
+ * here to read a counter. */
+async function showStats() {
+  let stats;
+  try {
+    const res = await fetch("/api/stats");
+    if (!res.ok) return;
+    stats = await res.json();
+  } catch {
+    return;
+  }
+
+  const num = (n) => (typeof n === "number" && Number.isFinite(n) ? n : null);
+  const values = [num(stats?.downloads), num(stats?.installs), num(stats?.upgrades)];
+
+  /* All three missing means the endpoint answered but has nothing behind it -
+     no KV binding yet, or a preview deployment. Stay hidden rather than show a
+     row of "not counted yet" under a note promising anonymous counts; a
+     half-built feature announcing itself is worse than one that waits. */
+  if (values.every((v) => v === null)) return;
+
+  const set = (id, n) => {
+    const el = $(id);
+    el.textContent = n === null ? "not counted yet" : n.toLocaleString();
+    el.classList.toggle("none", n === null);
+  };
+  set("stat-downloads", values[0]);
+  set("stat-installs", values[1]);
+  set("stat-upgrades", values[2]);
+  $("stats").hidden = false;
+  $("stats-note").hidden = false;
+}
+
+/* Add one to the install or upgrade count, and do not wait for it.
+ *
+ * Sent once, at the single point a flash is known to have finished. No
+ * identifier and no payload beyond which of the two it was; the endpoint keeps
+ * two integers and nothing else.
+ *
+ * Never awaited and never surfaced. The firmware is already on the board by the
+ * time this runs, so a failed count is not a thing the person in front of the
+ * page can act on or would want to be told about. */
+function reportFlash(kind) {
+  try {
+    fetch("/api/stats", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {
+    // No fetch, no network, no counter. Immaterial to the job just completed.
+  }
+}
+
 /* ------------------------------------------------------------------ choose */
 
 async function loadChoices() {
@@ -645,6 +708,14 @@ async function onFlash() {
 
     renderDone(m, eraseAll, boot);
     setStage("done");
+
+    /* Counted here and nowhere else: this is the one line that only runs when
+       a flash has actually completed. verdict is what the Confirm step already
+       worked out about the board's settings partition, so "fresh" means there
+       was nothing on it to keep - a first install. Deliberately not the
+       eraseAll flag, which is also true when someone chooses to wipe a board
+       that has been running for a year. */
+    reportFlash(verdict?.kind === "fresh" ? "install" : "upgrade");
   } catch (err) {
     showFailure(err);
   }
@@ -850,6 +921,7 @@ function boot() {
   // Not awaited: the page is usable while it is in flight, and a slow or
   // unreachable index must not hold up the Connect button.
   showLatest();
+  showStats();
 
   if (!webSerialSupported()) {
     explainNoSerial();

@@ -169,6 +169,13 @@
   .progress-head .dim { font-weight:400; font-size:12px; }
   .track { height:8px; background:var(--raised); border-radius:100px; overflow:hidden; }
   .bar { height:100%; width:0; background:var(--accent); border-radius:100px; transition:width .2s linear; }
+
+  /* What the finished device does, as distinct from what this page does (the
+     flashing mechanics, explained per-stage below). Outside any [data-stage]
+     section so it survives every stage rather than needing to be repeated.
+     h1/p reuse the sizing already defined above - this is a heading and body
+     copy like any other, just not inside a stage. */
+  .intro { margin-bottom:28px; }
 </style>
 </head>
 <body>
@@ -184,6 +191,19 @@
 </header>
 
 <main>
+
+  <div class="intro">
+    <h1>DIY Battery BMS</h1>
+    <p>
+      Reads a Victron Smart Shunt — over VE.Direct, Bluetooth or MQTT — and speaks Pylontech CAN to
+      your inverter, so a DIY LiFePO4 pack can be charged, monitored and protected like a supported
+      battery. No per-cell BMS wiring: just the shunt you already have.
+    </p>
+    <p>
+      Set it up from a browser, watch live charge state on its own dashboard, and hook it into Home
+      Assistant over MQTT for automations like off-peak force charging.
+    </p>
+  </div>
 
   <!-- The first thing anyone sees. Deliberately short: the detail belongs on the
        step it applies to, where it can say something true about the board in
@@ -220,6 +240,21 @@
       <span class="latest-item"><span class="latest-k">Release</span><span class="latest-v" id="latest-release">—</span></span>
       <span class="latest-item"><span class="latest-k">Beta</span><span class="latest-v" id="latest-beta">—</span></span>
     </div>
+
+    <!-- How much it is used, kept as its own row rather than folded into the
+         one above: "what is published" and "how many people run it" are
+         different questions, and a single line answering both reads as neither.
+         Downloads is GitHub's own count on the release assets; installs and
+         upgrades are a counter the flasher adds one to when a flash finishes.
+         Filled in and revealed by JS, hidden if /api/stats says nothing. -->
+    <div class="latest" id="stats" hidden>
+      <span class="latest-item"><span class="latest-k">Downloads</span><span class="latest-v" id="stat-downloads">—</span></span>
+      <span class="latest-item"><span class="latest-k">Installs</span><span class="latest-v" id="stat-installs">—</span></span>
+      <span class="latest-item"><span class="latest-k">Upgrades</span><span class="latest-v" id="stat-upgrades">—</span></span>
+    </div>
+    <p id="stats-note" hidden style="margin-top:8px; font-size:12px; color:var(--text-faint)">
+      Anonymous, aggregate counts — no personal data collected.
+    </p>
 
     <div class="actions"><button id="connect" class="primary">Connect a board</button></div>
     <p id="serial-note" style="margin-top:22px; font-size:13px">

@@ -221,6 +221,21 @@ jobs:
         working-directory: web
         run: npm ci
 
+      # See site.yml for the full reasoning. Short version: site/firmware is
+      # gitignored, so the restore step re-downloads every published asset on a
+      # fresh checkout, and every release asset GET increments the
+      # download_count the flasher now shows publicly. Unique save key, shared
+      # restore prefix: the exact key never hits, so the prefix restores the
+      # newest previous cache and the post-job step saves the grown directory
+      # under a new key - which a fixed key could not do, cache entries being
+      # immutable once written.
+      - name: Cache the restored firmware
+        uses: actions/cache@v6
+        with:
+          path: site/firmware
+          key: site-firmware-${{ github.run_id }}
+          restore-keys: site-firmware-
+
       # The same command a person runs locally: bundle the flasher, publish the
       # manifests, create the GitHub release, deploy to Pages. GITHUB_TOKEN is
       # injected by Actions, so the release needs no personal token.

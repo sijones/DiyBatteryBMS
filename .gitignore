@@ -20,6 +20,9 @@ src/embedded_html.h
 # them, so git tracks what they are built from and nothing else.
 node_modules/
 .wrangler/
+# Local secrets for `wrangler pages dev` - a GitHub token for the stats
+# function to read download counts with. Real values, never committed.
+.dev.vars
 site/app.js
 site/firmware/
 design/

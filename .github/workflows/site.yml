@@ -53,6 +53,30 @@ jobs:
         working-directory: web
         run: npm ci
 
+      # Keep the restored firmware between runs, so GitHub is asked for each
+      # asset once ever rather than once per push.
+      #
+      # site/firmware is gitignored, so a checkout starts empty and
+      # restore-published.mjs's "already here" skip never fires - every run
+      # re-downloaded the last three versions across every env. That is slow,
+      # but the reason it matters is that a release asset GET increments its
+      # download_count, and the flasher now publishes that number as "how many
+      # times has this firmware been downloaded". Uncached, that figure counts
+      # CI, and this workflow runs on every edit to site/ or web/.
+      #
+      # The key is unique per run and the restore-keys prefix is not: the exact
+      # key can never hit, so the prefix restores the most recent previous cache
+      # and the post-job step always saves the (now larger) directory under a
+      # fresh key. A fixed key would save once and then never update - cache
+      # entries are immutable - and the next release's firmware would be
+      # re-downloaded on every run forever.
+      - name: Cache the restored firmware
+        uses: actions/cache@v6
+        with:
+          path: site/firmware
+          key: site-firmware-${{ github.run_id }}
+          restore-keys: site-firmware-
+
       # Same command a person would run locally, which is the point: bundle the
       # flasher, pull back the published firmware, upload the lot.
       - name: Build and deploy
