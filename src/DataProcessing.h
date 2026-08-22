@@ -39,6 +39,49 @@ void BLEDataProcess()
   taskEXIT_CRITICAL(&(Inverter.CANMutex));
 }
 
+/* Apply the figures stashed by the MQTT shunt topics.
+
+   Same contract as BLEDataProcess(): it lands on the setters VEDataProcess()
+   uses, so nothing downstream can tell which source a reading came from. The
+   values were already converted to CANBUS units when they arrived - see
+   MqttShunt.h for why the conversion happens at the edge - so there is no
+   scaling to do here beyond power.
+
+   Only called when MqttShunt.DataFresh() is true, which means voltage, current
+   and SOC have each arrived at least once and recently. The three unguarded
+   writes below rely on that.
+
+   Temperature is separate because it is optional: HaveTemp says whether that
+   topic has ever produced anything, and BattTempSource() == 0 is the same rule
+   BLEDataProcess() applies to its aux reading - a source-specific temperature
+   never overwrites one the user has explicitly pointed at MQTT or a sensor.
+
+   TimeToGo and AlarmActive are deliberately left alone. There is no MQTT field
+   for either, and writing a made-up value would be worse than leaving the last
+   known one; a shunt read this way simply does not report them. */
+void MQTTShuntDataProcess()
+{
+  taskENTER_CRITICAL(&(Inverter.CANMutex));
+
+  Inverter.BattVoltage(MqttShunt.VoltageCentiV);
+  Inverter.BattCurrentmA(MqttShunt.CurrentDeciA);
+  Inverter.BattSOCPermille(MqttShunt.SOCPermille);
+
+  /* Power is derived, as it is for BLE - no topic carries it. Units:
+     centivolts x deciamps = (V*100) * (A*10) = (V*A) * 1000, so dividing by
+     1000 gives whole watts. 52.00V at 10.0A -> 5200 * 100 / 1000 = 520W. */
+  Inverter.BattPower((int32_t)(((int64_t)MqttShunt.VoltageCentiV * (int64_t)MqttShunt.CurrentDeciA) / 1000LL));
+
+  if (MqttShunt.HaveTemp && Inverter.BattTempSource() == 0)
+    Inverter.BattTemp(MqttShunt.TempC);
+
+  Lcd.Data.BattVolts.setValue(Inverter.BattVoltage());
+  Lcd.Data.BattAmps.setValue(Inverter.BattCurrentmA());
+  Lcd.Data.BattSOC.setValue(Inverter.BattSOC());
+
+  taskEXIT_CRITICAL(&(Inverter.CANMutex));
+}
+
 void VEDataProcess()
 {
 

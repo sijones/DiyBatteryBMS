@@ -1850,22 +1850,68 @@
         <div class="section-title">Victron Configuration</div>
         <div class="form-row">
           <div class="form-group">
-            <label for="shuntsource"><span class="tip" data-tip="Where battery voltage, current and SOC come from. Prefer Serial reads the shunt over the wired VE.Direct link. Prefer BLE listens to the shunt's Bluetooth broadcasts instead, with no wire at all. Takes effect after a reboot, because Bluetooth is only started when BLE is preferred. The device address and encryption key are set on the WiFi/BLE/MQTT tab.">Shunt Source:</span></label>
+            <label for="shuntsource"><span class="tip" data-tip="Where battery voltage, current and SOC come from. Prefer Serial reads the shunt over the wired VE.Direct link. Prefer BLE listens to the shunt's Bluetooth broadcasts instead, with no wire at all - the device address and encryption key are set on the WiFi/BLE/MQTT tab. MQTT topics takes the same readings from your broker, for a shunt that something else already publishes and that this device cannot reach directly. What happens if this source goes quiet is a separate choice, in Fallback Source alongside. Only a change involving BLE, in either dropdown, needs a reboot, because Bluetooth is started at boot or not at all.">Shunt Source:</span></label>
             <select id="shuntsource" onchange="SendJSONUpdate('shuntsource'); toggleBleConfig()">
               <option value="0">Prefer Serial (VE.Direct)</option>
               <option value="1">Prefer BLE (Bluetooth)</option>
+              <option value="2">MQTT topics</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="fallbacksource"><span class="tip" data-tip="What to read while the Shunt Source alongside has gone stale - no VE.Direct frame for 5 seconds, no BLE advert for 15, or no message on the required MQTT topics for 30. The device reads this source instead until the primary comes back, and both switches are written to the log, so a source change is never silent. Any of the three can back any other: a BLE shunt with the VE.Direct cable behind it, or MQTT topics with BLE behind them. It cannot be the same source as the primary - that is rejected on save. Leave it at None to have the dashboard simply show no fresh data rather than quietly substitute a source you did not choose.">Fallback Source:</span></label>
+            <select id="fallbacksource" onchange="SendJSONUpdate('fallbacksource'); toggleBleConfig()">
+              <option value="255">None</option>
+              <option value="0">VE.Direct serial</option>
+              <option value="1">BLE (Bluetooth)</option>
+              <option value="2">MQTT topics</option>
             </select>
           </div>
         </div>
 
         <div class="form-row">
-          <div class="checkbox-row">
-            <input type="checkbox" id="blefallback" onchange="SendJSONUpdate('blefallback'); toggleBleConfig()">
-            <label for="blefallback"><span class="tip" data-tip="Only applies when BLE is preferred. If no BLE advert decodes for 15 seconds, use the VE.Direct serial input until it comes back - for a shunt at the edge of Bluetooth range where the wire is still connected. Both switches are written to the log, so a source change is never silent. Leave off if nothing is wired to the VE.Direct pins.">Allow fallback to the other source when the preferred one goes quiet</span></label>
-          </div>
-        </div>
-        <div class="form-row">
           <div id="bleSetupHint" class="field-error"></div>
+        </div>
+
+        <!-- Shown whenever "MQTT topics" is picked in either dropdown, primary
+             or fallback - a fallback needs its topics configured just as much as
+             a primary does, and only ever finds out it is misconfigured at the
+             worst possible moment. Four independent topics rather than one JSON
+             payload, so readings can be taken straight from whatever a gateway
+             already publishes without any reshaping in the middle. -->
+        <div id="mqttShuntGroup" style="display:none;">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="mqttshuntsoc"><span class="tip" data-tip="Topic carrying pack state of charge as a plain number, 0-100. Required. Not JSON - one number per message, the same convention as the external temperature topics.">SOC Topic:</span></label>
+              <input type="text" id="mqttshuntsoc" placeholder="e.g. battery/soc" onchange="EnqueueUpdate('mqttshuntsoc')" onkeypress="HandleEnter(event, 'mqttshuntsoc')">
+            </div>
+            <div class="form-group">
+              <label for="mqttshuntvolt"><span class="tip" data-tip="Topic carrying pack voltage in volts as a plain number, e.g. 52.3. Required.">Voltage Topic:</span></label>
+              <input type="text" id="mqttshuntvolt" placeholder="e.g. battery/voltage" onchange="EnqueueUpdate('mqttshuntvolt')" onkeypress="HandleEnter(event, 'mqttshuntvolt')">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="mqttshuntcurr"><span class="tip" data-tip="Topic carrying pack current in amps as a plain signed number: positive charging, negative discharging. Required. If your source has the sign the other way round the pack will appear to charge while it discharges, so check it against the dashboard before trusting it.">Current Topic:</span></label>
+              <input type="text" id="mqttshuntcurr" placeholder="e.g. battery/current" onchange="EnqueueUpdate('mqttshuntcurr')" onkeypress="HandleEnter(event, 'mqttshuntcurr')">
+            </div>
+            <div class="form-group">
+              <label for="mqttshunttemp"><span class="tip" data-tip="Optional topic carrying battery temperature in degrees C as a plain number. Ignored while Battery Temp Source is set to MQTT, which has its own topic and takes precedence.">Temperature Topic (optional):</span></label>
+              <input type="text" id="mqttshunttemp" placeholder="e.g. battery/temperature" onchange="EnqueueUpdate('mqttshunttemp')" onkeypress="HandleEnter(event, 'mqttshunttemp')">
+            </div>
+          </div>
+          <div class="form-row full">
+            <div class="field-note">
+              SOC, Voltage and Current are all required - the source stays unused until a reading has
+              arrived on each of the three, so a half-filled setup never half-starts the inverter feed.
+              Temperature is optional, and is ignored whenever Battery Temp Source is itself set to
+              MQTT: that setting has its own topic and wins.
+              Do not point any of these at this device's own <span id="mqttShuntOwnTopic">output</span>
+              topics - it would feed the device its own numbers, and is rejected on save.
+            </div>
+          </div>
+          <div class="form-row full">
+            <div id="mqttShuntStatus" class="field-note"></div>
+          </div>
         </div>
 
         <div class="form-row">
@@ -2215,7 +2261,15 @@
         </div>
 
         <div class="section-title">Victron Smart Shunt <span class="shunt-link" id="shuntLink"></span></div>
-        <div class="stat-grid">
+        <!-- Hidden wholesale on an MQTT-sourced install: a topic carrying a
+             number has no identity attached, so there is nothing here that
+             could be filled in. shuntIdentityNote takes its place. -->
+        <div class="field-note" id="shuntIdentityNote" hidden>
+          Readings arrive over MQTT, which carries no model, firmware, serial number or product id -
+          there is no shunt identity to show. Freshness of the feed is on the Settings tab, under
+          Shunt Source.
+        </div>
+        <div class="stat-grid" id="shuntIdentityGrid">
           <div class="stat-box stat-status">
             <div class="stat-label">Model</div>
             <div class="stat-value sm" id="devModel">--</div>
@@ -2815,30 +2869,63 @@
        you need to pair a shunt before it is worth preferring. This only keeps
        the two tabs honest about which source is actually in use, so nobody
        enters a key, sees no adverts, and concludes the key is wrong. */
+    /* One spelling of each source for the hints, so a line of prose and the
+       dropdown that produced it never call the same thing two different
+       things. Keyed by the option values the firmware uses. */
+    var SHUNT_SRC_NAMES = { '0': 'VE.Direct serial', '1': 'BLE', '2': 'MQTT topics' };
+
     function toggleBleConfig() {
       var src = document.getElementById('shuntsource');
       if (!src) return;
-      var blePreferred = (src.value === '1');
-      var fallback = document.getElementById('blefallback');
-      var allowFallback = fallback && fallback.checked;
+      var fbSel = document.getElementById('fallbacksource');
+      var fb = fbSel ? fbSel.value : '255';          // '255' is None
+
+      /* Both roles count. A source that is only the fallback still needs its
+         topics filled in, and still needs the radio started at boot if it is
+         BLE - so the blocks follow "is this source used at all", not "is it the
+         preferred one". Neither block, one, or both can be on screen now. */
+      var blePrimary  = (src.value === '1');
+      var mqttPrimary = (src.value === '2');
+      var bleUsed  = blePrimary  || (fb === '1');
+      var mqttUsed = mqttPrimary || (fb === '2');
+
+      var mqttGroup = document.getElementById('mqttShuntGroup');
+      if (mqttGroup) mqttGroup.style.display = mqttUsed ? '' : 'none';
 
       var onTab = document.getElementById('bleSourceHint');
       if (onTab) {
-        onTab.textContent = blePreferred
-          ? 'BLE is the preferred shunt source.' +
-            (allowFallback ? ' VE.Direct takes over if adverts stop for 15 seconds.' : '')
-          : 'Bluetooth is not running: shunt data is being read over VE.Direct serial. Anything set ' +
-            'here is saved straight away, but stays idle until you set Shunt Source to "Prefer BLE" ' +
-            'in Settings and reboot - the radio is only started at boot.';
+        if (blePrimary) {
+          onTab.textContent = 'BLE is the preferred shunt source.' +
+            (fb !== '255'
+              ? ' ' + SHUNT_SRC_NAMES[fb] + ' takes over if adverts stop for 15 seconds.'
+              : '');
+        } else if (bleUsed) {
+          onTab.textContent = 'BLE is the fallback shunt source: it is read while ' +
+            SHUNT_SRC_NAMES[src.value] + ' has nothing fresh to give.';
+        } else {
+          onTab.textContent = 'Bluetooth is not running: shunt data is being taken from ' +
+            SHUNT_SRC_NAMES[src.value] + '. Anything set here is saved straight away, but stays ' +
+            'idle until BLE is chosen as the Shunt Source or the Fallback Source in Settings and ' +
+            'the device is rebooted - the radio is only started at boot.';
+        }
         onTab.classList.add('show');
       }
 
       var inSettings = document.getElementById('bleSetupHint');
       if (inSettings) {
-        inSettings.textContent = blePreferred
-          ? 'Device address and encryption key are on the WiFi/BLE/MQTT tab. Reboot to apply a source change.'
-          : '';
-        inSettings.classList.toggle('show', blePreferred);
+        /* Assembled rather than picked, because BLE and MQTT are no longer
+           mutually exclusive - one as primary and the other as fallback is a
+           perfectly ordinary setup, and has both things worth saying. */
+        var parts = [];
+        if (bleUsed) parts.push('Device address and encryption key are on the WiFi/BLE/MQTT tab. ' +
+                                'Reboot to apply a change that brings BLE in or takes it out, in ' +
+                                'either role - the radio is only started at boot.');
+        if (mqttUsed) parts.push('Broker connection settings are on the WiFi/BLE/MQTT tab. The MQTT ' +
+                                 'source starts as soon as it is saved - no reboot needed.');
+        inSettings.textContent = parts.join(' ');
+        inSettings.classList.toggle('show', parts.length > 0);
+        // Red is for the line that asks for a reboot; MQTT on its own asks for nothing
+        inSettings.classList.toggle('info', !bleUsed);
       }
     }
 
@@ -3232,8 +3319,11 @@
         // Hex identifies the network; wifissid is only what the user reads
         var savedHex = obj.wifissidhex || ssidTextToHex(obj.wifissid || '');
         var savedName = obj.wifissid || ssidHexToText(savedHex);
+        // This only mirrors the device's already-saved SSID into the dropdown -
+        // it runs on every status broadcast, not just an actual WiFi save, so
+        // only log when the displayed value is actually changing.
+        if (savedHex !== savedWifiSSID) console.log("WiFi SSID display synced: " + savedName);
         savedWifiSSID = savedHex;
-        console.log("Updated saved WiFi SSID: " + savedName);
         // Set the selected SSID in dropdown
         var select = document.getElementById('wifissid');
         select.value = savedHex;
@@ -3253,6 +3343,7 @@
        'tailduration','maxabsorptiontime','rechargesoc',
        'chargehightemp','chargelowtemp','dischargehightemp','dischargelowtemp',
        'mqttbatttopic','mqttinvtopic','fanofftemp','fanfulltemp',
+       'mqttshuntsoc','mqttshuntvolt','mqttshuntcurr','mqttshunttemp',
        'ntpserver','timezone','syslogserver','syslogport','overridetimeout','requesttimeout',
        'tailcurrent','rechargevoltageoffset'].forEach(function(f) {
         if(obj[f] !== undefined) { SetFieldValue(f, obj[f]); configDirty = true; }
@@ -3289,9 +3380,12 @@
         document.getElementById('shuntsource').value = obj.shuntsource;
         AckUpdate('shuntsource'); toggleBleConfig();
       }
-      // toggleBleConfig again here: the hint text depends on both fields, and
-      // shuntsource is handled above, before this one has been set
-      if(obj.blefallback !== undefined) { document.getElementById('blefallback').checked = obj.blefallback; AckUpdate('blefallback'); toggleBleConfig(); }
+      // toggleBleConfig again here: which blocks show depends on both fields,
+      // and shuntsource is handled above, before this one has been set
+      if(obj.fallbacksource !== undefined) {
+        document.getElementById('fallbacksource').value = obj.fallbacksource;
+        AckUpdate('fallbacksource'); toggleBleConfig();
+      }
       if(obj.blemac !== undefined) { document.getElementById('blemac').value = obj.blemac; AckUpdate('blemac'); }
       if(obj.blekeyset !== undefined) {
         // The key itself never comes back, so report whether one is held
@@ -3317,16 +3411,55 @@
         var e = document.getElementById('bleStatus');
         if (e) {
           var ago = obj.blelastseen;
-          // The radio only runs when BLE is the preferred source, or while a
-          // scan/sniff has started it. Saying "nothing received" when it was
-          // never switched on reads as a fault rather than a setting.
+          // The radio only runs when BLE is picked as the shunt source or as
+          // the fallback, or while a scan/sniff has started it. Saying "nothing
+          // received" when it was never switched on reads as a fault rather
+          // than a setting.
           var srcSel = document.getElementById('shuntsource');
+          var fbSel = document.getElementById('fallbacksource');
           var snif = document.getElementById('blesniffer');
-          var running = (srcSel && srcSel.value === '1') || obj.blescanning || (snif && snif.checked);
+          var running = (srcSel && srcSel.value === '1') || (fbSel && fbSel.value === '1') ||
+                        obj.blescanning || (snif && snif.checked);
           if (obj.blefresh) { e.textContent = 'Receiving (' + obj.blesoc.toFixed(1) + '%)'; e.className = 'stat-value sm v-ok'; }
           else if (ago >= 0) { e.textContent = 'Stale, ' + ago + 's ago'; e.className = 'stat-value sm v-warn'; }
           else if (!running) { e.textContent = 'Not started'; e.className = 'stat-value sm v-dim'; }
           else { e.textContent = 'Nothing received'; e.className = 'stat-value sm v-dim'; }
+        }
+      }
+      /* MQTT shunt source. The firmware only sends this group while it is
+         relevant - MQTT selected, or topics left configured behind a source
+         change - so a frame without it means there is nothing to say, not that
+         nothing has arrived. Names the fields still missing rather than saying
+         "not ready": with four independent topics, which one is wrong is the
+         whole question. */
+      if(obj.mqttshuntfresh !== undefined) {
+        var e = document.getElementById('mqttShuntStatus');
+        if (e) {
+          var have = obj.mqttshunthave || 0;
+          var ago = obj.mqttshuntlastseen;
+          var missing = [];
+          if (!(have & 1)) missing.push('SOC');
+          if (!(have & 2)) missing.push('Voltage');
+          if (!(have & 4)) missing.push('Current');
+          var txt, cls;
+          if (missing.length) {
+            // "Nothing received yet" only when genuinely nothing has arrived:
+            // lastseen tracks the three required fields, so a lone temperature
+            // reading leaves it at -1 with a bit already set.
+            txt = (have ? 'Waiting for: ' : 'Nothing received yet. Waiting for: ')
+                + missing.join(', ') + '. All three are needed before the source is used.';
+            cls = 'v-warn';
+          } else if (obj.mqttshuntfresh) {
+            txt = 'Receiving SOC, volts and amps' + ((have & 8) ? ' and temperature' : '')
+                + ' - last message ' + ago + 's ago.';
+            cls = 'v-ok';
+          } else {
+            txt = 'No data for ' + ago + 's - check the broker connection and the topics above.';
+            cls = 'v-warn';
+          }
+          if (obj.mqttshuntmsgs !== undefined) txt += ' ' + obj.mqttshuntmsgs + ' messages seen.';
+          e.textContent = txt;
+          e.className = 'field-note ' + cls;
         }
       }
       if(obj.timezone !== undefined) syncTzPreset();
@@ -3335,6 +3468,10 @@
       if(obj.mqtttopic !== undefined) {
         var st=document.getElementById('schedTopic');
         if(st) st.textContent = obj.mqtttopic + '/set/Schedule';
+        // Name the base topic the shunt inputs must not point at, rather than
+        // leaving the reader to go and look it up on another tab.
+        var ot=document.getElementById('mqttShuntOwnTopic');
+        if(ot && obj.mqtttopic) ot.textContent = obj.mqtttopic + '/...';
       }
       {{FAN_PIN_HANDLER}}
 
@@ -3349,9 +3486,20 @@
          fault or a cable someone then goes looking for. */
       if(obj.shuntlink !== undefined) {
         var viaBle = obj.shuntlink === 'ble';
+        var viaMqtt = obj.shuntlink === 'mqtt';
         var badge = document.getElementById('shuntLink');
         if(badge) badge.textContent = viaBle ? 'over Bluetooth'
+                                    : viaMqtt ? 'over MQTT'
                                     : obj.shuntlink === 'vedirect' ? 'over VE.Direct' : 'not seen yet';
+
+        /* MQTT carries readings and nothing else: no model, firmware, serial or
+           product id travels with a bare number on a topic. So the whole
+           identity grid goes away rather than showing four dashes, replaced by
+           one line saying why there is nothing to show. */
+        var idGrid = document.getElementById('shuntIdentityGrid');
+        var idNote = document.getElementById('shuntIdentityNote');
+        if(idGrid) idGrid.hidden = viaMqtt;
+        if(idNote) idNote.hidden = !viaMqtt;
 
         /* The name box appears only when a name actually arrived. Victron does
            not put the local name in the manufacturer-data advert - it comes in
@@ -3531,7 +3679,7 @@
     const EXPORT_FIELDS = {
       checkboxes: ['canbusenabled','can16mhz','soctrickenabled','requestflagsenabled','never100soc',
                    'autocharge','tempprotection','showtempdashboard','lcdenabled','syslogenabled',
-                   'blefallback','ntpfromdhcp'],
+                   'ntpfromdhcp'],
       numbers: ['lowsoclimit','highsoclimit','smartinterval','tailduration',
                 'maxabsorptiontime','rechargesoc','chargehightemp','chargelowtemp',
                 'dischargehightemp','dischargelowtemp','fanofftemp','fanfulltemp',
@@ -3544,8 +3692,9 @@
          quietly carried the shunt's only credential is not something to hand
          out when asking for help with a config. It is re-entered by hand. */
       strings: ['ntpserver','timezone','syslogserver','mqttserverip','mqttclientid','mqtttopic','mqttuser',
-                'mqttpass','mqttbatttopic','mqttinvtopic','wifihostname','blemac'],
-      selects: ['canprotocol','batttempsrc','fantempsrc','shuntsource'],
+                'mqttpass','mqttbatttopic','mqttinvtopic','wifihostname','blemac',
+                'mqttshuntsoc','mqttshuntvolt','mqttshuntcurr','mqttshunttemp'],
+      selects: ['canprotocol','batttempsrc','fantempsrc','shuntsource','fallbacksource'],
       pins: ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin',
              'canbuscspin','fanpin','onewirepin']
     };
@@ -3626,6 +3775,15 @@
           var count = 0;
           var skip = ['_exportVersion', '_exportDate'];
           var exportVersion = settings._exportVersion || 1;
+
+          /* Shunt Source and Fallback Source are refused if they match, and an
+             import sets fields one at a time - so a file that swaps the two
+             round would have the first of them bounced against the value the
+             device still holds for the other. Park the fallback at None first;
+             the file's own value lands a moment later in the loop below. Only
+             when the file actually carries one, so importing a pre-3.0 export
+             does not quietly throw away a fallback it never knew about. */
+          if (settings.fallbacksource !== undefined) websocket.send('{"fallbacksource" : 255}');
 
           // For converted fields, set DOM value as display units (server expects raw via SendQueuedUpdate)
           for (var key in settings) {

@@ -51,15 +51,46 @@ mEEPROM pref;
 #include "CANBUS.h"
 #include "FAN.h"
 #include "VictronBLE.h"
+#include "MqttShunt.h"
 
 uint32_t SendCanBusMQTTUpdates;
 CANBUS Inverter;
 
-// Shunt source, read once at boot - see the selection logic in loop()
+// Shunt source and its fallback, read once at boot - see the selection logic in
+// loop(). fallbackSource is SHUNT_FALLBACK_NONE or any source but the primary.
 uint8_t  shuntSource = SHUNT_SRC_VEDIRECT;
-bool     bleFallback = false;
+uint8_t  fallbackSource = SHUNT_FALLBACK_NONE;
 uint32_t lastBleApplied = 0;
 bool     lastBleFresh = false;
+/* How long a VE.Direct frame counts for. Serial had no freshness of its own
+   while it was only ever the thing being fallen back TO - a frame either
+   arrived on this pass of loop() or it did not. Now that it can be the source
+   something else takes over from, "is the cable delivering" has to be a state
+   rather than an instant, and this is how long since the last completed frame
+   still counts as yes. Frames come about once a second, so five seconds is
+   several missed ones - late enough not to twitch, early enough that an
+   unplugged cable is noticed while it still matters.
+
+   Deliberately not the two seconds the VEData timeout below uses: that one
+   asks whether ANY source has produced a reading lately, and is what puts "no
+   data" on the display. This one is about one source only. */
+#define SHUNT_SERIAL_STALE_MS 5000
+uint32_t lastSerialFrameMs = 0;
+/* Starts true so the first frame after boot is not announced as data
+   "returning" from an outage that never happened. A cable that is not there at
+   all stays silent for a different reason: lastSerialFrameMs is still zero, so
+   the state never changes and there is nothing to report. */
+bool     lastSerialFresh = true;
+/* MQTT source. The instance lives here rather than in a .cpp of its own -
+   MqttShunt.h is scalars only, there is no radio or discovery behind it. */
+MqttShuntSource MqttShunt;
+uint32_t lastMqttApplied = 0;
+uint32_t lastMqttHeartbeat = 0;
+bool     lastMqttFresh = false;
+/* Which link last actually put a reading into Inverter, as opposed to which one
+   is configured. 255 = nothing has yet. Drives the shuntlink status field, which
+   tells the UI which identity fields it can expect to be empty. */
+uint8_t  activeShuntLink = 255;
 
 //create an object from the UpdateServer
 ESPAsyncHTTPUpdateServer updateServer;
@@ -251,6 +282,25 @@ void setup()
   // Load MQTT temp source settings before mqttsetup so onMqttConnect can subscribe
   Inverter.BattTempSource(pref.getUInt8(ccBattTempSrc, 0));
   Inverter.FanTempSource(pref.getUInt8(ccFanTempSrc, 0));
+  /* Same reason, one line further out: when the shunt source is MQTT its four
+     topics are subscribed from onMqttConnect too, and that can fire before
+     setup() gets as far as the BLE block below. Only these two reads move -
+     the radio is still brought up down there, where it belongs. */
+  shuntSource = pref.getUInt8(ccShuntSource, SHUNT_SRC_VEDIRECT);
+  /* Migrate the old blunt "fall back to serial" checkbox. An install that had
+     it ticked meant something specific - wireless primary, serial behind it -
+     and reading the new key with a plain "none" default would quietly take
+     that away on the first boot after an update, on the one setting whose
+     whole job is to cover a source going quiet. So the old boolean supplies
+     the default only until a fallback has been chosen under the new key. */
+  const uint8_t migratedFallback = pref.getBool(ccBLEFallback, false)
+                                     ? SHUNT_SRC_VEDIRECT : SHUNT_FALLBACK_NONE;
+  fallbackSource = pref.getUInt8(ccFallbackSrc, migratedFallback);
+  // A fallback equal to the primary is not a fallback; refuse it rather than
+  // carry a contradiction through the resolution in loop().
+  if (fallbackSource == shuntSource) fallbackSource = SHUNT_FALLBACK_NONE;
+  log_i("Shunt source: %s, fallback %s", ShuntSrcName(shuntSource),
+        ShuntSrcName(fallbackSource));
   mqttsetup();
   Diag.Milestone("MQTT client made");
 #ifdef ESPCAN
@@ -378,20 +428,23 @@ void setup()
     log_e("Forbidden or missing GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
   }
 
-  /* Victron BLE. Only brought up when it is the selected source - the radio and
-     its stack cost RAM that an install reading the shunt over the wire has no
-     reason to spend. The serial reader above always starts regardless, because
-     it is the fallback path and costs a task either way. */
-  shuntSource = pref.getUInt8(ccShuntSource, SHUNT_SRC_VEDIRECT);
-  bleFallback = pref.getBool(ccBLEFallback, false);
+  /* Victron BLE. Only brought up when it is in play in one role or the other -
+     the radio and its stack cost RAM that an install reading the shunt over the
+     wire has no reason to spend. A fallback has to be listening before the
+     primary fails, so being the fallback counts just as much as being the
+     primary: bringing the radio up at the moment it was needed would mean the
+     first minute of every outage had nothing behind it. The serial reader above
+     always starts regardless, because it costs a task either way. shuntSource
+     and fallbackSource were read earlier, before mqttsetup(). */
   /* Loaded whatever the source, so the settings page can show them and the
      status JSON never has to go back to NVS for the address. Holding them costs
      a few dozen bytes; re-reading them on every broadcast cost the heap. */
   VictronBle.SetMac(pref.getString(ccVBLEMac, ""));
   VictronBle.SetKeyHex(pref.getString(ccVBLEKey, ""));
-  if (shuntSource == SHUNT_SRC_BLE) {
+  if (shuntSource == SHUNT_SRC_BLE || fallbackSource == SHUNT_SRC_BLE) {
     VictronBle.Begin(true);
-    log_i("Shunt source: Victron BLE%s", bleFallback ? " (falls back to serial)" : "");
+    log_i("Victron BLE radio started (%s shunt source)",
+          shuntSource == SHUNT_SRC_BLE ? "primary" : "fallback");
   }
   // Start NTP Clock Set Task
 #if defined(BMS_S3) || defined(BMS_C3)
@@ -596,45 +649,138 @@ void loop()
       }
   }
 
-  /* Which shunt source feeds the charge logic.
+  /* Which shunt source feeds the charge logic - VE.Direct serial, Victron BLE,
+     or figures published to MQTT.
 
-     dataavailable() is called unconditionally because it clears the frame flag:
-     skipping it while BLE is in charge would leave serial frames marked pending
-     forever and the flag would be stale the moment fallback did kick in.
+     Two settings decide it and the three sources are treated alike: shuntSource
+     names the primary, fallbackSource names what takes over while the primary's
+     data is stale, and either can be any of the three. So a VE.Direct cable
+     backed by BLE for when it is unplugged works the same way round as BLE
+     backed by the cable, which the old wireless-falls-back-to-serial switch
+     could not express at all.
 
-     Fallback only applies when BLE is the configured source. It is opt-in
-     because a source changing itself mid-charge is hard to diagnose after the
-     fact, so the switch is logged both ways. */
+     A fallback is opt-in and both its directions are logged, because a source
+     changing itself mid-charge is very hard to account for afterwards. With
+     fallbackSource at SHUNT_FALLBACK_NONE, a stale primary means nothing is
+     applied at all and the timeout below shows "no data" - the readings go
+     absent rather than quietly coming from somewhere that was never asked for.
+
+     Freshness is computed for all three whatever is selected. Both wireless
+     sources answer false until something has actually arrived, so there is
+     nothing to gate, and a fallback has to be able to say it is ready before
+     the primary stops. dataavailable() in particular is called unconditionally
+     because it clears the frame flag: skipping it while another source is in
+     charge would leave frames marked pending forever and the flag would be
+     stale the moment the cable was wanted. */
   // Push the device list to the browser the moment a scan window closes
   if (VictronBle.DiscoveryTick())
     notifyWSClients();
 
-  const bool bleFresh  = (shuntSource == SHUNT_SRC_BLE) && VictronBle.DataFresh();
+  const bool bleFresh  = VictronBle.DataFresh();
+  const bool mqttFresh = MqttShunt.DataFresh();
   const bool haveFrame = veHandle.dataavailable();
-  const bool useSerial = (shuntSource == SHUNT_SRC_VEDIRECT) ||
-                         (shuntSource == SHUNT_SRC_BLE && bleFallback && !bleFresh);
+  if (haveFrame) lastSerialFrameMs = millis();
+  /* Serial's equivalent of the other two: a frame is an instant, this is the
+     state. Zero means no frame has ever been read, which is not fresh - the
+     same answer BLE and MQTT give before their first reading. */
+  const bool serialFresh = lastSerialFrameMs &&
+                           (millis() - lastSerialFrameMs) < SHUNT_SERIAL_STALE_MS;
 
-  if (shuntSource == SHUNT_SRC_BLE && bleFallback && bleFresh != lastBleFresh) {
+  auto SourceFresh = [&](uint8_t src) -> bool {
+    switch (src) {
+      case SHUNT_SRC_VEDIRECT: return serialFresh;
+      case SHUNT_SRC_BLE:      return bleFresh;
+      case SHUNT_SRC_MQTT:     return mqttFresh;
+      default:                 return false;   // SHUNT_FALLBACK_NONE, or nonsense
+    }
+  };
+
+  /* The primary while it is delivering, the fallback while it is not, and 255
+     for "neither has anything right now". */
+  const uint8_t chosen = SourceFresh(shuntSource) ? shuntSource
+                       : (fallbackSource != SHUNT_FALLBACK_NONE &&
+                          SourceFresh(fallbackSource)) ? fallbackSource
+                       : 255;
+
+  /* A source going quiet or coming back is said once, at the change, and only
+     about a source that is configured in one role or the other - a board with
+     an old BLE key still in NVS should not narrate a link nothing is using.
+
+     What it says depends on the role, because "stale" means different things
+     either way round: a primary going quiet is a handover, a fallback going
+     quiet is the safety net disappearing while nothing is wrong yet. Both are
+     worth knowing and they are not the same event. */
+  auto LogStale = [&](uint8_t src) {
+    if (shuntSource != src)
+      WS_LOG_W("Shunt source: %s data stale, no fallback available", ShuntSrcName(src));
+    else if (fallbackSource == SHUNT_FALLBACK_NONE)
+      WS_LOG_W("Shunt source: %s data stale, no fallback configured", ShuntSrcName(src));
+    else
+      WS_LOG_W("Shunt source: %s data stale, falling back to %s",
+               ShuntSrcName(src), ShuntSrcName(fallbackSource));
+  };
+
+  const bool bleInPlay    = (shuntSource == SHUNT_SRC_BLE  || fallbackSource == SHUNT_SRC_BLE);
+  const bool mqttInPlay   = (shuntSource == SHUNT_SRC_MQTT || fallbackSource == SHUNT_SRC_MQTT);
+  const bool serialInPlay = (shuntSource == SHUNT_SRC_VEDIRECT ||
+                             fallbackSource == SHUNT_SRC_VEDIRECT);
+
+  if (bleInPlay && bleFresh != lastBleFresh) {
     lastBleFresh = bleFresh;
-    if (bleFresh) WS_LOG_I("Shunt source: BLE data returned, back on BLE");
-    else          WS_LOG_W("Shunt source: BLE data stale, falling back to VE.Direct serial");
+    if (bleFresh) WS_LOG_I("Shunt source: %s data returned", ShuntSrcName(SHUNT_SRC_BLE));
+    else          LogStale(SHUNT_SRC_BLE);
   }
 
-  if (bleFresh && VictronBle.LastUpdateMs != lastBleApplied)
+  if (mqttInPlay && mqttFresh != lastMqttFresh) {
+    lastMqttFresh = mqttFresh;
+    if (mqttFresh) WS_LOG_I("Shunt source: %s data returned", ShuntSrcName(SHUNT_SRC_MQTT));
+    else           LogStale(SHUNT_SRC_MQTT);
+  }
+
+  /* Serial says the same, now that it can be the one being fallen back FROM.
+     lastSerialFrameMs gates it so a board with no cable attached does not
+     report a link it has never had as having just gone stale. */
+  if (serialInPlay && lastSerialFrameMs && serialFresh != lastSerialFresh) {
+    lastSerialFresh = serialFresh;
+    if (serialFresh) WS_LOG_I("Shunt source: %s data returned", ShuntSrcName(SHUNT_SRC_VEDIRECT));
+    else             LogStale(SHUNT_SRC_VEDIRECT);
+  }
+
+  if (chosen == SHUNT_SRC_BLE && VictronBle.LastUpdateMs != lastBleApplied)
   {
     lastBleApplied = VictronBle.LastUpdateMs;
     last_vedirect = t;
     if(!Lcd.Data.VEData._currentValue)
       Lcd.Data.VEData.setValue(true);
     BLEDataProcess();
+    activeShuntLink = SHUNT_SRC_BLE;
   }
-  else if (haveFrame && useSerial)
+  /* Re-applied once a second even with nothing new, unlike BLE. A publisher on
+     a 5 or 10 second timer is healthy, but the two-second timeout below would
+     drop VEData between its messages and the dashboard would flap between
+     "data" and "no data" on a source that is working. The setters are
+     idempotent, so a re-apply just re-stamps last_vedirect. */
+  else if (chosen == SHUNT_SRC_MQTT && (MqttShunt.LastUpdateMs != lastMqttApplied ||
+                                        (millis() - lastMqttHeartbeat) > 1000))
+  {
+    lastMqttApplied = MqttShunt.LastUpdateMs;
+    lastMqttHeartbeat = millis();
+    last_vedirect = t;
+    if(!Lcd.Data.VEData._currentValue)
+      Lcd.Data.VEData.setValue(true);
+    MQTTShuntDataProcess();
+    activeShuntLink = SHUNT_SRC_MQTT;
+  }
+  // Only on the pass where a frame actually completed - serialFresh says the
+  // cable is alive, haveFrame says there is something new to read out of it.
+  else if (chosen == SHUNT_SRC_VEDIRECT && haveFrame)
   {
     last_vedirect = t;
     if(!Lcd.Data.VEData._currentValue)
       Lcd.Data.VEData.setValue(true);
     log_d("Data Available to Process");
     VEDataProcess();
+    activeShuntLink = SHUNT_SRC_VEDIRECT;
   }
 
 // Time out for data arrival

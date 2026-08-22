@@ -27,6 +27,12 @@ String sSubscribe;
 // MQTT temperature subscription topics (loaded from NVS)
 String sMqttBattTopic = "";
 String sMqttInvTopic = "";
+/* Shunt source topics, one plain number each. Only subscribed while the shunt
+   source is set to MQTT - see mqttResubscribeTemp(). */
+String sMqttShuntSOC  = "";
+String sMqttShuntVolt = "";
+String sMqttShuntCurr = "";
+String sMqttShuntTemp = "";
 String sTopic;
 String sClientid;
 uint16_t iPort = 1883; // Default MQTT Port
@@ -820,20 +826,85 @@ void connectToMqtt() {
     mqttClient.connect();
 }
 
-// Re-subscribe to external temperature topics (call after topic/source changes)
+/* What this client currently has subscribed, per external input topic.
+
+   Kept because a subscription is not a setting: the broker remembers what it
+   was told, and nothing ever told it to stop. Editing a topic used to leave the
+   old one still being delivered - and since the message handler matches on the
+   topic string, an old topic that still happened to match a renamed setting
+   would keep feeding values. Clearing a topic was worse: the subscription
+   outlived the setting entirely with nothing in the UI to show for it.
+
+   One string per topic rather than a list, because each has its own condition
+   for being wanted and the whole point is to compare wanted against current. */
+static String subBattTemp  = "";
+static String subInvTemp   = "";
+static String subShuntSOC  = "";
+static String subShuntVolt = "";
+static String subShuntCurr = "";
+static String subShuntTemp = "";
+
+// Forget every subscription without unsubscribing - for a connection that no
+// longer exists, or one that has just been made and starts with none.
+static void mqttClearSubTracking() {
+    subBattTemp = ""; subInvTemp = "";
+    subShuntSOC = ""; subShuntVolt = ""; subShuntCurr = ""; subShuntTemp = "";
+}
+
+/* Bring one subscription into line with what is wanted, and remember it.
+
+   No-ops when nothing changed, which is the usual case - this is called from
+   every settings handler that could possibly affect a topic, so it has to be
+   cheap and safe to call when nothing has moved. qos 1: these are readings the
+   charge logic acts on, and a dropped one is a stale figure. */
+static void mqttSyncSub(String& current, const String& wanted) {
+    if (current == wanted) return;
+    if (current.length() > 0) {
+        mqttClient.unsubscribe(current.c_str());
+        WS_LOG_I("MQTT unsubscribed from %s", current.c_str());
+    }
+    if (wanted.length() > 0) {
+        mqttClient.subscribe(wanted.c_str(), 1);
+        WS_LOG_I("MQTT subscribed to %s", wanted.c_str());
+    }
+    current = wanted;
+}
+
+/* Whether the four shunt topics are wanted at all. Either role counts: the
+   fallback has to be subscribed and stashing readings before the primary
+   fails, or the handover it exists for would begin with nothing to hand over
+   and a stale window of its own. Both the subscribe side and the message
+   dispatch ask this same question, so they ask it in one place. */
+static inline bool mqttShuntWanted() {
+    return shuntSource == SHUNT_SRC_MQTT || fallbackSource == SHUNT_SRC_MQTT;
+}
+
+/* Sync every externally sourced subscription with the settings as they now
+   stand. The name is historical - it started as the two temperature topics and
+   is called from a dozen places - but it now covers all six inputs: battery and
+   inverter temperature, and the four shunt-source topics.
+
+   Each topic is wanted only while the setting that reads it is selected, so
+   switching the shunt source away from MQTT drops those four rather than
+   leaving them arriving and being ignored. Selected means either role: a
+   fallback that only subscribed once the primary had already failed would
+   spend its first stale window with nothing to hand over. */
 void mqttResubscribeTemp() {
     if (!mqttEnabled || !mqttClient.connected()) {
         WS_LOG_W("MQTT not connected, temp subscriptions will apply on next connect");
         return;
     }
-    if (Inverter.BattTempSource() == 1 && sMqttBattTopic.length() > 0) {
-        mqttClient.subscribe(sMqttBattTopic.c_str(), 1);
-        WS_LOG_I("MQTT subscribed to battery temp: %s", sMqttBattTopic.c_str());
-    }
-    if (Inverter.FanTempSource() == 1 && sMqttInvTopic.length() > 0) {
-        mqttClient.subscribe(sMqttInvTopic.c_str(), 1);
-        WS_LOG_I("MQTT subscribed to inverter temp: %s", sMqttInvTopic.c_str());
-    }
+    const bool wantTemp  = (Inverter.BattTempSource() == 1);
+    const bool wantFan   = (Inverter.FanTempSource() == 1);
+    const bool wantShunt = mqttShuntWanted();
+    const String none = "";
+
+    mqttSyncSub(subBattTemp,  wantTemp  ? sMqttBattTopic  : none);
+    mqttSyncSub(subInvTemp,   wantFan   ? sMqttInvTopic   : none);
+    mqttSyncSub(subShuntSOC,  wantShunt ? sMqttShuntSOC   : none);
+    mqttSyncSub(subShuntVolt, wantShunt ? sMqttShuntVolt  : none);
+    mqttSyncSub(subShuntCurr, wantShunt ? sMqttShuntCurr  : none);
+    mqttSyncSub(subShuntTemp, wantShunt ? sMqttShuntTemp  : none);
 }
 
 void onMqttConnect(bool sessionPresent) {
@@ -844,21 +915,23 @@ void onMqttConnect(bool sessionPresent) {
   yield();
   mqttClient.subscribe((sTopic + "/set/#").c_str(), 2);
   yield();
-  // Subscribe to external MQTT temperature topics if configured
-  if (Inverter.BattTempSource() == 1 && sMqttBattTopic.length() > 0) {
-    mqttClient.subscribe(sMqttBattTopic.c_str(), 1);
-    WS_LOG_I("MQTT subscribed to battery temp: %s", sMqttBattTopic.c_str());
-    yield();
-  } else if (Inverter.BattTempSource() == 1) {
+  /* Subscribe to every external input topic that is currently wanted.
+     The tracking is cleared first: this is a new session as far as the broker
+     is concerned and it holds no subscriptions for us, so anything the tracking
+     still claimed would stop mqttSyncSub() from asking for it again. */
+  mqttClearSubTracking();
+  mqttResubscribeTemp();
+  yield();
+  // Configured-but-incomplete is the one case a subscription cannot report, so
+  // it is said once here rather than left as silence.
+  if (Inverter.BattTempSource() == 1 && sMqttBattTopic.length() == 0)
     WS_LOG_W("Battery temp source is MQTT but no topic configured");
-  }
-  if (Inverter.FanTempSource() == 1 && sMqttInvTopic.length() > 0) {
-    mqttClient.subscribe(sMqttInvTopic.c_str(), 1);
-    WS_LOG_I("MQTT subscribed to inverter temp: %s", sMqttInvTopic.c_str());
-    yield();
-  } else if (Inverter.FanTempSource() == 1) {
+  if (Inverter.FanTempSource() == 1 && sMqttInvTopic.length() == 0)
     WS_LOG_W("Fan temp source is MQTT but no topic configured");
-  }
+  if (mqttShuntWanted() &&
+      (sMqttShuntSOC.length() == 0 || sMqttShuntVolt.length() == 0 || sMqttShuntCurr.length() == 0))
+    WS_LOG_W("MQTT is the %s shunt source but the SOC/voltage/current topics are not all configured",
+             shuntSource == SHUNT_SRC_MQTT ? "primary" : "fallback");
   mqttPublish((sTopic + "/status").c_str(), "online", true);
   yield();
 
@@ -883,6 +956,8 @@ void onMqttDisconnect(bool sessionPresent) {
   log_d("Disconnected from MQTT, sessionPresent: %d", sessionPresent);
   WS_LOG_W("MQTT disconnected, scheduling reconnect...");
   Lcd.Data.MQTTConnected.setValue(false);
+  // The subscriptions went with the connection, so stop claiming to hold them
+  mqttClearSubTracking();
 #if !MQTT_ASSUME_CLIENT_COPIES
   for (int i = 0; i < MAX_PENDING_MSGS; i++) {
     if (pending_msgs[i].active) {
@@ -921,11 +996,33 @@ void onMqttError(esp_mqtt_error_codes_t error) {
         esp_err_to_name(error.esp_tls_last_esp_err), error.error_type, error.connect_return_code, error.esp_transport_sock_errno);  
       }
 
+/* Say that a shunt payload was thrown away, but not once a second.
+
+   A publisher sending nonsense sends it at the same rate it sends everything
+   else, so an unthrottled warning here would be a log nobody can read - and the
+   point of the message is to be noticed. Ten seconds is long enough that the
+   Logs tab stays usable and short enough that the problem is still on screen
+   while someone is looking for it. */
+static void mqttShuntReject(const char* what, const String& payload) {
+  static bool     warned = false;
+  static uint32_t lastWarnMs = 0;
+  const uint32_t now = millis();
+  if (warned && (now - lastWarnMs) < 10000) return;
+  warned = true;
+  lastWarnMs = now;
+  WS_LOG_W("MQTT shunt %s payload out of range, ignored: '%s'", what, payload.c_str());
+}
+
 void onMqttMessage(char* topic, char* payload, int retain, int qos, bool dup) {
 
 String _Topic = String(topic);
 String message = String(payload);
-log_i("MQTT Message: %s, Topic: %s", message.c_str(), _Topic.c_str());
+/* log_d, not log_i. With the shunt source on MQTT this fires for every reading
+   that arrives - three or four topics at up to a second apiece - and at _i it
+   buried everything else in the Logs tab. The lines that matter (a value
+   accepted, a value rejected, a subscription changing) are logged in their own
+   right below, so nothing is lost by dropping the running commentary. */
+log_d("MQTT Message: %s, Topic: %s", message.c_str(), _Topic.c_str());
 
 // Handle external MQTT temperature subscriptions
 if (sMqttBattTopic.length() > 0 && _Topic == sMqttBattTopic) {
@@ -945,6 +1042,56 @@ else if (sMqttInvTopic.length() > 0 && _Topic == sMqttInvTopic) {
     int16_t prev = Inverter.MqttInverterTemp();
     Inverter.MqttInverterTemp(temp);
     if (temp != prev) WS_LOG_I("MQTT Inverter Temp: %d C", temp);
+    return;
+}
+
+/* Shunt readings, when MQTT is the selected shunt source in either role -
+   primary, or the fallback waiting behind one.
+
+   Guarded on the source settings as well as the topic. The four subscriptions
+   are dropped when MQTT is neither, so this should never fire - but a topic
+   left configured from an earlier experiment must not be able to feed the
+   charge logic, and a guard here does not depend on a resubscribe having
+   already happened.
+
+   Note the guard is only "MQTT could be used", not "MQTT is being used right
+   now": readings are stashed whenever they arrive so that MqttShunt.DataFresh()
+   is already true at the moment loop() decides a fallback is needed. Whether
+   they are applied is that decision's business, not this callback's.
+
+   Nothing below touches Inverter or CANMutex: this callback runs on the MQTT
+   client's task, and taking a spinlock with interrupts off from there is the
+   deadlock DataProcessing.h describes. The values are stashed, and loop()
+   applies them under the mutex through MQTTShuntDataProcess().
+
+   toFloat() answers 0.0 for an empty or non-numeric payload with no way to tell
+   that from a genuine zero, so voltage and SOC are range-checked first: a
+   spurious 0V reads to the charge logic as a flat battery, which is the one
+   wrong answer here that does damage. Current gets no band - zero is exactly
+   what a resting battery reads - and temperature only a sanity floor, chosen to
+   exclude the -127 this firmware uses elsewhere to mean "no reading". */
+else if (mqttShuntWanted() && sMqttShuntVolt.length() > 0 && _Topic == sMqttShuntVolt) {
+    const float v = message.toFloat();
+    if (v >= 0.5f && v <= 200.0f) MqttShunt.SetVoltage(v);
+    else mqttShuntReject("voltage", message);
+    return;
+}
+else if (mqttShuntWanted() && sMqttShuntCurr.length() > 0 && _Topic == sMqttShuntCurr) {
+    const float a = message.toFloat();
+    if (a > -10000.0f && a < 10000.0f) MqttShunt.SetCurrent(a);
+    else mqttShuntReject("current", message);
+    return;
+}
+else if (mqttShuntWanted() && sMqttShuntSOC.length() > 0 && _Topic == sMqttShuntSOC) {
+    const float pct = message.toFloat();
+    if (pct >= 0.0f && pct <= 100.0f) MqttShunt.SetSOC(pct);
+    else mqttShuntReject("SOC", message);
+    return;
+}
+else if (mqttShuntWanted() && sMqttShuntTemp.length() > 0 && _Topic == sMqttShuntTemp) {
+    const float c = message.toFloat();
+    if (c >= -50.0f && c <= 100.0f) MqttShunt.SetTemp(c);
+    else mqttShuntReject("temperature", message);
     return;
 }
 
@@ -1175,6 +1322,10 @@ void mqttsetup() {
      startup, before anything else touches these values. */
   String battTopic = pref.getString(ccMQTTBattTopic, "");
   String invTopic  = pref.getString(ccMQTTInvTopic, "");
+  String shSOC     = pref.getString(ccMQShuntSOC, "");
+  String shVolt    = pref.getString(ccMQShuntVolt, "");
+  String shCurr    = pref.getString(ccMQShuntCurr, "");
+  String shTemp    = pref.getString(ccMQShuntTemp, "");
   String server    = String(wifiManager.GetMQTTServerIP().c_str());
   String user      = String(wifiManager.GetMQTTUser().c_str());
   String pass      = String(wifiManager.GetMQTTPass().c_str());
@@ -1213,6 +1364,14 @@ void mqttsetup() {
      that subscription instead of taking MQTT down with it. */
   if (!utf8ok("battery temperature topic", battTopic)) battTopic = "";
   if (!utf8ok("inverter temperature topic", invTopic)) invTopic = "";
+  /* Same for the four shunt topics - a bad one costs that field, not the
+     connection. SOC, voltage and current all have to arrive before the source
+     counts as live, so a blanked one shows up as a source that never goes
+     fresh rather than as silently wrong readings. */
+  if (!utf8ok("shunt SOC topic", shSOC))          shSOC  = "";
+  if (!utf8ok("shunt voltage topic", shVolt))     shVolt = "";
+  if (!utf8ok("shunt current topic", shCurr))     shCurr = "";
+  if (!utf8ok("shunt temperature topic", shTemp)) shTemp = "";
 
   // Only the handover to the shared copies needs guarding
   taskENTER_CRITICAL(&MqttMutex);
@@ -1224,8 +1383,16 @@ void mqttsetup() {
     iPort = port;
     sMqttBattTopic = battTopic;
     sMqttInvTopic = invTopic;
+    sMqttShuntSOC = shSOC;
+    sMqttShuntVolt = shVolt;
+    sMqttShuntCurr = shCurr;
+    sMqttShuntTemp = shTemp;
     taskEXIT_CRITICAL(&MqttMutex);
     log_i("MQTT temp topics: batt='%s' inv='%s'", sMqttBattTopic.c_str(), sMqttInvTopic.c_str());
+    if (mqttShuntWanted())
+      log_i("MQTT shunt topics: soc='%s' v='%s' i='%s' t='%s'",
+            sMqttShuntSOC.c_str(), sMqttShuntVolt.c_str(),
+            sMqttShuntCurr.c_str(), sMqttShuntTemp.c_str());
     if (sServer.length() == 0 || iPort < 1) {
       log_i("MQTT details not set, not connecting to MQTT.");
       mqttEnabled = false;

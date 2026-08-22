@@ -39,10 +39,11 @@ immediately when a value the firmware tracks as significant changes — a toggle
 phase, a changed current limit. That means a force charge set over MQTT is reflected back on
 `/Param/ForceCharge` within a second, not on the next 5-second tick.
 
-> **Telemetry only flows while VE.Direct data is arriving.** If the Victron shunt is unplugged or
-> silent for more than 2 seconds, the publish loop stops until it returns. `<topic>/status` stays
-> `online` — the device is up, it just has nothing new to say. Watch `/Data` timestamps rather than
-> `status` if you need a liveness check on the readings themselves.
+> **Telemetry only flows while shunt data is arriving.** If the selected shunt source — VE.Direct,
+> BLE or [MQTT topics](#shunt-source-topics) — has gone quiet for more than 2 seconds, the publish
+> loop stops until it returns. `<topic>/status` stays `online` — the device is up, it just has
+> nothing new to say. Watch `/Data` timestamps rather than `status` if you need a liveness check on
+> the readings themselves.
 
 `/Schedule/*` is not on that cycle. It is published only when something changes it: a schedule
 ingested over MQTT, a window starting or ending, an override cleared or timed out. It is retained,
@@ -160,6 +161,11 @@ JSON. Published on the same cycle, **not retained**.
 | `<topic>/InverterTemp` | °C — only published when an external inverter temperature is configured |
 | `<topic>/MQTTBattTemp` | °C — likewise for the external battery temperature |
 | `<topic>/Param/ChargePhase` | `Bulk` / `Absorption` / `Float` / `Complete` |
+
+Not every source can fill every row. On an install taking its readings from
+[shunt source topics](#shunt-source-topics), `<topic>/P` is derived from voltage × current rather
+than read from the shunt, and `TTG`, `Alarm` and `AR` are not published at all — see that section
+for the full list.
 
 ### `<topic>/Param/*` — switch states
 
@@ -292,6 +298,89 @@ Not under `<topic>`. Configure these under Settings and the device subscribes to
 take battery or inverter temperature from any existing sensor on your broker. Payload is a plain
 number in °C; it is rounded to a whole degree. Each is only used if the matching temperature
 **source** is also set to MQTT.
+
+### Shunt source topics
+
+A third way to get battery readings, alongside the wired VE.Direct link and Victron BLE: if the
+shunt's numbers are already on your broker — published by another gateway or anything else that can
+reach the shunt when this device cannot — take them from there instead.
+
+Set **Shunt Source** — or **[Fallback Source](#fallback-source)** — to **MQTT topics** under
+Settings → Victron Configuration, then fill in the four topics that appear. Like the temperature topics above these are not under `<topic>`: they are
+whatever the publisher already uses, and the device subscribes to them directly. One plain number
+per message, not JSON.
+
+| Setting | Required | Unit | Example payload |
+|---|---|---|---|
+| SOC Topic | **Yes** | %, 0-100 | `76.4` |
+| Voltage Topic | **Yes** | V | `52.31` |
+| Current Topic | **Yes** | A, signed. Positive charging, negative discharging — the same convention as `battcurrent` and `<topic>/I` | `-18.2` |
+| Temperature Topic | No | °C | `21` |
+
+All three of SOC, Voltage and Current must have delivered at least one message before the source
+counts as usable. Until then nothing reaches the inverter — a half-configured source cannot
+half-start the CAN feed with two good numbers and one missing one. Temperature never gates this.
+
+The source goes **stale 30 seconds** after the most recent message across the three required topics.
+It is the newest of them that counts, not each one separately, since SOC is often published far less
+often than volts and amps. What happens next is up to **Fallback Source** — see below.
+
+Unlike BLE, this source is hot-switchable: selecting or leaving MQTT takes effect as soon as it is
+saved, with no reboot. A publisher sending every few seconds is fine — the readings are re-applied
+once a second while they are fresh, so a slow publisher does not make the dashboard flap.
+
+**Temperature precedence.** The shunt Temperature topic only drives `batttemp` / `<topic>/T` while
+**Battery Temp Source** is set to VE.Direct. Set Battery Temp Source to MQTT and its own
+`MQTT Battery Temp Topic` wins outright — the shunt Temperature topic is then ignored, whatever it
+carries. One rule for all three shunt sources: the temperature override always takes precedence.
+
+> **Never point a shunt source topic at this device's own output topics.** `<topic>/V`, `<topic>/I`
+> and `<topic>/SOC` are what this device publishes, so feeding one back in makes it read its own
+> numbers as if they came from a shunt. It is rejected on save — a topic equal to, or underneath,
+> the configured base topic will not be accepted — but the copy-paste is an easy one to reach for
+> when looking for an example topic, so it is worth knowing why it bounces.
+
+**What is not available on an MQTT-sourced install.** `P` / `battpower` is derived here — voltage
+× current — rather than read from the shunt, so it will not match a shunt reading exactly.
+`TTG` / `timetogo`, `Alarm` / `alarmactive`, `AR` / `alarmreason` and the shunt identity fields
+`pidstring`, `fwversion`, `serialnumber` and `modelstring` are simply not published: there is no
+MQTT input they could come from, and nothing is invented to fill them. The web UI's shunt identity
+panel says so rather than showing blanks.
+
+### Fallback source
+
+**Shunt Source** picks where readings normally come from. **Fallback Source**, next to it under
+Settings → Victron Configuration, picks what gets read while the primary has nothing fresh to give.
+The two are independent dropdowns over the same three sources, so any of them can back any other:
+MQTT topics with BLE behind them, BLE with the VE.Direct cable behind it, or the cable with MQTT
+behind it for a shunt that something else is also publishing. Set it to **None** — the default — and
+a stale primary simply shows no fresh data, rather than quietly substituting a source you did not
+choose.
+
+This replaces the old **Allow fallback to the other source when the preferred one goes quiet**
+checkbox, which could only ever hand a wireless primary back to VE.Direct serial. An install that
+had it ticked is migrated on the first boot after the update to **Fallback Source = VE.Direct
+serial**, which is exactly what the checkbox meant, so nothing changes on upgrade unless you change
+it. An install that had it off comes up as **None**.
+
+Each source has its own staleness window — the quiet period after which the primary is considered to
+have stopped, and the fallback takes over:
+
+| Source | Stale after |
+|---|---|
+| VE.Direct serial | no frame for **5 s** |
+| Victron BLE | no advert decoded for **15 s** |
+| MQTT topics | no message on any of the three required topics for **30 s** |
+
+The switch is not one-way: the moment the primary produces a reading again, it is used again. Every
+switch in either direction is written to the Logs tab, so a source change is never silent.
+
+> **Primary and fallback can never be the same source.** Choosing the same value in both dropdowns
+> is refused on save with an error, and a stored pair that somehow matches is read back at boot as
+> "no fallback". A source cannot stand in for itself, so the setting would say nothing.
+
+Choosing BLE in *either* dropdown needs a reboot before it takes effect — the radio is started at
+boot or not at all — while VE.Direct and MQTT in either role take effect as soon as they are saved.
 
 ---
 

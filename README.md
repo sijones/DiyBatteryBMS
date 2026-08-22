@@ -220,8 +220,6 @@ Two OTA app slots are kept throughout, so the firmware update page still works a
 
 ## Features to come:
 
-- MQTT to CAN BUS support, use esphome BMS intgrations to feed the data in and send to the inverter.
-- Multi Inverter support
 - OneWire temperature sensors for charge control
 - Heater control (fan control and temperature monitoring are now implemented)
 

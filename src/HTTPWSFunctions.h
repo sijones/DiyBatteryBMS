@@ -8,11 +8,15 @@
 #include <memory>
 #include <vector>
 #include "VictronBLE.h"
+#include "MqttShunt.h"
 
 // Defined in main.cpp. Cached at boot so the status JSON does not read NVS on
 // every broadcast - see the note where the BLE block is built.
-extern bool bleFallback;
 extern uint8_t shuntSource;
+// Which source takes over while the primary is stale, or SHUNT_FALLBACK_NONE
+extern uint8_t fallbackSource;
+// Which link last actually applied a reading, as opposed to which is configured
+extern uint8_t activeShuntLink;
 #include "config.h"
 #include "embedded_html.h"
 #include "Syslog.h"
@@ -48,6 +52,11 @@ static String g_syslogServerCached;
 // Forward declarations for MQTT temperature subscriptions (defined in mqttFunctions.h)
 extern String sMqttBattTopic;
 extern String sMqttInvTopic;
+// The four shunt-source topics, same RAM-copy arrangement as the two above
+extern String sMqttShuntSOC;
+extern String sMqttShuntVolt;
+extern String sMqttShuntCurr;
+extern String sMqttShuntTemp;
 void mqttResubscribeTemp();
 void mqttRunCopyTest();   // diagnostic, see mqttFunctions.h
 /* Re-publish HA discovery (defined in mqttFunctions.h) so number-control limits
@@ -542,7 +551,13 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["cansniffer"] = Inverter.CANSniffer();   // runtime only, never persisted
     doc["blesniffer"] = VictronBle.Sniffer();    // ditto
     doc["shuntsource"] = shuntSource;   // cached at boot, not re-read per call
-    doc["blefallback"] = bleFallback;
+    /* The fallback is a source now, not a switch - same three values as
+       shuntsource plus SHUNT_FALLBACK_NONE (255) for none at all. The old
+       blefallback boolean is gone from the payload rather than kept alongside
+       it: there is no honest boolean to send for "MQTT primary, BLE fallback",
+       and a field that answered such a setup with "false" would be read as the
+       fallback being off. */
+    doc["fallbacksource"] = fallbackSource;
 
     /* The BLE block is built only when it can matter. This function runs on
        every notifyWSClients(), many times a second, and each field costs an
@@ -564,7 +579,8 @@ static void buildDataDoc(JsonDocument& doc, bool All)
        still has no MAC and no key, so it pays nothing, which is what the note
        above is really protecting. */
     const bool bleConfigured = VictronBle.HaveKey() || VictronBle.GetMac().length() > 0;
-    const bool bleRelevant = (shuntSource == SHUNT_SRC_BLE) || bleConfigured ||
+    const bool bleRelevant = (shuntSource == SHUNT_SRC_BLE) ||
+                             (fallbackSource == SHUNT_SRC_BLE) || bleConfigured ||
                              VictronBle.Sniffer() || VictronBle.Scanning() ||
                              VictronBle.FoundCount() > 0;
     doc["blerelevant"] = bleRelevant;
@@ -608,6 +624,43 @@ static void buildDataDoc(JsonDocument& doc, bool All)
           if (model) o["model"] = model;
         }
       }
+    }
+
+    /* The MQTT shunt block, gated for the same reason the BLE one above is:
+       four topic strings and a handful of counters on every broadcast is real
+       allocation churn on a board where the largest free block is what runs
+       out, and an install reading the shunt over the wire should pay nothing
+       for this feature existing.
+
+       "Configured" counts as relevant as well as "selected", so someone who has
+       typed the topics in but not yet switched the source over still gets them
+       back in the boxes instead of a page that looks like it lost them. */
+    const bool mqttShuntConfigured = sMqttShuntSOC.length() > 0 || sMqttShuntVolt.length() > 0 ||
+                                     sMqttShuntCurr.length() > 0 || sMqttShuntTemp.length() > 0;
+    const bool mqttShuntRelevant = (shuntSource == SHUNT_SRC_MQTT) ||
+                                   (fallbackSource == SHUNT_SRC_MQTT) || mqttShuntConfigured;
+    doc["mqttshuntrelevant"] = mqttShuntRelevant;
+    if (mqttShuntRelevant) {
+      doc["mqttshuntsoc"]  = sMqttShuntSOC;
+      doc["mqttshuntvolt"] = sMqttShuntVolt;
+      doc["mqttshuntcurr"] = sMqttShuntCurr;
+      doc["mqttshunttemp"] = sMqttShuntTemp;
+      doc["mqttshuntfresh"] = MqttShunt.DataFresh();
+      /* Seconds since the newest of SOC/voltage/current arrived, -1 for never.
+         Same shape as blelastseen so the UI can say the same thing about it. */
+      doc["mqttshuntlastseen"] = MqttShunt.LastUpdateMs
+                                   ? (int32_t)((millis() - MqttShunt.LastUpdateMs) / 1000) : -1;
+      /* Which fields have ever produced a value, as a bitmask: 1 = SOC,
+         2 = voltage, 4 = current, 8 = temperature - the order the four settings
+         are listed in. This is what tells "no topics working" from "SOC topic
+         wrong", which is the difference between a five-minute fix and an
+         afternoon, and the three-field freshness gate means a source with one
+         topic mistyped never goes fresh and otherwise says nothing about why. */
+      doc["mqttshunthave"] = (uint8_t)((MqttShunt.HaveSOC     ? 1 : 0) |
+                                       (MqttShunt.HaveVoltage ? 2 : 0) |
+                                       (MqttShunt.HaveCurrent ? 4 : 0) |
+                                       (MqttShunt.HaveTemp    ? 8 : 0));
+      doc["mqttshuntmsgs"] = MqttShunt.MessagesSeen;
     }
     doc["overvoltage"] = Inverter.GetOverVoltage();
     doc["fanpin"] = pref.getUInt8(ccFanPin,0);
@@ -711,12 +764,20 @@ static void buildDataDoc(JsonDocument& doc, bool All)
      CONFIGURED source, a uint8_t the settings handler writes back to NVS.
      Reusing the name would have put a string where the UI round-trips a
      number, which is the sort of thing that breaks a control silently. This
-     one is what is actually arriving, which is a different question. */
+     one is what is actually arriving, which is a different question.
+
+     Taken from activeShuntLink - the branch in loop() that last actually put a
+     reading into Inverter - rather than inferred from what identity strings
+     happen to be filled in. Inference got it wrong: a BLE install with the old
+     VE.Direct cable still plugged in kept a model and serial from whenever the
+     wire last spoke, so it read as "vedirect" forever. And on an MQTT source
+     there is nothing at all to infer from, since no topic carries identity. */
   {
-    const bool serialSeen = Inverter.ModelString().length() > 0 ||
-                            Inverter.SerialNumber().length() > 0;
-    const bool bleSeen    = VictronBle.ProductId != 0;
-    doc["shuntlink"] = serialSeen ? "vedirect" : (bleSeen ? "ble" : "none");
+    const bool bleSeen = VictronBle.ProductId != 0;
+    doc["shuntlink"] = (activeShuntLink == SHUNT_SRC_VEDIRECT) ? "vedirect"
+                     : (activeShuntLink == SHUNT_SRC_BLE)      ? "ble"
+                     : (activeShuntLink == SHUNT_SRC_MQTT)     ? "mqtt"
+                     : "none";
 
     if (bleSeen) {
       char pid[8];
@@ -1529,22 +1590,67 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         notifyWSClients();
       }
 
+      /* The primary source and its fallback are saved by two handlers that have
+         to agree about three things, so both are written the same way: neither
+         may be set to what the other already is, both consult VictronBle to
+         decide whether a reboot is really needed, and both resubscribe.
+
+         The reboot test is "BLE is wanted and its radio is not running", not
+         "the setting mentions BLE". Only BLE needs a restart at all, because
+         its radio and stack are brought up once at boot to keep the RAM off an
+         install that does not use it - serial is always running and MQTT is
+         four subscriptions, so those take effect on the next pass of loop().
+         Asking VictronBle.Enabled() rather than comparing old and new values
+         gets the cases where BLE was already up right: moving it from primary
+         to fallback, or the other way, changes nothing about the radio and
+         should not ask for a restart nothing is waiting on. */
       if (!doc["shuntsource"].isNull()) {
         uint8_t value = doc["shuntsource"];
         handled = true;
-        pref.putUInt8(ccShuntSource, value);
-        shuntSource = value;   // so the UI reflects what is saved; the radio still needs a reboot
-        WS_LOG_I("Shunt source set to %s (reboot to apply)",
-                 value == SHUNT_SRC_BLE ? "Victron BLE" : "VE.Direct serial");
+        const uint8_t was = shuntSource;
+        /* Against the fallback this message is ASKING for, not the one stored -
+           otherwise swapping the two in one go is rejected on the strength of a
+           value the same message is about to overwrite two handlers further
+           down. The fallback handler needs no equivalent: it runs after this
+           one, so shuntSource is already the new primary by the time it looks. */
+        const uint8_t effFallback = doc["fallbacksource"].isNull()
+                                      ? fallbackSource : (uint8_t)doc["fallbacksource"];
+        if (value != SHUNT_SRC_VEDIRECT && value != SHUNT_SRC_BLE && value != SHUNT_SRC_MQTT) {
+          wsclient->printf("{\"ERROR\" : \"Invalid shunt source\"}");
+        } else if (value == effFallback) {
+          wsclient->printf("{\"ERROR\" : \"Shunt Source cannot be the same as the Fallback Source\"}");
+        } else {
+          pref.putUInt8(ccShuntSource, value);
+          shuntSource = value;
+          const bool needsReboot = (shuntSource == SHUNT_SRC_BLE ||
+                                    fallbackSource == SHUNT_SRC_BLE) && !VictronBle.Enabled();
+          WS_LOG_I("Shunt source set to %s%s", ShuntSrcName(value),
+                   needsReboot ? " (reboot to apply)" : "");
+          // The four shunt topics are only subscribed while MQTT is in play in
+          // one role or the other, so a change either way has to reach the
+          // broker now.
+          if (was != value) mqttResubscribeTemp();
+        }
         notifyWSClients();
       }
 
-      if (!doc["blefallback"].isNull()) {
-        bool value = doc["blefallback"];
+      if (!doc["fallbacksource"].isNull()) {
+        uint8_t value = doc["fallbacksource"];
         handled = true;
-        pref.putBool(ccBLEFallback, value);
-        bleFallback = value;   // takes effect immediately, unlike the source itself
-        WS_LOG_I("BLE fallback to VE.Direct %s", value ? "enabled" : "disabled");
+        if (value != SHUNT_FALLBACK_NONE && value != SHUNT_SRC_VEDIRECT &&
+            value != SHUNT_SRC_BLE && value != SHUNT_SRC_MQTT) {
+          wsclient->printf("{\"ERROR\" : \"Invalid fallback source\"}");
+        } else if (value == shuntSource) {
+          wsclient->printf("{\"ERROR\" : \"Fallback source cannot be the same as the primary Shunt Source\"}");
+        } else {
+          pref.putUInt8(ccFallbackSrc, value);
+          fallbackSource = value;   // takes effect immediately, unlike the radio
+          const bool needsReboot = (shuntSource == SHUNT_SRC_BLE ||
+                                    fallbackSource == SHUNT_SRC_BLE) && !VictronBle.Enabled();
+          WS_LOG_I("Fallback source set to %s%s", ShuntSrcName(value),
+                   needsReboot ? " (reboot to apply)" : "");
+          mqttResubscribeTemp();
+        }
         notifyWSClients();
       }
 
@@ -1784,6 +1890,82 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         mqttResubscribeTemp();
         handled = true;
         notifyWSClients(); }
+
+      /* The four shunt-source topics.
+
+         Refused rather than saved if the topic is the device's own base topic
+         or anything under it. sendVE2MQTT() publishes this board's V, I and SOC
+         there, so pointing an input topic at it wires the output back into the
+         input: the device would read its own last published figure, republish
+         it, and hold whatever value it had when the real source went away -
+         forever, and looking perfectly healthy while it did. That is worth an
+         error message rather than a line in the documentation.
+
+         Each handler also clears the matching Have flag. The stashed value and
+         its timestamp belong to the old topic, and a reading latched from a
+         topic that is no longer configured is not evidence about the new one -
+         leaving it set would let a source read as fresh on data that can never
+         be refreshed. */
+      {
+        const String baseTopic = wifiManager.GetMQTTTopic();
+        auto shuntTopicOK = [&](const String& v) -> bool {
+          if (v.length() == 0) return true;             // clearing is always allowed
+          if (baseTopic.length() == 0) return true;     // nothing to collide with
+          if (v == baseTopic || v.startsWith(baseTopic + "/")) {
+            wsclient->printf("{\"ERROR\" : \"That is this device's own topic - it would read back its own output\"}");
+            return false;
+          }
+          return true;
+        };
+
+        if (!doc["mqttshuntsoc"].isNull()) {
+          String value = doc["mqttshuntsoc"].as<String>();
+          handled = true;
+          if (shuntTopicOK(value)) {
+            pref.putString(ccMQShuntSOC, value);
+            sMqttShuntSOC = value;
+            MqttShunt.HaveSOC = false;
+            WS_LOG_I("MQTT shunt SOC topic set to: %s", value.c_str());
+            mqttResubscribeTemp();
+          }
+          notifyWSClients(); }
+
+        if (!doc["mqttshuntvolt"].isNull()) {
+          String value = doc["mqttshuntvolt"].as<String>();
+          handled = true;
+          if (shuntTopicOK(value)) {
+            pref.putString(ccMQShuntVolt, value);
+            sMqttShuntVolt = value;
+            MqttShunt.HaveVoltage = false;
+            WS_LOG_I("MQTT shunt voltage topic set to: %s", value.c_str());
+            mqttResubscribeTemp();
+          }
+          notifyWSClients(); }
+
+        if (!doc["mqttshuntcurr"].isNull()) {
+          String value = doc["mqttshuntcurr"].as<String>();
+          handled = true;
+          if (shuntTopicOK(value)) {
+            pref.putString(ccMQShuntCurr, value);
+            sMqttShuntCurr = value;
+            MqttShunt.HaveCurrent = false;
+            WS_LOG_I("MQTT shunt current topic set to: %s", value.c_str());
+            mqttResubscribeTemp();
+          }
+          notifyWSClients(); }
+
+        if (!doc["mqttshunttemp"].isNull()) {
+          String value = doc["mqttshunttemp"].as<String>();
+          handled = true;
+          if (shuntTopicOK(value)) {
+            pref.putString(ccMQShuntTemp, value);
+            sMqttShuntTemp = value;
+            MqttShunt.HaveTemp = false;
+            WS_LOG_I("MQTT shunt temperature topic set to: %s", value.c_str());
+            mqttResubscribeTemp();
+          }
+          notifyWSClients(); }
+      }
       if (!doc["fanofftemp"].isNull()) {
         int16_t value = doc["fanofftemp"];
         pref.putInt16(ccFanOffTemp, value);

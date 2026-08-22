@@ -120,15 +120,57 @@ const char* const ccVictronRX = "VictronRX";
 const char* const ccVictronTX = "VictronTX";
 
 /* Shunt data source. 0 = VE.Direct serial (the default, so nothing changes for
-   an existing install), 1 = Victron BLE. The fallback only applies when BLE is
-   the source: it hands back to serial while BLE data is stale, for a shunt that
-   is at the edge of range rather than absent. */
+   an existing install), 1 = Victron BLE, 2 = MQTT topics - the figures arriving
+   from a broker, one plain number per topic, for an install where something
+   else already reads the shunt and there is no wire or radio link to this
+   board.
+
+   The fallback is a source in its own right, not a switch. ShuntSrc names the
+   primary and FallbackSrc names what takes over while the primary's data is
+   stale; either may be any of the three, or FallbackSrc may be
+   SHUNT_FALLBACK_NONE for no fallback at all. That makes the pairing
+   symmetric - a VE.Direct cable backed by BLE for when it is unplugged reads
+   the same way round as BLE backed by the cable - where the old setting could
+   only ever hand a wireless source back to serial.
+
+   BLEFallback is the old boolean that did exactly that one thing. It is read
+   once at boot to migrate an install that had it on (primary wireless ->
+   serial) and never written again; it stays declared here because installs in
+   the field still have the key.
+
+   The four MQShunt* keys hold one topic each. SOC, voltage and current are all
+   required before the MQTT source counts as live; temperature is optional and
+   is ignored when the battery temperature source is set to MQTT in its own
+   right. */
 const char* const ccShuntSource = "ShuntSrc";
-const char* const ccBLEFallback = "BLEFallback";
+const char* const ccBLEFallback = "BLEFallback";   // legacy bool, migration only
+const char* const ccFallbackSrc = "FallbackSrc";
 const char* const ccVBLEMac = "VBLEMac";
 const char* const ccVBLEKey = "VBLEKey";
+const char* const ccMQShuntSOC  = "MQShuntSOC";
+const char* const ccMQShuntVolt = "MQShuntV";
+const char* const ccMQShuntCurr = "MQShuntI";
+const char* const ccMQShuntTemp = "MQShuntT";
 #define SHUNT_SRC_VEDIRECT 0
 #define SHUNT_SRC_BLE      1
+#define SHUNT_SRC_MQTT     2
+// Only ever a FallbackSrc value: "leave the readings absent rather than
+// substitute a source that was not asked for".
+#define SHUNT_FALLBACK_NONE 255
+
+/* One spelling of each source for the log. Both roles are logged from three
+   different files now - the boot lines, the stale/returned transitions in
+   loop() and the settings handlers - and a source that is called "BLE" in one
+   line and "Victron BLE" in the next reads like two different things to
+   someone matching up a log against the settings page. */
+inline const char* ShuntSrcName(uint8_t src) {
+  switch (src) {
+    case SHUNT_SRC_VEDIRECT: return "VE.Direct serial";
+    case SHUNT_SRC_BLE:      return "Victron BLE";
+    case SHUNT_SRC_MQTT:     return "MQTT topics";
+    default:                 return "None";
+  }
+}
 
 const char* const ccCAN_TX_PIN = "CAN_TX_PIN";
 const char* const ccCAN_RX_PIN = "CAN_RX_PIN";
