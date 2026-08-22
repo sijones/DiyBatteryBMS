@@ -104,8 +104,6 @@ really be answered by looking at what the other BMS sends at the moment the two 
   the UK preset switches to BST and back on its own with no firmware update. The underlying
   POSIX TZ string stays visible and editable if your zone is not listed. Applies immediately,
   no reboot.
-- **NTP now works with a single server.** Previously only a comma-separated pair worked; one
-  address silently never synced. See the upgrade notes below.
 - **Clock Sync status** on the Firmware tab shows how long ago the clock last synced, and warns
   if syncing has stopped. The device re-syncs automatically every 3 hours.
 
@@ -181,11 +179,7 @@ The core update is the reason the partition change had to come first: the same s
 155KB larger on the new core, which no longer fits the old 1.25MB app slot at all (the ESP32-C3
 build would be at 114% of it).
 
-**Fan control now works on the ESP32-C3.** The fan was driven through MCPWM, a motor-control
-peripheral the C3 does not have — that board had a stub that logged "FAN not supported" and did
-nothing, and the FAN Pin field was hidden from its web interface. It now uses LEDC, which every
-ESP32 variant has, so the C3 gets fan control and the field is shown on all boards. Behaviour on
-the other boards is unchanged: same 25kHz, same 30–100% mapping.
+**Fan control now works on the ESP32-C3.** 
 
 ## Upgrading to 3.0.0 — you must re-flash over USB
 
@@ -224,78 +218,6 @@ that nobody could see.
 
 Two OTA app slots are kept throughout, so the firmware update page still works as before.
 
-## Upgrading to 2.8.0-BETA10
-- **Every charge now ends in float, and the target is worked out if you have not set one.** Resting
-  a full pack at the charge voltage with a 0 A limit asks the inverter for a target and forbids it
-  the current to reach it. A zero charge current limit is a *prohibition* in these protocols — the
-  same signal a BMS sends for over-voltage or over-temperature — not a description of a battery
-  that is simply full, and inverters resolve the contradiction however they see fit. A Solis
-  S6-EH1P was reported shutting its PV down and importing the whole house load from the grid; Deye
-  answers the same frame by discharging the pack.
-- **Float Voltage `0` now means "work it out"**, not "no float stage". The target is 1.5% below the
-  charge voltage, which suits every chemistry the setup wizard knows — LiFePO4, NMC and LTO all
-  float between 1.2% and 1.9% below their charge target — so it needs neither the chemistry nor the
-  cell count. A 16S LiFePO4 pack charging at 55.2 V floats at 54.37 V. The BMS tab shows the figure
-  under the field. To keep the old hard stop, set Float Voltage at or above your charge voltage.
-- **Min Charge Current is a floor under the float allowance**, as it already was during absorption.
-  A current the inverter cannot act on rounds back to the 0 A that float exists to avoid. Your
-  configured maximum still wins, so a max of 0 or an energy manager requesting 0 still means 0.
-- This mattered less before BETA5. Complete used to bounce straight back to Bulk on a pack with
-  Recharge SOC at 100, so the contradictory frame was never held for long. Fixing that made
-  Complete a stable resting state and exposed what it had been sending all along.
-
-## Upgrading to 2.8.0-BETA9
-- **Slow charge dividers round to the nearest 0.1 A and can no longer exceed your charge current
-  limit.** The taper truncated twice — once dividing capacity, once converting to the deciamps the
-  CAN frames carry — so it always rounded down: the recommended divider of 24 on a 280 Ah pack
-  asked for 11.7 A and sent 11.6 A. It was also applied in place of your configured maximum rather
-  than against it, so a large pack on a small divider could have "slow charge" *raise* the limit.
-  Both date back to the first 2.x release.
-- **Factory Reset now actually erases everything.** WiFi and MQTT settings live in their own NVS
-  namespace, and the reset only cleared the other one — so credentials survived a full reset, and
-  "Keep WiFi" only kept them by accident. Both options now erase the whole NVS partition, with
-  Keep WiFi saving and restoring the SSID, password and hostname. **Keep WiFi now clears your MQTT
-  settings**, which it previously left untouched.
-- **The Logs tab shows the most recent entries, not the oldest.** It replayed the first 50 of the
-  100-entry buffer, so on a device that had been running a while you got the boot sequence and
-  nothing since. Replayed lines also took the time they arrived in the browser rather than the time
-  they were logged, which collapsed a long backlog onto a single second and made it read as a
-  reboot that never happened.
-
-## Upgrading to 2.8.0-BETA8
-- **Force charge now sends the CAN bit inverters actually act on.** It set *request full charge*
-  (0x35C bit 3) rather than *force charge* (bit 4), so on an inverter that reads those flags it
-  asked for a charge to be finished rather than started, and force charge appeared to do nothing —
-  reported on an EG4 6000XP. If you worked around this with the SOC trick, nothing changes: that
-  path never used these bits, and you can now turn it off if you would rather not misreport SOC.
-- **Force Charge is now a switch on the dashboard**, alongside Charge and Discharge. It follows the
-  device rather than the click, so a force charge set or cleared over MQTT, by the schedule or by
-  the temperature cut shows up on the dashboard within a second.
-- **Request Full Charge is now its own control** — a switch on the BMS tab, a Home Assistant
-  switch, `<topic>/set/RequestFullCharge`, and `{"requestfullcharge": true}` on the WebSocket. Use
-  it to let a pack rebalance and reset SOC; it clears itself once that charge completes.
-- Both flags only reach the inverter on **Pylontech 1.2**, **Pylontech 1.3** or **Growatt** with
-  **Request Flags** enabled — on 1.3 that setting is also what puts 0x35C on the bus, since the 1.3
-  spec drops the message. The dashboard now says so rather than leaving you waiting on a charge that
-  is not coming.
-
-## Upgrading to 2.8.0-BETA6
-- **Charge, discharge and force charge now hold for 5 minutes once set from outside the schedule.**
-  Previously the scheduler took them straight back on its next pass, within a second. That affects
-  the Dashboard toggles and Home Assistant as well as PowerPilot: a toggle now stays where you put
-  it, then reverts on its own. If you would rather the schedule always won, set the override
-  timeout to `0` under Schedule → Outside Control.
-
-## Upgrading to 2.8.0-BETA5
-A few things changed behaviour in 2.8.0-BETA5, so worth knowing before you flash:
-
-- **Settings are now entered in V, A and Ah.** Your stored values are untouched and are converted for display, so a charge voltage that read 55200 now reads 55.2. Battery Capacity was previously labelled mA, which was wrong - it is amp hours.
-- **Battery Power now reports the correct sign over MQTT.** Discharge was being published as a positive number. If you built Home Assistant automations or energy dashboards that worked around this, they will need adjusting.
-- **Time To Go now shows blank while charging** instead of a bogus "1 minute". Same root cause as above.
-- **If your NTP server never worked, it will now.** A single server address was being passed to the clock as an empty string, so it silently never synced - only two comma-separated servers ever worked. The log claimed success regardless, which is why it looked fine. If you gave up on NTP previously, it is worth setting again.
-- **Log and syslog timestamps are now local time, not UTC.** Set your timezone under Settings. Existing devices default to Europe/London. If you have log processing that assumed UTC, it will need adjusting.
-- **Settings backups from before this version still import correctly** - the file records its own version and older files are converted on the way in.
-
 ## Features to come:
 
 - MQTT to CAN BUS support, use esphome BMS intgrations to feed the data in and send to the inverter.
@@ -304,15 +226,10 @@ A few things changed behaviour in 2.8.0-BETA5, so worth knowing before you flash
 - Heater control (fan control and temperature monitoring are now implemented)
 
 ## Limitations
-- DiyBatteryBMS is only listening to messages of the VE.Direct device<br>It understands only the "ASCII" part of the protocol that is only good to receive a set of values. You can't request any special data or change any parameters of the VE.Direct device.<br>
+- DiyBatteryBMS is only listening to messages of the VE.Direct device via Serial or BLE<br>You can't request any special data or change any parameters of the VE.Direct device.<br>
 
 ## Hardware & Software Installation
 See the Wiki page
-
-## Hardware Recommended
-esp32dev, esp32plus, lilygo CAN485, ESP32-S3 with built-in CAN (TWAI) or without using MCP2515.
-
-Please use the recommended hardware, as a personal project it's difficult to support other configurations.
 
 ## Choosing an environment
 
@@ -330,84 +247,7 @@ addresses only 4MB of a 16MB chip wastes three quarters of it. If you are unsure
 browser flasher at [diy.power-pilot.uk](https://diy.power-pilot.uk) reads it off the chip and greys
 out everything that would not work.
 
-- **Flash sizes**: `-4mb`, `-8mb`, `-16mb`. All three tables keep NVS at the same offset, so moving a
-  board between them keeps your settings.
-- **PSRAM**: add `-psram`. It is in the name because PSRAM is a property of the module, not the
-  wiring — a board without it builds from a `-psram` env and then quietly runs on internal RAM only.
-  The S3 `-psram` builds are for the R8 (octal) modules; an R2 part is quad and needs
-  `board_build.arduino.memory_type = qio_qspi` instead.
-- **No PSRAM variants** for `esp32c3-ESPCAN`, which has no external RAM interface at all, or for
-  `xiao-esp32s3`, which has 8MB of flash and 8MB of PSRAM soldered in package.
-- **No PSRAM on the classic ESP32 either** — `esp32dev`, `esp32plus` and `esp32-ESPCAN` are
-  4MB/8MB/16MB only. WROVER modules are real, but the build does not fit: switching PSRAM on brings
-  in the cache-issue workaround, which needs about 3.9KB more IRAM than the chip has left. The
-  non-PSRAM firmware already fills 130,423 bytes of the ESP32's 131,072-byte IRAM, and all of it
-  belongs to the Arduino and WiFi libraries. A WROVER runs the ordinary build; its extra RAM simply
-  goes unused.
-
-The sections below give the pins for each wiring; they apply to every flash and PSRAM variant of it.
-
-## Recommended PIN Configuration
-
-### esp32dev-* Environments
-- **CAN_BUS_CS_PIN**: 2
-- **CAN0_INT**: 22
-- **VEDIRECT_RX**: 33
-- **VEDIRECT_TX**: 32 (optional)
-
-### esp32plus-* Environments
-- **CAN_BUS_CS_PIN**: 5
-- **CAN0_INT**: 13
-- **VEDIRECT_RX**: 33
-- **VEDIRECT_TX**: 32 (optional)
-
-### esp32-ESPCAN-* Environments (Built-in CAN)
-- **CAN_TX_PIN**: 27
-- **CAN_RX_PIN**: 26
-- **CAN_EN_PIN**: 23
-- **VEDIRECT_RX**: 33
-- **VEDIRECT_TX**: 32 (optional)
-
-### esp32s3-ESPCAN-* Environments (Built-in CAN)
-- **CAN_TX_PIN**: 27
-- **CAN_RX_PIN**: 26
-- **CAN_EN_PIN**: 23
-- **VEDIRECT_RX**: 33
-- **VEDIRECT_TX**: 32 (optional)
-
-### esp32c3-ESPCAN-* Environments (Built-in CAN)
-- **CAN_TX_PIN**: 6
-- **CAN_RX_PIN**: 7
-- **CAN_EN_PIN**: 5
-- **VEDIRECT_RX**: 21
-- **VEDIRECT_TX**: 20 (optional)
-
-**Note**: These PINs can be configured through the web interface after flashing. The forbidden GPIO lists for each environment prevent selection of pins that should not be used.
-
 **VEDIRECT_TX is optional.** Nothing is ever sent to the shunt, so only VEDIRECT_RX has to be wired and set. Leave the TX pin blank in the web interface to keep that GPIO free; clearing an existing value unassigns it.
-
-Links:
-
-esp32dev
-https://www.amazon.co.uk/gp/product/B0C9THDPXP/
-
-esp32plus
-https://www.amazon.co.uk/dp/B0BHZ8H6LM
-
-Lilygo CAN485
-https://www.aliexpress.com/item/1005003624034092.html
-
-LCD
-https://www.amazon.co.uk/dp/B07V5K3ZVB
-
-Isolated CAN Bus Adapter
-https://www.amazon.co.uk/Coolwell-Isolated-Expansion-Raspberry-SN65HVD230/dp/B0C7VX6G6P
-
-Non-Isolated Adapter - Does work and cheaper but can be blown if not careful.
-https://www.amazon.co.uk/AZDelivery-MCP2515-Receiver-Development-Compatible/dp/B086TXSFD8/
-
-Victron Smart Shunt
-https://www.amazon.co.uk/Victron-Energy-SmartShunt-Battery-Bluetooth/dp/B0856PHNLX
 
 ## Disclaimer
 I WILL NOT BE HELD LIABLE FOR ANY DAMAGE THAT YOU DO TO YOU, ONE OF YOUR DEVICES, BURN YOUR HOUSE DOWN, ETC.
