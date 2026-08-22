@@ -19,11 +19,12 @@ The data is also sent over MQTT and allows commands to be sent back to control C
 
 This software supports:
 - ESP32 developer boards with MCP2515 CAN Bus adapter
-- ESP32 with built-in CAN controller
-- ESP32-S3 with built-in CAN controller (using TWAI driver)
-- Lot's of different configurations of boards, just try the build that matches your config.
+- ESP32 with built-in CAN controller (e.g. LilyGo T-CAN485)
+- ESP32-S3 with built-in CAN controller (using TWAI driver) or a MCP2515 adapter
+- ESP32-C3 with built-in CAN controller (using TWAI driver)
+- Seeed XIAO ESP32-S3 with a CAN expansion board
 
-If you don't use the Lilygo CAN485 board, you will need to add a CAN transceiver to your ESP32 or ESP32-S3 board.
+- If you're buying new, a board with 8MB or 16MB flash and 8MB PSRAM - is best as it gives the web UI and MQTT plenty of headroom over a bare 4MB/no-PSRAM module.
 
 See the WIKI for more detailed documentation.
 
@@ -39,7 +40,7 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
   - Duplicate networks filtered (strongest signal retained)
   - Preserved saved SSID selection across scans
   - WiFi configuration requires explicit save (manual save button for SSID, password, and mDNS hostname)
-- Listen to VE.Direct messages and publish some of the information to a MQTT broker<br> The MQTT Topic is fully configurable.
+- Takes battery data from VE.Direct serial, Victron BLE, or MQTT topics - pick a primary source and an optional fallback - and publishes telemetry to a MQTT broker<br> The MQTT Topic is fully configurable.
 - Home Assistant MQTT Discovery - Automatically creates all sensors and switches in Home Assistant with no manual configuration required
 - Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates.
 - Supports single MQTT server
@@ -134,30 +135,9 @@ inverters — Deye in particular — read that combination as an over-voltage th
 *discharging* the pack, so instead of resting after a full charge the battery was pushed back into
 the house or the grid at a kilowatt or so until the voltage fell.
 
-A hardware BMS does not do this. It lowers the voltage target and keeps a small current allowance
-open. The firmware can now do the same:
-
-| | |
-|---|---|
-| Setting it | Settings → CC-CV Charging Configuration → **Float Voltage**. `0` works the target out from the charge voltage; a value at or above the charge voltage turns the stage off |
-| Typical value | 3.375–3.40 V per cell — 54.0–54.4 V on a 16S LiFePO4 pack |
-| **Float Current** | Charge allowance held during float, default 2 A. Never drops below **Min Charge Current** — an allowance the inverter cannot act on recreates the instruction the float stage exists to avoid |
-| Leaving float | Same as Complete: SOC below Recharge SOC, or voltage below the float target minus Recharge V Offset |
-| Over MQTT | `<topic>/set/FloatVoltage` (V) and `<topic>/set/FloatCurrent` (A), or the matching Home Assistant number entities |
-
-The phase appears as **Float** on the dashboard and on the `ChargePhase` MQTT topic. While in float
-the real 100% SOC is sent to the inverter rather than being held at 99%, because the pack genuinely
-is full — telling an inverter "99%, and you may not charge" is the contradiction that provoked the
-forced discharge in the first place.
-
-**Since 2.8.0-BETA10 every charge ends in float**, with the target worked out for you if you have
-not set one. See [Upgrading to 2.8.0-BETA10](#upgrading-to-280-beta10) — in BETA6 to BETA9 the stage
-was off unless you configured a float voltage.
-
 If you are still seeing a forced discharge at 100% SOC with float running, check **High SOC (Stop
 Charge)** and the **Slow Charge** thresholds — both cut the charge current limit at an SOC boundary
-while the voltage limit stays high, which produces the same symptom by a different route. On BETA9
-and earlier, check first that a float voltage is configured at all.
+while the voltage limit stays high, which produces the same symptom by a different route. 
 
 ### PowerPilot Integration (WebSocket API)
 
@@ -224,7 +204,7 @@ Two OTA app slots are kept throughout, so the firmware update page still works a
 - Heater control (fan control and temperature monitoring are now implemented)
 
 ## Limitations
-- DiyBatteryBMS is only listening to messages of the VE.Direct device via Serial or BLE<br>You can't request any special data or change any parameters of the VE.Direct device.<br>
+- DiyBatteryBMS only reads battery data - it does not request anything special or change any parameters on the source, whether that's VE.Direct Serial, Victron BLE, or MQTT topics.<br>
 
 ## Hardware & Software Installation
 See the Wiki page
@@ -244,6 +224,11 @@ table on a 4MB chip is the fastest way to end up with a board that does not boot
 addresses only 4MB of a 16MB chip wastes three quarters of it. If you are unsure what you have, the
 browser flasher at [diy.power-pilot.uk](https://diy.power-pilot.uk) reads it off the chip and greys
 out everything that would not work.
+
+**If you're choosing hardware rather than working with what you already have, prefer 8MB or 16MB
+flash with 8MB PSRAM.** Large allocations - the web UI, JSON documents, the MQTT outbox - spill into
+PSRAM instead of competing with WiFi for internal RAM, which is the tightest resource on a 4MB/no-PSRAM
+module.
 
 **VEDIRECT_TX is optional.** Nothing is ever sent to the shunt, so only VEDIRECT_RX has to be wired and set. Leave the TX pin blank in the web interface to keep that GPIO free; clearing an existing value unassigns it.
 
