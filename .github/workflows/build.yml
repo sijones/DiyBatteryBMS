@@ -34,9 +34,9 @@ jobs:
           - esp32c3-ESPCAN-4mb        # C3, the RISC-V core
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -44,7 +44,7 @@ jobs:
       # do not change between runs. Keyed on platformio.ini because that is the
       # file that pins the platform version.
       - name: Cache PlatformIO
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.platformio

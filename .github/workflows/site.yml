@@ -39,11 +39,11 @@ jobs:
     name: Build and deploy the site
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # 24 because wrangler needs 22 or newer and refuses at startup, having
       # installed perfectly happily first.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -60,6 +60,10 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Same reason as release.yml: a runner cannot rely on reading the live
+          # site, so the firmware comes back from the release archive.
+          RESTORE_SOURCE: releases
         run: npm run deploy:site
 
       # What is actually being served now, so the run says what it did rather

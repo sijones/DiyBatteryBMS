@@ -47,14 +47,14 @@ jobs:
       list: ${{ steps.read.outputs.list }}
       count: ${{ steps.read.outputs.count }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Read from the ini rather than listing them here. A hand-written list in
       # this file is the same mistake the VS Code tasks made, with a slower
       # feedback loop.
       # Same Node the publish job uses, so "can wrangler run" is answered for
       # the version that will actually run it.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
 
@@ -123,14 +123,14 @@ jobs:
       matrix:
         pioenv: ${{ fromJson(needs.envs.outputs.list) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
       - name: Cache PlatformIO
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.platformio
@@ -149,7 +149,7 @@ jobs:
       # over-the-air update takes. build-manifests.mjs expects to find them
       # exactly where pio left them.
       - name: Upload images
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.pioenv }}
           path: |
@@ -166,13 +166,13 @@ jobs:
       # Full history: publish-release.mjs asks whether HEAD is contained in
       # origin/main before it will publish a release, and a shallow clone cannot
       # answer that.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       # 24, not 20: wrangler requires Node 22 or newer and says so only when it
       # starts. This is also what the project is developed on.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: npm
@@ -195,7 +195,7 @@ jobs:
       # Each artifact is named after its env, so this restores them to
       # .pio/build/<env>/ - which is where build-manifests.mjs looks.
       - name: Collect every build
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: .pio/build
 
@@ -230,4 +230,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # Read the published firmware back from the release archive, not from
+          # the live site. Cloudflare answered a runner's request for
+          # releases.json with an HTML challenge page and a 200 - datacenter
+          # address, no browser - and the deploy died parsing it. The archive is
+          # the same artifacts reached through api.github.com with the token
+          # this job already holds.
+          RESTORE_SOURCE: releases
         run: npm run deploy
