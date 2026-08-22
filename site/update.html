@@ -176,7 +176,16 @@ function compareVersions(a, b) {
   if (A.pre === B.pre) return 0;
   if (!A.pre) return -1;
   if (!B.pre) return 1;
-  return A.pre < B.pre ? -1 : 1;
+  /* Descending, so BETA2 sorts ahead of BETA1.
+   *
+   * This read `A.pre < B.pre` and therefore called the OLDEST pre-release the
+   * newest. Published 3.0.0-BETA2 alongside BETA1 and the site announced BETA1
+   * as the latest beta - but the label was the mild half. This same comparator
+   * orders the list that KEEP_PER_CHANNEL slices, so a third beta would have
+   * pruned the newest build off the site and kept the two oldest.
+   *
+   * A plain release still beats its own pre-release, which is the case above. */
+  return A.pre > B.pre ? -1 : 1;
 }
 
 /**
