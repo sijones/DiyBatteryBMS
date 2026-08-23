@@ -40,7 +40,7 @@ With the help of the MQTT server you can integrate the monitoring data to virtua
   - Duplicate networks filtered (strongest signal retained)
   - Preserved saved SSID selection across scans
   - WiFi configuration requires explicit save (manual save button for SSID, password, and mDNS hostname)
-- Takes battery data from VE.Direct serial, Victron BLE, or MQTT topics - pick a primary source and an optional fallback - and publishes telemetry to a MQTT broker<br> The MQTT Topic is fully configurable.
+- Takes battery data from VE.Direct serial, Victron BLE, or MQTT topics - pick a primary source and an optional fallback - and publishes telemetry to a MQTT broker<br> The MQTT Topic is fully configurable. Victron BLE requires a PSRAM build (see [Choosing an environment](#choosing-an-environment)) - the NimBLE stack alone can exhaust the heap on a board without it, so BLE is disabled and hidden from the web UI on non-PSRAM builds.
 - Home Assistant MQTT Discovery - Automatically creates all sensors and switches in Home Assistant with no manual configuration required
 - Supports MQTT Commands to enable and disable charge/discharging of an inverter, force charge the batteries to be able to charge over night at off peak rates.
 - Supports single MQTT server
@@ -229,6 +229,12 @@ out everything that would not work.
 flash with 8MB PSRAM.** Large allocations - the web UI, JSON documents, the MQTT outbox - spill into
 PSRAM instead of competing with WiFi for internal RAM, which is the tightest resource on a 4MB/no-PSRAM
 module.
+
+**Victron BLE needs PSRAM.** A non-PSRAM build refuses to start the BLE radio and hides it from the
+web UI (no "Prefer BLE" option, no Victron BLE Shunt section) - the NimBLE stack alone is enough to
+push a non-PSRAM board's heap into the failed-allocation crash that a low `heapmin` and a
+`Panic / exception` reset reason on the Diag tab point to. Use VE.Direct serial or MQTT topics as the
+shunt source on those boards instead, or move to a `-psram` environment if you need BLE.
 
 **VEDIRECT_TX is optional.** Nothing is ever sent to the shunt, so only VEDIRECT_RX has to be wired and set. Leave the TX pin blank in the web interface to keep that GPIO free; clearing an existing value unassigns it.
 
