@@ -1,6 +1,13 @@
 #pragma once
 #include <Arduino.h>
+/* NimBLE is only linked into -psram builds (see platformio.ini) - the radio
+   refuses to run without real PSRAM anyway (HardwareSupported() below), so a
+   board that can never use it should not pay to compile the stack: dozens of
+   .c files across the mesh/GAP/GATT/HCI layers that this project never calls
+   into. Everything here that names a NimBLE type follows the same guard. */
+#ifdef BOARD_HAS_PSRAM
 #include <NimBLEDevice.h>
+#endif
 #include <mbedtls/aes.h>
 #include "WebLog.h"
 
@@ -115,7 +122,12 @@ class VictronBLE {
        it the NimBLE stack alone can tip a ~70KB internal heap into the
        failed-allocation-calls-abort() territory Diagnostics.h describes, so
        the radio refuses to start rather than gambling on being the exception. */
+#ifdef BOARD_HAS_PSRAM
     static bool HardwareSupported() { return ESP.getPsramSize() > 0; }
+#else
+    // NimBLE was not even compiled in - nothing to check at runtime.
+    static bool HardwareSupported() { return false; }
+#endif
 
     bool Enabled() { return _enabled; }
     bool Configured() { return _haveMac && _haveKey; }
@@ -140,7 +152,9 @@ class VictronBLE {
     bool StartDiscovery(uint16_t seconds);   // populates the Found list for the UI
     bool DiscoveryTick();                    // true once, on the pass the window closes
     void Stop();
+#ifdef BOARD_HAS_PSRAM
     void ParseAdvert(const NimBLEAdvertisedDevice* dev);
+#endif
 
     /* Bring the radio up for a scan or a sniff even when the shunt is being read
        over the wire. Without this, the two things you need in order to set BLE
@@ -159,13 +173,17 @@ class VictronBLE {
     uint8_t _mac[6] = {};
     VictronBLEFound _found[VBLE_MAX_FOUND];
     uint8_t _foundCount = 0;
+#ifdef BOARD_HAS_PSRAM
     NimBLEScan* _scan = nullptr;
 
     void NoteFound(const NimBLEAdvertisedDevice* dev, const uint8_t* vp, size_t len);
+#endif
     bool Decrypt(const uint8_t* cipher, size_t len, uint16_t nonce, uint8_t* out);
     void DecodeBatteryMonitor(const uint8_t* plain, size_t len);
 
+#ifdef BOARD_HAS_PSRAM
   friend class VictronScanCallbacks;
+#endif
 };
 
 extern VictronBLE VictronBle;

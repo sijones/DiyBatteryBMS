@@ -2,6 +2,8 @@
 
 VictronBLE VictronBle;
 
+#ifdef BOARD_HAS_PSRAM
+
 class VictronScanCallbacks : public NimBLEScanCallbacks {
   void onResult(const NimBLEAdvertisedDevice* dev) override {
     VictronBle.ParseAdvert(dev);
@@ -50,6 +52,22 @@ void VictronBLE::Stop()
   _enabled = false;
 }
 
+#else
+
+// NimBLE is not even linked in on this build (see the guard in VictronBLE.h) -
+// nothing to start or stop, just say so once and stay off.
+bool VictronBLE::Begin(bool enabled)
+{
+  _enabled = false;
+  if (!enabled) return false;
+  WS_LOG_E("Victron BLE: not built into this firmware - no PSRAM on this board");
+  return false;
+}
+
+void VictronBLE::Stop() { _enabled = false; }
+
+#endif // BOARD_HAS_PSRAM
+
 void VictronBLE::SetKeyHex(const String& hex)
 {
   String h = hex;
@@ -92,7 +110,9 @@ String VictronBLE::GetMac()
 
 bool VictronBLE::EnsureRunning()
 {
+#ifdef BOARD_HAS_PSRAM
   if (_enabled && _scan && _scan->isScanning()) return true;
+#endif
   return Begin(true);
 }
 
@@ -180,6 +200,8 @@ void VictronBLE::DecodeBatteryMonitor(const uint8_t* plain, size_t len)
   LastUpdateMs = millis();
   DataValid = true;
 }
+
+#ifdef BOARD_HAS_PSRAM
 
 void VictronBLE::NoteFound(const NimBLEAdvertisedDevice* dev, const uint8_t* vp, size_t len)
 {
@@ -276,3 +298,5 @@ void VictronBLE::ParseAdvert(const NimBLEAdvertisedDevice* dev)
 
   DecodeBatteryMonitor(plain, cipherLen);
 }
+
+#endif // BOARD_HAS_PSRAM
