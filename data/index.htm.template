@@ -1355,7 +1355,7 @@
       <button class="tab-button" role="tab" id="tab-bms"      aria-selected="false" aria-controls="bms"      onclick="switchTab('bms')">BMS</button>
       <button class="tab-button" role="tab" id="tab-schedule" aria-selected="false" aria-controls="schedule" onclick="switchTab('schedule')">Schedule</button>
       <button class="tab-button" role="tab" id="tab-settings" aria-selected="false" aria-controls="settings" onclick="switchTab('settings')">Settings</button>
-      <button class="tab-button" role="tab" id="tab-wifimqtt" aria-selected="false" aria-controls="wifimqtt" onclick="switchTab('wifimqtt')">WiFi/BLE/MQTT</button>
+      <button class="tab-button" role="tab" id="tab-wifimqtt" aria-selected="false" aria-controls="wifimqtt" onclick="switchTab('wifimqtt')">{{WIFI_TAB_LABEL}}</button>
       <button class="tab-button" role="tab" id="tab-logs"     aria-selected="false" aria-controls="logs"     onclick="switchTab('logs')">Logs</button>
       <button class="tab-button" role="tab" id="tab-firmware" aria-selected="false" aria-controls="firmware" onclick="switchTab('firmware')">Firmware</button>
     </nav>
@@ -1853,7 +1853,7 @@
             <label for="shuntsource"><span class="tip" data-tip="Where battery voltage, current and SOC come from. Prefer Serial reads the shunt over the wired VE.Direct link. Prefer BLE listens to the shunt's Bluetooth broadcasts instead, with no wire at all - the device address and encryption key are set on the WiFi/BLE/MQTT tab. MQTT topics takes the same readings from your broker, for a shunt that something else already publishes and that this device cannot reach directly. What happens if this source goes quiet is a separate choice, in Fallback Source alongside. Only a change involving BLE, in either dropdown, needs a reboot, because Bluetooth is started at boot or not at all.">Shunt Source:</span></label>
             <select id="shuntsource" onchange="SendJSONUpdate('shuntsource'); toggleBleConfig()">
               <option value="0">Prefer Serial (VE.Direct)</option>
-              <option value="1">Prefer BLE (Bluetooth)</option>
+              {{BLE_SHUNTSOURCE_OPTION}}
               <option value="2">MQTT topics</option>
             </select>
           </div>
@@ -1862,7 +1862,7 @@
             <select id="fallbacksource" onchange="SendJSONUpdate('fallbacksource'); toggleBleConfig()">
               <option value="255">None</option>
               <option value="0">VE.Direct serial</option>
-              <option value="1">BLE (Bluetooth)</option>
+              {{BLE_FALLBACKSOURCE_OPTION}}
               <option value="2">MQTT topics</option>
             </select>
           </div>
@@ -2091,52 +2091,7 @@
           <button onclick="SaveWifiConfig()" class="save-btn">Save WiFi Configuration</button>
         </div>
 
-        <div class="section-title">Victron BLE Shunt</div>
-        <!-- Always shown, so the shunt can be paired and tested before BLE is
-             made the preferred source over in Settings > Victron Configuration.
-             bleSourceHint says which way that preference is currently set. -->
-        <div class="form-row">
-          <div id="bleSourceHint" class="field-error"></div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label><span class="tip" data-tip="Listens for nearby Victron devices for 20 seconds. The advert header is not encrypted, so devices are found before any key is entered. A shunt at the edge of range only gets an advert through every half minute or so, which is why the wait is long.">Find your shunt:</span></label>
-            <button id="bleScanBtn" onclick="startBleScan()">Scan for Victron devices</button>
-            <div id="bleScanStatus" class="field-error"></div>
-            <div id="bleFoundList"></div>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label for="blemac"><span class="tip" data-tip="Bluetooth address of your SmartShunt. Filled in by the Scan button, or type it as aa:bb:cc:dd:ee:ff.">Device Address:</span></label>
-            <input type="textbox" id="blemac" placeholder="aa:bb:cc:dd:ee:ff" onchange="EnqueueUpdate('blemac')" onkeypress="HandleEnter(event, 'blemac')">
-          </div>
-          <div class="form-group">
-            <label for="blekey"><span class="tip" data-tip="32 hex characters, from VictronConnect: connect to the shunt, then Settings > Product info > Instant readout via Bluetooth > Show. This is the only thing protecting the shunt's broadcasts, so it is stored but never sent back to the browser.">Encryption Key:</span></label>
-            <div class="password-wrap">
-              <input type="password" id="blekey" placeholder="32 hex characters" onchange="EnqueueUpdate('blekey')" onkeypress="HandleEnter(event, 'blekey')">
-              <button class="password-toggle" onclick="togglePassword('blekey')">Show</button>
-            </div>
-            <div id="bleKeyState" class="field-error"></div>
-          </div>
-        </div>
-
-        <div class="stat-grid">
-          <div class="stat-box stat-status">
-            <div class="stat-label">BLE Status</div>
-            <div class="stat-value sm" id="bleStatus">--</div>
-          </div>
-          <div class="stat-box stat-status">
-            <div class="stat-label">Adverts Decoded</div>
-            <div class="stat-value sm" id="bleAdverts">--</div>
-          </div>
-          <div class="stat-box stat-status">
-            <div class="stat-label">Rejected</div>
-            <div class="stat-value sm" id="bleFailures">--</div>
-          </div>
-        </div>
+        {{BLE_SHUNT_SECTION}}
 
         <div class="section-title">MQTT Server Configuration</div>
         <div class="form-row">

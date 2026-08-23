@@ -108,6 +108,15 @@ class VictronBLE {
       }
     }
 
+    /* Whether this module has PSRAM to spill into, checked at runtime rather
+       than trusting BOARD_HAS_PSRAM alone - that flag says what the build
+       expected, not what the chip actually reports, and a -psram env on the
+       wrong memory_type gets no PSRAM at all (see Diagnostics.cpp). Without
+       it the NimBLE stack alone can tip a ~70KB internal heap into the
+       failed-allocation-calls-abort() territory Diagnostics.h describes, so
+       the radio refuses to start rather than gambling on being the exception. */
+    static bool HardwareSupported() { return ESP.getPsramSize() > 0; }
+
     bool Enabled() { return _enabled; }
     bool Configured() { return _haveMac && _haveKey; }
     bool Sniffer() { return _sniffer; }

@@ -52,17 +52,24 @@ class MqttShuntSource {
     volatile uint32_t LastUpdateMs  = 0;   // newest of the three core (SOC/V/I) fields
     volatile uint32_t MessagesSeen  = 0;
 
+    /* Split rather than chained (LastX = LastUpdateMs = millis()) and MessagesSeen
+       = MessagesSeen + 1 rather than MessagesSeen++: C++20 deprecates both using
+       the value of an assignment to a volatile and incrementing one directly
+       (P1152), so what used to be one expression per line is now two or three. */
     void SetVoltage(float v) { VoltageCentiV = (uint16_t)lroundf(v * 100.0f);
-                               HaveVoltage = true; LastVoltageMs = LastUpdateMs = millis(); MessagesSeen++; }
+                               HaveVoltage = true; LastUpdateMs = millis(); LastVoltageMs = LastUpdateMs;
+                               MessagesSeen = MessagesSeen + 1; }
     void SetCurrent(float a) { CurrentDeciA  = (int32_t) lroundf(a * 10.0f);
-                               HaveCurrent = true; LastCurrentMs = LastUpdateMs = millis(); MessagesSeen++; }
+                               HaveCurrent = true; LastUpdateMs = millis(); LastCurrentMs = LastUpdateMs;
+                               MessagesSeen = MessagesSeen + 1; }
     void SetSOC(float pct)   { if (pct < 0) pct = 0; if (pct > 100) pct = 100;
                                SOCPermille   = (uint16_t)lroundf(pct * 10.0f);
-                               HaveSOC = true; LastSOCMs = LastUpdateMs = millis(); MessagesSeen++; }
+                               HaveSOC = true; LastUpdateMs = millis(); LastSOCMs = LastUpdateMs;
+                               MessagesSeen = MessagesSeen + 1; }
     /* Temperature does not stamp LastUpdateMs. It is optional, and a board
        publishing only a temperature must not read as a live shunt source. */
     void SetTemp(float c)    { TempC = (int16_t)lroundf(c);
-                               HaveTemp = true; LastTempMs = millis(); MessagesSeen++; }
+                               HaveTemp = true; LastTempMs = millis(); MessagesSeen = MessagesSeen + 1; }
 
     /* Fresh means all three of the fields the charge logic and the CAN
        readiness gate depend on have arrived at least once, and the newest of

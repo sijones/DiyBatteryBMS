@@ -442,9 +442,10 @@ void setup()
   VictronBle.SetMac(pref.getString(ccVBLEMac, ""));
   VictronBle.SetKeyHex(pref.getString(ccVBLEKey, ""));
   if (shuntSource == SHUNT_SRC_BLE || fallbackSource == SHUNT_SRC_BLE) {
-    VictronBle.Begin(true);
-    log_i("Victron BLE radio started (%s shunt source)",
-          shuntSource == SHUNT_SRC_BLE ? "primary" : "fallback");
+    if (VictronBle.Begin(true)) {
+      log_i("Victron BLE radio started (%s shunt source)",
+            shuntSource == SHUNT_SRC_BLE ? "primary" : "fallback");
+    }
   }
   // Start NTP Clock Set Task
 #if defined(BMS_S3) || defined(BMS_C3)

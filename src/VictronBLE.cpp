@@ -15,6 +15,12 @@ bool VictronBLE::Begin(bool enabled)
   _enabled = enabled;
   if (!_enabled) return false;
 
+  if (!HardwareSupported()) {
+    WS_LOG_E("Victron BLE: no PSRAM on this board - radio stays off to protect the heap");
+    _enabled = false;
+    return false;
+  }
+
   NimBLEDevice::init("");
   /* Listening only, so the radio never transmits: a passive scan does not send
      scan requests, which keeps us off the air entirely and avoids waking the
@@ -139,7 +145,7 @@ bool VictronBLE::Decrypt(const uint8_t* cipher, size_t len, uint16_t nonce, uint
 void VictronBLE::DecodeBatteryMonitor(const uint8_t* plain, size_t len)
 {
   if (len * 8 < VBLE_RECORD_BITS) {
-    DecryptFailures++;
+    DecryptFailures = DecryptFailures + 1;   // not ++: C++20 deprecates incrementing a volatile (P1152)
     WS_LOG_W("Victron BLE: record too short (%u bytes)", len);
     return;
   }
@@ -157,7 +163,7 @@ void VictronBLE::DecodeBatteryMonitor(const uint8_t* plain, size_t len)
      not-available reading in either means the whole frame is not usable rather
      than something to paper over with a stale value. */
   if (rawVolt == 0x7FFF || rawSOC == 0x3FF) {
-    DecryptFailures++;
+    DecryptFailures = DecryptFailures + 1;   // not ++: C++20 deprecates incrementing a volatile (P1152)
     WS_LOG_W("Victron BLE: shunt reported no voltage/SOC");
     return;
   }
@@ -235,7 +241,7 @@ void VictronBLE::ParseAdvert(const NimBLEAdvertisedDevice* dev)
   // a second, so the cost does not matter.
   if (!GetMac().equalsIgnoreCase(dev->getAddress().toString().c_str())) return;
 
-  AdvertsSeen++;
+  AdvertsSeen = AdvertsSeen + 1;   // not ++: C++20 deprecates incrementing a volatile (P1152)
 
   /* Identity, kept from the same advert that carries the readings. The name
      is only re-copied when it changes, because this runs about once a second
@@ -251,7 +257,7 @@ void VictronBLE::ParseAdvert(const NimBLEAdvertisedDevice* dev)
   if (raw[4] != VICTRON_REC_BATTERY_MON) return;  // a Victron device, but not a shunt
 
   if (raw[7] != _key[0]) {
-    DecryptFailures++;
+    DecryptFailures = DecryptFailures + 1;   // not ++: C++20 deprecates incrementing a volatile (P1152)
     WS_LOG_W("Victron BLE: wrong encryption key (advert expects %02X, key starts %02X)",
              raw[7], _key[0]);
     return;
@@ -263,7 +269,7 @@ void VictronBLE::ParseAdvert(const NimBLEAdvertisedDevice* dev)
 
   uint8_t plain[32] = {};
   if (!Decrypt(cipher, cipherLen, nonce, plain)) {
-    DecryptFailures++;
+    DecryptFailures = DecryptFailures + 1;   // not ++: C++20 deprecates incrementing a volatile (P1152)
     WS_LOG_W("Victron BLE: decrypt failed");
     return;
   }

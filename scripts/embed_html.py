@@ -144,6 +144,71 @@ def generate_embedded_html(source, target, env):
         
         # Get config for this environment
         config = can_configs.get(env_name, can_configs['esp32dev'])
+
+        # Victron BLE. The radio only runs with PSRAM behind it - NimBLE alone
+        # can tip a ~70KB internal-RAM board into the failed-allocation crash
+        # documented in Diagnostics.h, and the firmware now refuses to start
+        # the radio on such a board regardless of what the UI offers. The UI
+        # is trimmed to match rather than left to discover that by trying:
+        # every env here states PSRAM in its own name (see the header comment
+        # in platformio.ini), so it is known at build time, not guessed.
+        board_has_psram = env_name.endswith('-psram') or env_name == 'xiao-esp32s3'
+
+        if board_has_psram:
+            wifi_tab_label = 'WiFi/BLE/MQTT'
+            ble_shuntsource_option = '<option value="1">Prefer BLE (Bluetooth)</option>'
+            ble_fallbacksource_option = '<option value="1">BLE (Bluetooth)</option>'
+            ble_shunt_section = '''<div class="section-title">Victron BLE Shunt</div>
+        <!-- Always shown, so the shunt can be paired and tested before BLE is
+             made the preferred source over in Settings > Victron Configuration.
+             bleSourceHint says which way that preference is currently set. -->
+        <div class="form-row">
+          <div id="bleSourceHint" class="field-error"></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label><span class="tip" data-tip="Listens for nearby Victron devices for 20 seconds. The advert header is not encrypted, so devices are found before any key is entered. A shunt at the edge of range only gets an advert through every half minute or so, which is why the wait is long.">Find your shunt:</span></label>
+            <button id="bleScanBtn" onclick="startBleScan()">Scan for Victron devices</button>
+            <div id="bleScanStatus" class="field-error"></div>
+            <div id="bleFoundList"></div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="blemac"><span class="tip" data-tip="Bluetooth address of your SmartShunt. Filled in by the Scan button, or type it as aa:bb:cc:dd:ee:ff.">Device Address:</span></label>
+            <input type="textbox" id="blemac" placeholder="aa:bb:cc:dd:ee:ff" onchange="EnqueueUpdate('blemac')" onkeypress="HandleEnter(event, 'blemac')">
+          </div>
+          <div class="form-group">
+            <label for="blekey"><span class="tip" data-tip="32 hex characters, from VictronConnect: connect to the shunt, then Settings > Product info > Instant readout via Bluetooth > Show. This is the only thing protecting the shunt's broadcasts, so it is stored but never sent back to the browser.">Encryption Key:</span></label>
+            <div class="password-wrap">
+              <input type="password" id="blekey" placeholder="32 hex characters" onchange="EnqueueUpdate('blekey')" onkeypress="HandleEnter(event, 'blekey')">
+              <button class="password-toggle" onclick="togglePassword('blekey')">Show</button>
+            </div>
+            <div id="bleKeyState" class="field-error"></div>
+          </div>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-box stat-status">
+            <div class="stat-label">BLE Status</div>
+            <div class="stat-value sm" id="bleStatus">--</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Adverts Decoded</div>
+            <div class="stat-value sm" id="bleAdverts">--</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">Rejected</div>
+            <div class="stat-value sm" id="bleFailures">--</div>
+          </div>
+        </div>'''
+        else:
+            wifi_tab_label = 'WiFi/MQTT'
+            ble_shuntsource_option = ''
+            ble_fallbacksource_option = ''
+            ble_shunt_section = ''
         
         # The fan field used to be hidden on the C3, which has no MCPWM. The fan
         # now runs on LEDC, which every variant has, so it is shown everywhere.
@@ -160,6 +225,10 @@ def generate_embedded_html(source, target, env):
         html_content = html_content.replace('{{CAN_FIELD_HANDLERS}}', config['can_handlers'])
         html_content = html_content.replace('{{FAN_PIN_FIELD}}', fan_field)
         html_content = html_content.replace('{{FAN_PIN_HANDLER}}', fan_handler)
+        html_content = html_content.replace('{{WIFI_TAB_LABEL}}', wifi_tab_label)
+        html_content = html_content.replace('{{BLE_SHUNTSOURCE_OPTION}}', ble_shuntsource_option)
+        html_content = html_content.replace('{{BLE_FALLBACKSOURCE_OPTION}}', ble_fallbacksource_option)
+        html_content = html_content.replace('{{BLE_SHUNT_SECTION}}', ble_shunt_section)
         
         # Gzip the HTML - served with Content-Encoding: gzip, decompressed by the browser.
         # mtime=0 keeps output byte-identical between builds so the header only changes

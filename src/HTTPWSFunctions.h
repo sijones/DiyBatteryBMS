@@ -578,11 +578,19 @@ static void buildDataDoc(JsonDocument& doc, bool All)
        the UI just never heard about them. An install that has never touched BLE
        still has no MAC and no key, so it pays nothing, which is what the note
        above is really protecting. */
-    const bool bleConfigured = VictronBle.HaveKey() || VictronBle.GetMac().length() > 0;
-    const bool bleRelevant = (shuntSource == SHUNT_SRC_BLE) ||
+    /* Hardware-gated ahead of everything else: a board with no PSRAM can never
+       run the radio (see VictronBLE::HardwareSupported), so none of this is
+       relevant to it even if a MAC/key were saved under older firmware - and
+       the UI for a board that has no PSRAM omits the BLE fields it would
+       otherwise update, so sending them here would find nothing to write to. */
+    const bool bleHwSupported = VictronBle.HardwareSupported();
+    const bool bleConfigured = bleHwSupported &&
+                               (VictronBle.HaveKey() || VictronBle.GetMac().length() > 0);
+    const bool bleRelevant = bleHwSupported && (
+                             (shuntSource == SHUNT_SRC_BLE) ||
                              (fallbackSource == SHUNT_SRC_BLE) || bleConfigured ||
                              VictronBle.Sniffer() || VictronBle.Scanning() ||
-                             VictronBle.FoundCount() > 0;
+                             VictronBle.FoundCount() > 0);
     doc["blerelevant"] = bleRelevant;
     if (bleRelevant) {
       doc["blemac"] = VictronBle.GetMac();   // held in RAM, no NVS read here
@@ -1617,6 +1625,8 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
                                       ? fallbackSource : (uint8_t)doc["fallbacksource"];
         if (value != SHUNT_SRC_VEDIRECT && value != SHUNT_SRC_BLE && value != SHUNT_SRC_MQTT) {
           wsclient->printf("{\"ERROR\" : \"Invalid shunt source\"}");
+        } else if (value == SHUNT_SRC_BLE && !VictronBle.HardwareSupported()) {
+          wsclient->printf("{\"ERROR\" : \"This board has no PSRAM - Victron BLE is not available\"}");
         } else if (value == effFallback) {
           wsclient->printf("{\"ERROR\" : \"Shunt Source cannot be the same as the Fallback Source\"}");
         } else {
@@ -1640,6 +1650,8 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         if (value != SHUNT_FALLBACK_NONE && value != SHUNT_SRC_VEDIRECT &&
             value != SHUNT_SRC_BLE && value != SHUNT_SRC_MQTT) {
           wsclient->printf("{\"ERROR\" : \"Invalid fallback source\"}");
+        } else if (value == SHUNT_SRC_BLE && !VictronBle.HardwareSupported()) {
+          wsclient->printf("{\"ERROR\" : \"This board has no PSRAM - Victron BLE is not available\"}");
         } else if (value == shuntSource) {
           wsclient->printf("{\"ERROR\" : \"Fallback source cannot be the same as the primary Shunt Source\"}");
         } else {
