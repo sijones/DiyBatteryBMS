@@ -182,8 +182,8 @@ Partition** size and warns when a device is still on the old table.
 
 ### What changed and why
 
-The old layout spent 1.375MB on a SPIFFS partition this project has never used — the web interface
-is compiled into the firmware and every setting lives in NVS. That space now goes to the app:
+The old layout spent 1.375MB on a SPIFFS partition that used to hold the UI — the web interface
+is now compiled into the firmware and every setting lives in NVS. That space now goes to the app:
 
 | | Old (`default.csv`) | New |
 |---|---|---|
