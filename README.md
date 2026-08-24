@@ -2,6 +2,10 @@ This is a hobby project and I add features as and when I have time, it means som
 
 I now accept donations towards supporting the project: https://buymeacoffee.com/sijones2012
 
+The easiest to get started is to use the web flasher at https://diy.power-pilot.uk
+
+Use a ESP32 that has PSRAM, this means ESP32S3/C3, the classic ESP32's have BLE disabled.
+
 You can now sponsor and donate to me, the link is on here to buy me a coffee ;)
 
 The new UI means no coding knowledge is required, just flash and set up.
