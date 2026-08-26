@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>DIY Battery BMS</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='8' width='23' height='16' rx='3' fill='none' stroke='%2335c9d4' stroke-width='2.5'/%3E%3Crect x='27' y='13' width='3' height='6' rx='1.5' fill='%2335c9d4'/%3E%3Crect x='6.5' y='11.5' width='4.5' height='9' rx='1' fill='%233fbf6a'/%3E%3Crect x='12.5' y='11.5' width='4.5' height='9' rx='1' fill='%233fbf6a'/%3E%3Crect x='18.5' y='11.5' width='4.5' height='9' rx='1' fill='%233fbf6a' opacity='0.45'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='4' width='18' height='4.6' rx='2.3' fill='%2335c9d4'/%3E%3Crect x='3' y='10.2' width='12.5' height='4.6' rx='2.3' fill='%23e6edf5'/%3E%3Crect x='3' y='16.4' width='7' height='4.6' rx='2.3' fill='%23e6edf5' opacity='0.45'/%3E%3C/svg%3E">
   <style>
     /* ============================================================
        DIY Battery BMS - instrumentation panel
@@ -2562,15 +2562,17 @@
       updateSchedCount();
     }
 
-    function saveSchedule() {
+    // Reads and validates the rows currently in the editor. Shared by
+    // saveSchedule() and exportSettings() so the two can never disagree about
+    // what a valid window is. Returns { list } or { error }.
+    function collectScheduleRows() {
       const rows = Array.from(document.querySelectorAll('#schedRows .sched-row'));
       const out = [];
       for (const r of rows) {
         const start = hhmmToMins(r.querySelector('.s-start').value);
         const end = hhmmToMins(r.querySelector('.s-end').value);
         if (start === end) {
-          showToast('A window needs different start and end times', 'error', 3500);
-          return;
+          return { error: 'A window needs different start and end times' };
         }
         const w = { start: start, end: end, days: Number(r.querySelector('.s-days').value) };
         const c = r.querySelector('.s-charge').value;
@@ -2583,11 +2585,20 @@
         if (soc > 0) w.targetsoc = Math.min(100, soc);
         // A window that changes nothing would silently do nothing at all
         if (w.charge === undefined && w.discharge === undefined && w.forcecharge === undefined) {
-          showToast('A window with everything set to Leave would do nothing', 'error', 3500);
-          return;
+          return { error: 'A window with everything set to Leave would do nothing' };
         }
         out.push(w);
       }
+      return { list: out };
+    }
+
+    function saveSchedule() {
+      const res = collectScheduleRows();
+      if (res.error) {
+        showToast(res.error, 'error', 3500);
+        return;
+      }
+      const out = res.list;
       // Wait for the device to echo the stored schedule rather than claiming
       // success on send - the old toast timed out whether it saved or not.
       schedSavePending = out.length;
@@ -3687,6 +3698,16 @@
       var wpass = document.getElementById('wifipass');
       if (wpass && wpass.value) settings.wifipass = wpass.value;
 
+      // The repeating schedule is a list of windows, not a single DOM field,
+      // so it does not fit any of the EXPORT_FIELDS buckets above. Skipped
+      // rather than aborting the whole export if the editor currently holds
+      // an unsaved, invalid row - what is on the device is untouched either way.
+      if (document.getElementById('schedRows')) {
+        var sched = collectScheduleRows();
+        if (sched.list) settings.schedule = sched.list;
+        else showToast('Schedule not exported: ' + sched.error, 'error', 4000);
+      }
+
       var blob = new Blob([JSON.stringify(settings, null, 2)], {type: 'application/json'});
       var a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -3743,6 +3764,21 @@
           // For converted fields, set DOM value as display units (server expects raw via SendQueuedUpdate)
           for (var key in settings) {
             if (skip.indexOf(key) >= 0) continue;
+
+            // The schedule is a list of windows, not a single field - it has
+            // no element to key off, so it is sent whole rather than through
+            // the generic per-field path below.
+            if (key === 'schedule') {
+              (function(list) {
+                setTimeout(function() {
+                  renderSchedule(list);
+                  websocket.send(JSON.stringify({ schedule: list }));
+                }, count * 150);
+              })(settings[key]);
+              count++;
+              continue;
+            }
+
             // wifissidhex has no field of its own - it fills the network dropdown
             var isSsid = (key === 'wifissid' || key === 'wifissidhex');
             var el = document.getElementById(isSsid ? 'wifissid' : key);

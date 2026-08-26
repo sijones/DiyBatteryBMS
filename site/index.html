@@ -274,7 +274,13 @@
     <div class="card"><h2>Flash layout</h2><div id="layout"></div></div>
     <div class="actions">
       <button id="to-choose" class="primary">Choose a build</button>
+      <button id="restore-nvs" hidden>Restore a settings backup…</button>
       <button id="disconnect">Disconnect</button>
+    </div>
+    <input type="file" id="restore-nvs-file" accept=".bin" hidden>
+    <div class="card" id="restore-status" hidden>
+      <h2>Restoring settings</h2>
+      <div id="restore-status-text" style="font-size:13px; color:var(--text-dim)"></div>
     </div>
     <p style="margin-top:22px; font-size:13px">Read from the board.</p>
   </section>

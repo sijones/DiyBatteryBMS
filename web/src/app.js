@@ -27,7 +27,7 @@ import {
   versionsIn,
   buildsFor,
 } from "./builds.js";
-import { backupNvs, flashBuild, restart } from "./flash.js";
+import { backupNvs, flashBuild, restoreNvs, restart } from "./flash.js";
 import { watchBoot } from "./watch.js";
 import { Console, scanNetworks, sendCredentials } from "./console.js";
 import { parseScan, dedupe, signalBars, credentialLines } from "./wifi.js";
@@ -61,6 +61,12 @@ const row = (label, value, tone) =>
 /* ---------------------------------------------------------------- identify */
 
 function renderIdentity(s) {
+  // Reset from any previous connection - the DOM persists across sessions
+  // even though a fresh session object does not.
+  $("restore-status").hidden = true;
+  $("restore-nvs").disabled = false;
+  $("to-choose").disabled = false;
+
   const i = s.info;
   $("identity").innerHTML = [
     row("Family", i.chipName),
@@ -88,6 +94,11 @@ function renderIdentity(s) {
     (s.nvs
       ? `<p class="note ok">Settings live at ${fmtHex(s.nvs.offset)}, ${fmtSize(s.nvs.size)}.</p>`
       : `<p class="note warn">No nvs partition — there are no settings here to preserve.</p>`);
+
+  // Only offered where there is somewhere to put it back. Size is checked for
+  // real at write time, against this exact partition - this is just whether
+  // asking makes sense at all.
+  $("restore-nvs").hidden = !s.nvs;
 }
 
 /* What is published, shown before a board is connected.
@@ -332,7 +343,7 @@ function renderChoiceList() {
 
 function renderConfirm() {
   const m = chosen.manifest;
-  verdict = nvsVerdict(session.nvs, m.nvs);
+  verdict = nvsVerdict(session.nvs, m.nvs, m.gap);
   backedUp = false;
 
   $("verdict").className = `banner ${verdict.safe ? "ok" : verdict.kind === "fresh" ? "" : "err"}`;
@@ -663,6 +674,68 @@ async function onBackup() {
   }
 }
 
+/**
+ * Write a previously-downloaded nvs-*.bin backup back onto the connected
+ * board, from the Identified screen - no build needs choosing, since this
+ * touches nothing but the settings partition already on the board.
+ *
+ * Confirmed with a native confirm() rather than the styled dialog the rest of
+ * this page uses elsewhere, because there isn't one here yet and this is a
+ * single yes/no gate on a destructive action - not worth building a modal for.
+ */
+async function onRestoreNvsFile(input) {
+  const file = input.files[0];
+  input.value = ""; // so picking the same file again still fires a change event
+  if (!file) return;
+
+  if (
+    !confirm(
+      `Write ${file.name} (${file.size} bytes) to this board's settings partition at ` +
+        `${fmtHex(session.nvs.offset)}? This overwrites every setting currently on the board and ` +
+        `reboots it. This cannot be undone.`,
+    )
+  ) {
+    return;
+  }
+
+  const status = $("restore-status");
+  const text = $("restore-status-text");
+  status.hidden = false;
+  $("restore-nvs").disabled = true;
+  $("to-choose").disabled = true;
+  text.textContent = "Reading the backup file…";
+
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+
+    text.textContent = "Writing settings…";
+    await restoreNvs(session, bytes, {
+      onProgress: (written, total) => {
+        const pct = total ? Math.round((written / total) * 100) : 0;
+        text.textContent = `Writing settings… ${pct}%`;
+      },
+    });
+
+    // Same reboot sequence onFlash() uses and for the same reason: esptool's
+    // own reset only releases RTS, relying on state that does not survive
+    // closing the port, so detach first and let the watcher drive the reset.
+    text.textContent = "Restarting the board…";
+    await detachTransport(session);
+    session.finished = true;
+
+    const boot = await watchBoot(session.port, () => {});
+    text.textContent = boot.problem
+      ? `Settings restored, but the board did not come back cleanly: ${boot.problem}. Disconnect and reconnect to check on it.`
+      : "Settings restored — the board has restarted with them. Disconnect and reconnect if you want to do anything else.";
+    // The port closed under watchBoot and session.finished is now set - there
+    // is nothing left here for either button to act on until reconnecting.
+  } catch (err) {
+    text.textContent = `Could not restore: ${err.message}`;
+    $("restore-nvs").disabled = false;
+    $("to-choose").disabled = false;
+  }
+}
+
 async function onFlash() {
   const m = chosen.manifest;
   const eraseAll = eraseChosen();
@@ -868,6 +941,11 @@ function boot() {
     await loadChoices();
   });
   $("back-to-identified").addEventListener("click", () => setStage("identified"));
+  $("restore-nvs").addEventListener("click", () => {
+    $("restore-status").hidden = true;
+    $("restore-nvs-file").click();
+  });
+  $("restore-nvs-file").addEventListener("change", (e) => onRestoreNvsFile(e.target));
   $("to-confirm").addEventListener("click", () => {
     renderConfirm();
     setStage("confirm");

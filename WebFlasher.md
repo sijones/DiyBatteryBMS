@@ -88,9 +88,13 @@ safe; one that moved `nvs` would not be.
 `scripts/package_release.py` already produces `firmware.factory.bin`, a merged
 image, alongside the separate parts. Two things to get right:
 
-- **The merged image starts at a different offset per chip** — `0x1000` on ESP32,
-  `0x0` on S3 and C3. A manifest with the wrong offset produces a board that
-  flashes successfully and does not boot.
+- **The merged image is always written at `0x0`, on every chip.** `esptool`'s
+  `merge_bin` pads from address 0 up to wherever that chip's bootloader
+  actually lives (`0x1000` on ESP32, `0x0` on S3/C3) and bakes that padding
+  into the file — that's the whole point of a factory image, one offset for
+  every chip. A manifest that "corrects" the offset per chip instead
+  double-shifts it, so the write completes and the board still doesn't boot.
+  This bricked an `esp32dev` board before it was caught (see git history).
 - **One manifest per board, not per chip family.** ESP Web Tools selects builds by
   `chipFamily`, which cannot distinguish `esp32dev` from `esp32plus`. Letting the
   dropdown choose the manifest URL keeps the component's polished install dialog

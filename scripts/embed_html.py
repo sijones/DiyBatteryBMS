@@ -6,6 +6,7 @@ Generates a C++ header with HTML data stored in PROGMEM.
 from __future__ import print_function
 import gzip
 import os
+import re
 
 Import("env")
 
@@ -142,8 +143,19 @@ def generate_embedded_html(source, target, env):
             }
         }
         
-        # Get config for this environment
-        config = can_configs.get(env_name, can_configs['esp32dev'])
+        # Get config for this environment.
+        #
+        # can_configs is keyed by WIRING FAMILY (e.g. 'esp32s3-ESPCAN'), but
+        # env['PIOENV'] is the full env name including its flash-size/PSRAM
+        # suffix (e.g. 'esp32s3-ESPCAN-16mb-psram') - platformio.ini names
+        # every env that way so a build can't be flashed onto the wrong
+        # module. A bare env_name lookup here never matches any suffixed env
+        # and silently falls back to the MCP2515 fields on every board,
+        # which is invisible on MCP2515 boards (the fallback is correct for
+        # them) and shows up as missing CAN pins on every ESPCAN board. Strip
+        # the same suffix build-manifests.mjs strips before looking up.
+        family = re.match(r'^(.*?)(?:-\d+mb)?(?:-psram)?$', env_name, re.IGNORECASE).group(1)
+        config = can_configs.get(family, can_configs['esp32dev'])
 
         # Victron BLE. The radio only runs with PSRAM behind it - NimBLE alone
         # can tip a ~70KB internal-RAM board into the failed-allocation crash

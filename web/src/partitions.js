@@ -105,10 +105,20 @@ export function looksLikeOurLayout(partitions) {
  * destroys a configuration: the flash succeeds, the board boots, and every
  * setting is gone because the new table looks for nvs somewhere else.
  *
- * @param {object|null} boardNvs   from the board's own table
- * @param {object|null} targetNvs  from the build being installed
+ * Matching offsets are necessary but not sufficient. The flasher writes one
+ * contiguous merged image, and esptool erases and reprograms the full span of
+ * any file it writes as a normal part of writing it, regardless of eraseAll -
+ * so unless flash.js is told to slice nvs back out of that span before
+ * writing, an "upgrade" that only checked offsets would still silently wipe
+ * every setting while telling the user otherwise. targetGap is what proves a
+ * safe write is actually going to happen, not just that it theoretically
+ * could: see readGap() in build-manifests.mjs for what it covers and why.
+ *
+ * @param {object|null} boardNvs    from the board's own table
+ * @param {object|null} targetNvs   from the build being installed
+ * @param {object|null} targetGap   the range flash.js will skip, from the build's manifest
  */
-export function nvsVerdict(boardNvs, targetNvs) {
+export function nvsVerdict(boardNvs, targetNvs, targetGap) {
   if (!boardNvs) {
     return { safe: false, kind: "fresh", detail: "No existing settings partition - this is a first install." };
   }
@@ -131,6 +141,18 @@ export function nvsVerdict(boardNvs, targetNvs) {
       detail:
         `Settings occupy ${boardNvs.size} bytes on this board and ${targetNvs.size} in the build. ` +
         `Resizing nvs discards its contents.`,
+    };
+  }
+  const nvsStart = targetNvs.offset;
+  const nvsEnd = targetNvs.offset + targetNvs.size;
+  const gapCoversNvs = targetGap && targetGap.offset <= nvsStart && targetGap.offset + targetGap.size >= nvsEnd;
+  if (!gapCoversNvs) {
+    return {
+      safe: false,
+      kind: "unprotected",
+      detail:
+        "This build does not declare a safe way to write around nvs, so a write cannot be guaranteed to " +
+        "leave it alone. Back up your settings and choose to erase.",
     };
   }
   return { safe: true, kind: "match", detail: `Settings stay at 0x${boardNvs.offset.toString(16)}, untouched.` };
