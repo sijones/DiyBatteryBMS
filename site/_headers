@@ -1,0 +1,23 @@
+# app.js has no content hash in its filename - every deploy overwrites it at
+# the same URL. Without this, a browser (or an intermediate cache) can keep
+# serving a stale copy for a while after a new deploy, so a tab open across
+# two deploys can end up running JS from one version against HTML from
+# another - exactly the kind of mismatch that throws "Cannot set properties
+# of null" on an element the newer JS expects and the older HTML doesn't have,
+# or the other way round. Forcing revalidation on every load costs nothing
+# here; this is a small app shell, not an asset-heavy site.
+#
+# The firmware binaries under /firmware/ are NOT covered by this - those are
+# genuinely large and content-addressed by version+env in the path already,
+# so the platform's default caching for them is fine.
+/
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/app.js
+  Cache-Control: no-cache
+
+/update.html
+  Cache-Control: no-cache

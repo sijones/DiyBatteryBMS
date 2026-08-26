@@ -192,7 +192,12 @@
 
 <main>
 
-  <div class="intro">
+  <!-- Introduces the project, which only makes sense before anyone has
+       started doing anything - setStage() manages this the same as every
+       [data-stage] section, so it clears on the first real step and does not
+       sit above an error banner or a "board has restarted" screen still
+       explaining what the project is. -->
+  <div class="intro" data-stage="idle" hidden>
     <h1>DIY Battery BMS</h1>
     <p>
       Reads a Victron Smart Shunt — over VE.Direct, Bluetooth or MQTT — and speaks Pylontech CAN to
@@ -404,9 +409,6 @@
     <div class="card" id="verify-status" hidden>
       <h2>Settings check</h2>
       <div id="verify-text" style="font-size:13px; color:var(--text-dim)"></div>
-      <div class="actions" id="verify-actions" hidden style="margin-top:10px">
-        <button id="verify-restore" class="danger">Restore the settings that were there before</button>
-      </div>
     </div>
 
     <div class="card" id="wifi-cta" hidden>
@@ -453,7 +455,14 @@
       <button id="wifi-skip">Skip</button>
     </div>
 
-    <pre id="wifi-log"></pre>
+    <div class="card">
+      <h2>Console</h2>
+      <p style="font-size:12px; color:var(--text-faint); margin-bottom:10px">
+        What the board's own serial console is actually saying — worth a look if scanning or connecting
+        does not behave as expected.
+      </p>
+      <pre id="wifi-log"></pre>
+    </div>
   </section>
 
   <section data-stage="failed" hidden>

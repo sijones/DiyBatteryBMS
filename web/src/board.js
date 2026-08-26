@@ -128,14 +128,14 @@ export function isPortBusy(e) {
  * Sync with the ROM bootloader on an already-open port and hand back a
  * working ESPLoader, walking BAUD_LADDER down from the fastest rate.
  *
- * Split out of connectAndIdentify() so a post-flash re-sync (verifyNvs()
- * needs one to read nvs back) does not have to repeat this, and - the part
- * that matters - does not call navigator.serial.requestPort() again. That
- * call is what pops the native port picker; the port has already been
- * granted once for this session; asking a second time mid-flow would stop
- * an automatic verification step on a dialog nobody was told to expect.
+ * Split out of connectAndIdentify() so reconnectAndReadNvs()'s post-flash
+ * re-sync does not have to repeat this, and - the part that matters - does
+ * not call navigator.serial.requestPort() again. That call is what pops the
+ * native port picker; the port has already been granted once for this
+ * session; asking a second time mid-flow would stop an automatic
+ * verification step on a dialog nobody was told to expect.
  */
-export async function syncLoader(port, log) {
+async function syncLoader(port, log) {
   const terminal = {
     clean() {},
     writeLine(data) { log(String(data)); },
