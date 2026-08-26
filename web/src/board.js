@@ -124,12 +124,18 @@ export function isPortBusy(e) {
   return /failed to open serial port|port is already open/i.test(e?.message ?? "");
 }
 
-export async function connectAndIdentify(log) {
-  if (!webSerialSupported()) throw new Error("This browser has no Web Serial support.");
-
-  // Throws on user cancel, which the caller treats as "nothing happened"
-  const port = await navigator.serial.requestPort();
-
+/**
+ * Sync with the ROM bootloader on an already-open port and hand back a
+ * working ESPLoader, walking BAUD_LADDER down from the fastest rate.
+ *
+ * Split out of connectAndIdentify() so a post-flash re-sync (verifyNvs()
+ * needs one to read nvs back) does not have to repeat this, and - the part
+ * that matters - does not call navigator.serial.requestPort() again. That
+ * call is what pops the native port picker; the port has already been
+ * granted once for this session; asking a second time mid-flow would stop
+ * an automatic verification step on a dialog nobody was told to expect.
+ */
+export async function syncLoader(port, log) {
   const terminal = {
     clean() {},
     writeLine(data) { log(String(data)); },
@@ -138,7 +144,6 @@ export async function connectAndIdentify(log) {
 
   let transport = null;
   let loader = null;
-  let description = null;
   let lastError = null;
 
   for (const baudrate of BAUD_LADDER) {
@@ -146,10 +151,12 @@ export async function connectAndIdentify(log) {
     loader = new ESPLoader({ transport, baudrate, romBaudrate: 115_200, terminal, enableTracing: false });
 
     try {
-      // main() syncs, identifies the chip, uploads the stub and raises the rate
-      description = await loader.main();
+      // main() syncs, identifies the chip, uploads the stub and raises the
+      // rate, and returns a human-readable chip description ("ESP32-S3
+      // (QFN56) (revision v0.2)") that chip.CHIP_NAME alone does not carry.
+      const description = await loader.main();
       if (baudrate !== BAUD_LADDER[0]) log(`Settled at ${baudrate} baud.`);
-      break;
+      return { transport, loader, description };
     } catch (e) {
       lastError = e;
 
@@ -178,7 +185,16 @@ export async function connectAndIdentify(log) {
     }
   }
 
-  if (!loader) throw lastError ?? new Error("Could not talk to the board at any speed.");
+  throw lastError ?? new Error("Could not talk to the board at any speed.");
+}
+
+export async function connectAndIdentify(log) {
+  if (!webSerialSupported()) throw new Error("This browser has no Web Serial support.");
+
+  // Throws on user cancel, which the caller treats as "nothing happened"
+  const port = await navigator.serial.requestPort();
+
+  const { transport, loader, description } = await syncLoader(port, log);
 
   const chip = loader.chip;
   const features = await chip.getChipFeatures(loader);
@@ -216,6 +232,33 @@ export async function connectAndIdentify(log) {
     coredump: findCoredump(table.partitions),
     recognised: looksLikeOurLayout(table.partitions),
   };
+}
+
+/**
+ * Reconnect after a flash to read nvs back and check it survived.
+ *
+ * Reuses the already-granted port rather than requesting a new one - see
+ * syncLoader()'s comment - so this can run right after watchBoot() with no
+ * extra dialog. Self-contained: syncs, reads, and releases the transport
+ * again before returning, since a verify-only read has no reason to hold the
+ * port open afterward the way a flash in progress does.
+ *
+ * @param {SerialPort} port
+ * @param {{offset:number, size:number}} nvs
+ * @param {(line: string) => void} log
+ * @returns {Promise<Uint8Array>}
+ */
+export async function reconnectAndReadNvs(port, nvs, log) {
+  const { transport, loader } = await syncLoader(port, log);
+  try {
+    return await loader.readFlash(nvs.offset, nvs.size);
+  } finally {
+    try {
+      await bounded(transport.disconnect(), 3000);
+    } catch {
+      /* best effort - the caller only needed the bytes */
+    }
+  }
 }
 
 /**

@@ -97,6 +97,24 @@ export class Console {
 }
 
 /**
+ * Wait for the console to prove it is actually listening, not just open.
+ *
+ * Opening the port resets this board - confirmed directly: a fresh open logs
+ * `rst:0x15 (USB_UART_CHIP_RESET)` before anything else - and the reboot that
+ * follows takes several seconds of setup() running (every stored NVS key
+ * gets read, the CAN pin check runs, the access point comes up) before
+ * SerialSetup's serialSetupLoop() ever runs once. Serial.begin() itself only
+ * happens partway through that, so anything sent before this resolves is not
+ * delayed, it is gone - there is nothing running yet to have buffered it.
+ * serialBanner() prints the one line that only appears once the console loop
+ * is actually reading input, so waiting for it is what turns "send a command
+ * right after open()" from a race into something safe to rely on.
+ */
+export async function waitReady(con, ms = 15_000) {
+  return con.expect(/Type 'help' for WiFi setup/, ms);
+}
+
+/**
  * Ask the board what networks it can see.
  *
  * The scan is synchronous in the firmware and takes a couple of seconds, so

@@ -286,30 +286,38 @@
   </section>
 
   <section data-stage="choose" hidden>
-    <h1>How is CAN wired?</h1>
-    <p>
-      Do you have an MCP2515 on SPI or a built-in (ESP)CAN controller — this cannot be automatically detected. 
-      Please make a selection to continue, note if you are unsure, try ESPCAN if the CAN wiring is integrated, otherwise select MCP2515.
-    </p>
-    <div class="picker">
-      <div class="tabs">
-        <button id="tab-release" class="tab">Release</button>
-        <button id="tab-beta" class="tab">Beta</button>
+    <h1>Choose a build</h1>
+
+    <div class="card">
+      <h2>Version</h2>
+      <div class="picker">
+        <div class="tabs">
+          <button id="tab-release" class="tab">Release</button>
+          <button id="tab-beta" class="tab">Beta</button>
+        </div>
+        <label class="version-pick">
+          <span>Version</span>
+          <select id="version"></select>
+        </label>
       </div>
-      <label class="version-pick">
-        <span>Version</span>
-        <select id="version"></select>
-      </label>
+
+      <div class="banner warn" id="beta-note" hidden>
+        <div>Beta builds are what is being worked on. They may misbehave — the release channel is the one to use on a battery you rely on.</div>
+      </div>
+      <div class="banner warn" id="older-note" hidden>
+        <div>This is not the newest build in this channel. Going back is the right move when a newer one misbehaved.</div>
+      </div>
     </div>
 
-    <div class="banner warn" id="beta-note" hidden>
-      <div>Beta builds are what is being worked on. They may misbehave — the release channel is the one to use on a battery you rely on.</div>
-    </div>
-    <div class="banner warn" id="older-note" hidden>
-      <div>This is not the newest build in this channel. Going back is the right move when a newer one misbehaved.</div>
+    <div class="card">
+      <h2>How is CAN wired?</h2>
+      <p>
+        Do you have an MCP2515 on SPI or a built-in (ESP)CAN controller — this cannot be automatically detected.
+        Please make a selection to continue, note if you are unsure, try ESPCAN if the CAN wiring is integrated, otherwise select MCP2515.
+      </p>
+      <div id="builds"></div>
     </div>
 
-    <div id="builds"></div>
     <div class="actions">
       <button id="to-confirm" class="primary" disabled>Continue</button>
       <button id="back-to-identified">Back</button>
@@ -392,6 +400,14 @@
     </div>
 
     <p id="done-next"></p>
+
+    <div class="card" id="verify-status" hidden>
+      <h2>Settings check</h2>
+      <div id="verify-text" style="font-size:13px; color:var(--text-dim)"></div>
+      <div class="actions" id="verify-actions" hidden style="margin-top:10px">
+        <button id="verify-restore" class="danger">Restore the settings that were there before</button>
+      </div>
+    </div>
 
     <div class="card" id="wifi-cta" hidden>
       <h2>Network</h2>

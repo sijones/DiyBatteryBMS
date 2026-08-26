@@ -2352,6 +2352,10 @@
     const sendQueue = [];
     const debounceTimers = {};
     const pendingAcks = {};
+    // True while applyImportedSettings() is draining the queue. Suppresses the
+    // generic per-field "Saving.../Saved" toasts so the import's own progress
+    // message isn't fighting them for the same toast element every 150ms.
+    let importInProgress = false;
     let toastTimer = null;
     let savedWifiSSID = '';  // Currently saved WiFi SSID, as hex - see below
 
@@ -3751,6 +3755,9 @@
           var count = 0;
           var skip = ['_exportVersion', '_exportDate'];
           var exportVersion = settings._exportVersion || 1;
+          // Silences the generic per-field "Saving.../Saved" toasts below, so
+          // this function's own progress message is the only thing on screen.
+          importInProgress = true;
 
           /* Shunt Source and Fallback Source are refused if they match, and an
              import sets fields one at a time - so a file that swaps the two
@@ -3815,14 +3822,50 @@
             })(sendKey);
             count++;
           }
-          showToast('Importing ' + count + ' settings…', 'pending', (count * 150) + 2000);
-          // Reboot after all settings have been sent
-          var rebootDelay = (count * 150) + 2000;
-          setTimeout(function() {
-            showToast('Rebooting to apply settings…', 'success', 4000);
+          showToast('Importing ' + count + ' settings…', 'pending', 4000);
+
+          /* Reboot only once the send queue has actually drained, not on a
+             fixed timer. count * 150ms assumed every field's send-and-ack
+             round trip finished inside its 150ms stagger slot - but
+             ProcessQueue() sends one at a time and waits for AckUpdate()
+             before starting the next, with up to ACK_TIMEOUT (5s) and
+             MAX_RETRIES (3) retries if an ack is slow or lost. A real NVS
+             write plus a WebSocket round trip routinely takes longer than
+             150ms, so the queue backs up and the fixed timer could fire the
+             reboot while most of the import was still sitting unsent -
+             which reads as exactly what gets reported: the toasts run, the
+             device restarts, and most of the imported settings are gone,
+             because they were never sent at all, not because they failed
+             to save. Polling for the queue to empty is what makes "done"
+             mean done instead of "the clock ran out". */
+          var waited = 0;
+          var pollMs = 250;
+          // A backstop against a dead connection, not the expected path: every
+          // field exhausting its own retries would take this long in the
+          // worst case, so this is what "give up and reboot anyway" means.
+          var maxWaitMs = count * ACK_TIMEOUT * (MAX_RETRIES + 1) + 5000;
+          var waitTimer = setInterval(function() {
+            waited += pollMs;
+            // sendQueue is what has not been sent yet; pendingAcks holds the
+            // one item currently in flight. Whatever is left over is done.
+            var remaining = sendQueue.length + Object.keys(pendingAcks).length;
+            var done = Math.max(0, count - remaining);
+            var drained = remaining === 0;
+            if (!drained && waited < maxWaitMs) {
+              showToast('Restoring settings… ' + done + ' of ' + count, 'pending', pollMs + 200);
+              return;
+            }
+            clearInterval(waitTimer);
+            importInProgress = false;
+            if (!drained) {
+              showToast('Some settings did not finish saving - rebooting anyway', 'error', 4000);
+            } else {
+              showToast('Rebooting to apply settings…', 'success', 4000);
+            }
             websocket.send('{"reboot" : true}');
-          }, rebootDelay);
+          }, pollMs);
         } catch(err) {
+          importInProgress = false;
           showToast('Could not apply settings: ' + err.message, 'error', 5000);
         }
     }
@@ -4320,7 +4363,7 @@
       const item = sendQueue.shift();
       const jsonString = JSON.stringify(item.payload);
       console.log('Sending to WebSocket: ' + jsonString);
-      showToast('Saving...', 'pending');
+      if (!importInProgress) showToast('Saving...', 'pending');
 
       pendingAcks[item.id] = {
         timeout: setTimeout(() => {
@@ -4345,7 +4388,7 @@
       if (pendingAcks[fieldId]) {
         clearTimeout(pendingAcks[fieldId].timeout);
         delete pendingAcks[fieldId];
-        showToast('Saved', 'success');
+        if (!importInProgress) showToast('Saved', 'success');
         ProcessQueue();
       }
     }

@@ -15,6 +15,8 @@ import {
   browserName,
   isMobile,
   isPortBusy,
+  reconnectAndReadNvs,
+  syncLoader,
 } from "./board.js";
 import { fmtHex, fmtSize, nvsVerdict } from "./partitions.js";
 import {
@@ -29,7 +31,7 @@ import {
 } from "./builds.js";
 import { backupNvs, flashBuild, restoreNvs, restart } from "./flash.js";
 import { watchBoot } from "./watch.js";
-import { Console, scanNetworks, sendCredentials } from "./console.js";
+import { Console, scanNetworks, sendCredentials, waitReady } from "./console.js";
 import { parseScan, dedupe, signalBars, credentialLines } from "./wifi.js";
 
 const $ = (id) => document.getElementById(id);
@@ -42,6 +44,13 @@ let chosen = null;
 let verdict = null;
 let backedUp = false;
 let releaseIndex = null;
+/* nvs read right before an upgrade that was told it would keep its settings,
+ * held in memory only - never written to disk, since nvs can hold WiFi and
+ * MQTT passwords. Compared against a post-flash read once the board is back,
+ * so "safe" is something checked rather than just claimed. null whenever
+ * there is nothing to compare - a fresh install, an erase, or a build that
+ * did not declare itself safe in the first place. */
+let preFlashNvs = null;
 let selected = { channel: "release", version: null };
 
 function setStage(name) {
@@ -459,6 +468,15 @@ async function openWifiStep() {
 
   try {
     await con.open();
+    // Opening the port resets this board - confirmed on the bench, not
+    // theoretical - so the console is not actually listening yet just
+    // because open() resolved. See waitReady() for why.
+    $("wifi-status").textContent = "Waiting for the board to finish restarting…";
+    const ready = await waitReady(con);
+    if (!ready) {
+      $("wifi-status").textContent = "The board did not answer after restarting. Try again, or type the name in.";
+      return;
+    }
     await doScan();
   } catch (e) {
     $("wifi-status").textContent = `Could not open the console: ${e.message}`;
@@ -591,14 +609,25 @@ async function onWifiConnect() {
     return;
   }
 
-  $("wifi-status").textContent = res.apMode
+  const failMessage = res.apMode
     ? "The board did not join — it came back up on its own access point. Check the passphrase."
     : "No address came back within 30 seconds. It may still be trying; check the log.";
+  $("wifi-status").textContent = failMessage;
   $("wifi-connect").disabled = false;
-  // Reopen so another attempt can be made without starting over
+  // Reopen so another attempt can be made without starting over. The failed
+  // "connect" already restarted the board once, so this reopen races the
+  // same reset-on-open behaviour openWifiStep() waits out - wait here too
+  // rather than leaving the next click to find out the hard way.
   con = new Console(session.port);
   con.onText = (chunk) => { $("wifi-log").textContent += chunk; };
-  try { await con.open(); } catch { /* the user can go back and retry */ }
+  try {
+    await con.open();
+    if (!(await waitReady(con))) {
+      $("wifi-status").textContent = `${failMessage} The console has not answered since restarting either - reconnecting may help.`;
+    }
+  } catch {
+    /* the user can go back and retry */
+  }
 }
 
 /* ------------------------------------------------------------------- done */
@@ -745,6 +774,14 @@ async function onFlash() {
   $("flash-what").textContent = `${m.board} · ${m.version}`;
   progress(0, 1);
 
+  /* Independent of the backup checkbox above, which only controls whether a
+     FILE gets offered - this is an in-memory safety net for the one case that
+     matters: an upgrade the Confirm screen just told the user would keep its
+     settings. Nothing to verify on a fresh install (nothing there yet) or a
+     chosen erase (the point was to wipe it). */
+  preFlashNvs = null;
+  const wantVerify = !eraseAll && verdict?.safe && session.nvs;
+
   try {
     /* Only if asked. It used to run regardless, which is a download nobody
        requested every time a board is reflashed - and on an erase it is the
@@ -754,6 +791,17 @@ async function onFlash() {
       $("flash-step").textContent = "Saving your settings…";
       await backupNvs(session);
       backedUp = true;
+    }
+
+    if (wantVerify) {
+      $("flash-step").textContent = "Reading settings to verify afterward…";
+      try {
+        const snap = await backupNvs(session, { download: false });
+        preFlashNvs = snap?.bytes ?? null;
+      } catch {
+        // The flash itself does not depend on this - just nothing to verify.
+        preFlashNvs = null;
+      }
     }
 
     $("flash-step").textContent = eraseAll ? "Erasing and writing…" : "Writing firmware…";
@@ -789,8 +837,90 @@ async function onFlash() {
        eraseAll flag, which is also true when someone chooses to wipe a board
        that has been running for a year. */
     reportFlash(verdict?.kind === "fresh" ? "install" : "upgrade");
+
+    // After renderDone(), not before: the done screen should appear straight
+    // away rather than wait on a second reconnect, and this only updates one
+    // card within it once it resolves.
+    await verifySettingsSurvived();
   } catch (err) {
     showFailure(err);
+  }
+}
+
+/**
+ * The safety net preFlashNvs exists for: reconnect once the board is back up
+ * and check nvs actually matches what was read right before writing, rather
+ * than trusting the Confirm screen's own promise unverified. A silent no-op
+ * whenever there was nothing to compare - see preFlashNvs's own comment for
+ * the cases that skips.
+ */
+async function verifySettingsSurvived() {
+  if (!preFlashNvs) return;
+  const before = preFlashNvs;
+  preFlashNvs = null; // one check per flash, whatever the outcome
+
+  const card = $("verify-status");
+  const text = $("verify-text");
+  const actions = $("verify-actions");
+  card.hidden = false;
+  actions.hidden = true;
+  text.textContent = "Checking the settings actually survived…";
+
+  let after;
+  try {
+    after = await reconnectAndReadNvs(session.port, session.nvs, () => {});
+  } catch (e) {
+    text.textContent =
+      `Could not reconnect to check: ${e.message}. Disconnect and reconnect, then use ` +
+      `"Restore a settings backup" on the Identified screen if anything looks wrong.`;
+    return;
+  }
+
+  const same = before.length === after.length && before.every((b, i) => b === after[i]);
+  if (same) {
+    text.textContent = "Confirmed — the settings on the board match what was there before flashing.";
+    return;
+  }
+
+  text.textContent =
+    "The settings on the board no longer match what was there before flashing — the upgrade did not " +
+    "keep them despite the Confirm screen saying it would.";
+  actions.hidden = false;
+  $("verify-restore").onclick = () => onVerifyRestore(before);
+}
+
+/** Write the pre-flash snapshot verifySettingsSurvived() found a mismatch against, then reboot. */
+async function onVerifyRestore(bytes) {
+  const text = $("verify-text");
+  const actions = $("verify-actions");
+  actions.hidden = true;
+  text.textContent = "Restoring the settings from before the flash…";
+
+  try {
+    // A fresh sync: reconnectAndReadNvs() already closed its own transport,
+    // there is nothing live left over from the flash to reuse for a write.
+    const { transport, loader } = await syncLoader(session.port, () => {});
+    await restoreNvs(
+      { loader, nvs: session.nvs },
+      bytes,
+      {
+        onProgress: (written, total) => {
+          const pct = total ? Math.round((written / total) * 100) : 0;
+          text.textContent = `Restoring settings… ${pct}%`;
+        },
+      },
+    );
+
+    text.textContent = "Restarting the board…";
+    await detachTransport({ transport });
+
+    const boot = await watchBoot(session.port, () => {});
+    text.textContent = boot.problem
+      ? `Settings restored, but the board did not come back cleanly: ${boot.problem}.`
+      : "Settings restored — the board has restarted with what was there before the flash.";
+  } catch (e) {
+    text.textContent = `Could not restore: ${e.message}`;
+    actions.hidden = false;
   }
 }
 
