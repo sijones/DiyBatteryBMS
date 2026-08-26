@@ -316,6 +316,7 @@ function renderChoiceList() {
           </div>
           <div class="choice-detail${c.compat.ok ? "" : " bad"}">${esc(c.compat.ok ? c.manifest.detail : c.compat.reason)}</div>
           ${c.compat.ok && hidden ? `<div class="choice-note">Best match of ${hidden + 1} builds for this board</div>` : ""}
+          ${c.compat.ok && c.manifest.hint ? `<div class="choice-note">${esc(c.manifest.hint)}</div>` : ""}
         </div>
       </label>`;
 

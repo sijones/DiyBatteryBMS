@@ -62,7 +62,15 @@ const BOARDS = {
   "esp32dev": { label: "ESP32 with MCP2515", detail: "CAN over SPI · CS 2, INT 22" },
   "esp32plus": { label: "ESP32 'plus' board", detail: "CAN over SPI · CS 5, INT 13" },
   "esp32-ESPCAN": { label: "LilyGo T-CAN485", detail: "Built-in CAN · TX 27, RX 26, EN 23" },
-  "esp32s3-ESPCAN": { label: "ESP32-S3 DevKit, built-in CAN", detail: "TWAI · TX 27, RX 26, EN 23" },
+  "esp32s3-ESPCAN": {
+    label: "ESP32-S3 DevKit, built-in CAN",
+    detail: "TWAI · TX 27, RX 26, EN 23",
+    // The pins above are only the default until the Settings page changes
+    // them - TWAI runs on whichever GPIOs are configured there, not ones
+    // baked into the build. Also fits boards wired differently, as long as
+    // their CAN pins get set to match after flashing.
+    hint: "Also fits the Waveshare ESP32-S3-CAN-RS485 — set CAN pins to TX 16, RX 15, EN 10 on the Settings page after flashing.",
+  },
   "esp32s3-MCP": { label: "ESP32-S3 with MCP2515", detail: "CAN over SPI" },
   "xiao-esp32s3": { label: "XIAO ESP32-S3 + CAN expansion", detail: "MCP2515 over SPI · CS 44" },
   "esp32c3-ESPCAN": { label: "ESP32-C3 with built-in CAN", detail: "TWAI · TX 6, RX 7" },
@@ -262,7 +270,7 @@ function describe(env, opts) {
     .filter(Boolean)
     .join(" · ");
 
-  return { label: base.label, detail, psram };
+  return { label: base.label, detail, psram, hint: base.hint ?? null };
 }
 
 /**
@@ -349,6 +357,9 @@ for (const env of Object.keys(ini)) {
         env,
         board: board.label,
         detail: board.detail,
+        // A second board this same build fits, when its wiring differs enough
+        // to be worth calling out - null for every family that has only one.
+        hint: board.hint,
         chipFamily: CHIP_FAMILY[chip],
         // Minimum flash the partition table needs. A 16MB table on a 4MB chip
         // is the fastest way to brick a board, so the flasher greys those out.
