@@ -67,9 +67,16 @@ const BOARDS = {
     detail: "TWAI · TX 27, RX 26, EN 23",
     // The pins above are only the default until the Settings page changes
     // them - TWAI runs on whichever GPIOs are configured there, not ones
-    // baked into the build. Also fits boards wired differently, as long as
-    // their CAN pins get set to match after flashing.
-    hint: "Also fits the Waveshare ESP32-S3-CAN-RS485 — set CAN pins to TX 16, RX 15, EN 10 on the Settings page after flashing.",
+    // baked into the build.
+  },
+  "esp32s3-ESPCAN-waveshare": {
+    label: "Waveshare ESP32-S3-RS485-CAN",
+    detail: "TWAI · TX 15, RX 16, no EN pin",
+    // Unlike every other S3 build, native USB is the only console this board
+    // has - there's no UART0 broken out to fall back to - so this one keeps
+    // CDC on at the cost of s3_base's reset/overrun/panic-backtrace tradeoffs.
+    // See platformio.ini's esp32s3-ESPCAN-waveshare env for the full reasoning.
+    hint: "Console and WiFi-setup wizard both need this build specifically - the generic ESP32-S3 DevKit build has no console on this board's USB port.",
   },
   "esp32s3-MCP": { label: "ESP32-S3 with MCP2515", detail: "CAN over SPI" },
   "xiao-esp32s3": { label: "XIAO ESP32-S3 + CAN expansion", detail: "MCP2515 over SPI · CS 44" },

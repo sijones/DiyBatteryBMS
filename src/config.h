@@ -29,7 +29,7 @@
 
 #define SYSLOG 1
 
-#define FW_VERSION "3.0.0-BETA6"
+#define FW_VERSION "3.0.0-BETA7"
 
 #if defined(ESPCAN_C3)
   #define FW_BUILD "ESP32-C3 TWAI"
@@ -41,6 +41,27 @@
   #define FW_BUILD "ESP32-S3 MCP2515"
 #else
   #define FW_BUILD "ESP32 MCP2515"
+#endif
+
+// CAN pin defaults written to NVS on first boot. Every other ESPCAN board
+// still starts at 0/0/0 ("must be set via web interface") because its env
+// fits more than one physical wiring - the Waveshare env is the only one
+// that IS one fixed wiring, so it is the only one worth defaulting. 0 for
+// the enable pin is a real value here, not a placeholder: this board's CAN
+// transceiver has no software enable line at all.
+#if defined(ESPCAN_S3_WAVESHARE)
+  #define initCAN_TX_PIN 15
+  #define initCAN_RX_PIN 16
+  #define initCAN_EN_PIN 0
+  // GPIO1/GPIO2 are the two data lines on this board's pluggable IO header
+  // (J4), unused by anything else on the board - GPIO1 is wired to the VE.Direct
+  // RX default below.
+  #define initVictronRX 1
+#else
+  #define initCAN_TX_PIN 0
+  #define initCAN_RX_PIN 0
+  #define initCAN_EN_PIN 0
+  #define initVictronRX 0
 #endif
 
 #define initBattChargeVoltage 0       // Battery Charge Voltage sent to inverter

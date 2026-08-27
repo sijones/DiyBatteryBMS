@@ -158,12 +158,16 @@ void setup()
     // pref.putBool("MQTTEnabled", false);
     pref.putUInt8(ccCanCSPin, 0); // Must be set via web interface
 #endif
-    pref.putUInt8(ccVictronRX, 0); // Must be set via web interface
-    pref.putUInt8(ccVictronTX, 0); // Must be set via web interface
+    // 0 on a non-Waveshare build means "must be set via web interface"; see
+    // config.h for why the Waveshare build defaults RX instead.
+    pref.putUInt8(ccVictronRX, initVictronRX);
+    pref.putUInt8(ccVictronTX, 0); // VE.Direct is listen-only, TX need not be wired
 #ifdef ESPCAN
-    pref.putUInt8(ccCAN_EN_PIN, 0); // Must be set via web interface
-    pref.putUInt8(ccCAN_RX_PIN, 0); // Must be set via web interface
-    pref.putUInt8(ccCAN_TX_PIN, 0); // Must be set via web interface
+    // 0 on a non-Waveshare build means "must be set via web interface"; see
+    // config.h for why the Waveshare build defaults these instead.
+    pref.putUInt8(ccCAN_EN_PIN, initCAN_EN_PIN);
+    pref.putUInt8(ccCAN_RX_PIN, initCAN_RX_PIN);
+    pref.putUInt8(ccCAN_TX_PIN, initCAN_TX_PIN);
 #endif
     pref.putUInt16(ccChargeVolt, initBattChargeVoltage);
     pref.putUInt16(ccOverVoltage, initBattOverVoltage);
@@ -308,7 +312,10 @@ void setup()
     uint8_t tx = pref.getUInt8(ccCAN_TX_PIN, 0);
     uint8_t rx = pref.getUInt8(ccCAN_RX_PIN, 0);
     uint8_t en = pref.getUInt8(ccCAN_EN_PIN, 0);
-    if (tx && rx && en && !IsForbiddenPin(tx) && !IsForbiddenPin(rx) && !IsForbiddenPin(en)) {
+    // en==0 means this board's transceiver has no software enable line, not
+    // "not configured yet" - CANBUS::Begin() already skips driving it in that
+    // case, so the startup gate here has to match rather than refuse to try.
+    if (tx && rx && !IsForbiddenPin(tx) && !IsForbiddenPin(rx) && (!en || !IsForbiddenPin(en))) {
       WS_LOG_I("Initializing CAN Bus (TWAI) on TX:%d RX:%d EN:%d", tx, rx, en);
       if(Inverter.Begin(tx, rx, en))
       {

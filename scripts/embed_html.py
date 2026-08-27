@@ -142,7 +142,14 @@ def generate_embedded_html(source, target, env):
           AckUpdate('can_en_pin');'''
             }
         }
-        
+        # Same fields as the DevKit S3 family - the Settings page's CAN pin
+        # inputs are plain number fields with no board-specific default baked
+        # in, so there is nothing here that differs by wiring. The Waveshare
+        # env has no -Nmb/-psram suffix (fixed single-SKU module, see
+        # platformio.ini), so it needs its own key rather than falling out of
+        # the suffix strip below the way esp32s3-ESPCAN-16mb-psram does.
+        can_configs['esp32s3-ESPCAN-waveshare'] = can_configs['esp32s3-ESPCAN']
+
         # Get config for this environment.
         #
         # can_configs is keyed by WIRING FAMILY (e.g. 'esp32s3-ESPCAN'), but
@@ -164,7 +171,15 @@ def generate_embedded_html(source, target, env):
         # is trimmed to match rather than left to discover that by trying:
         # every env here states PSRAM in its own name (see the header comment
         # in platformio.ini), so it is known at build time, not guessed.
-        board_has_psram = env_name.endswith('-psram') or env_name == 'xiao-esp32s3'
+        #
+        # Fixed single-SKU boards (XIAO, Waveshare) are the exception - their
+        # module always has PSRAM, so there is no -psram/no-psram pair to name
+        # in the env the way the DevKit families need one, the same reason
+        # they are missing from can_configs above.
+        board_has_psram = (
+            env_name.endswith('-psram')
+            or env_name in ('xiao-esp32s3', 'esp32s3-ESPCAN-waveshare')
+        )
 
         if board_has_psram:
             wifi_tab_label = 'WiFi/BLE/MQTT'

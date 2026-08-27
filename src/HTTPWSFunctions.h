@@ -1338,7 +1338,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       HANDLE_PIN_EX("victrontxpin", ccVictronTX, true) // VE.Direct is listen-only, TX need not be wired
       HANDLE_PIN("can_rx_pin", ccCAN_RX_PIN)
       HANDLE_PIN("can_tx_pin", ccCAN_TX_PIN)
-      HANDLE_PIN("can_en_pin", ccCAN_EN_PIN)
+      HANDLE_PIN_EX("can_en_pin", ccCAN_EN_PIN, true) // some boards' CAN transceiver has no software enable line
       #undef HANDLE_PIN
       #undef HANDLE_PIN_EX
 
