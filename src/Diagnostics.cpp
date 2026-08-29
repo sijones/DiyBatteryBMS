@@ -201,6 +201,18 @@ void DiagnosticsClass::Begin()
 void DiagnosticsClass::Loop()
 {
   const uint32_t now = millis();
+
+#if defined(BMS_S3)
+  // Its own interval, independent of the once-a-second gate below - 5s is
+  // enough resolution to be useful as "headroom right now" without the
+  // sampling itself (one uxTaskGetSystemState() call) running any more often
+  // than it needs to.
+  if ((uint32_t)(now - _lastCpuTickMs) >= 5000) {
+    _lastCpuTickMs = now;
+    SampleCpuUsage();
+  }
+#endif
+
   if ((uint32_t)(now - _lastTickMs) < 1000) return;
   _lastTickMs = now;
 
@@ -356,3 +368,43 @@ void DiagnosticsClass::ReportTasks()
   _lastSpareTotal   = spareTotal;
   _lastTaskCheckMs  = millis();
 }
+
+#if defined(BMS_S3)
+/* Each core's own idle task (FreeRTOS names them IDLE0/IDLE1 and pins each to
+   its core) only runs when that core has nothing else ready to run - so its
+   share of a wall-clock window IS that core's own idle fraction, no per-core
+   division needed. The window is measured independently via
+   esp_timer_get_time() rather than trusting uxTaskGetSystemState()'s own
+   pulTotalRunTime total, which on a dual-core SMP build is not documented
+   clearly enough to rely on - a task's ulRunTimeCounter and esp_timer both
+   count the same shared microsecond clock regardless, so the ratio holds
+   either way. */
+void DiagnosticsClass::SampleCpuUsage()
+{
+  const UBaseType_t n = uxTaskGetNumberOfTasks();
+  TaskStatus_t* st = (TaskStatus_t*)malloc(n * sizeof(TaskStatus_t));
+  if (!st) return;
+  const UBaseType_t got = uxTaskGetSystemState(st, n, nullptr);
+
+  uint32_t idle0 = 0, idle1 = 0;
+  bool found0 = false, found1 = false;
+  for (UBaseType_t i = 0; i < got; i++) {
+    if (!strcmp(st[i].pcTaskName, "IDLE0"))      { idle0 = st[i].ulRunTimeCounter; found0 = true; }
+    else if (!strcmp(st[i].pcTaskName, "IDLE1")) { idle1 = st[i].ulRunTimeCounter; found1 = true; }
+  }
+  free(st);
+
+  const int64_t nowUs = esp_timer_get_time();
+  if (_haveIdlePrev) {
+    const int64_t windowUs = nowUs - _lastCpuSampleUs;
+    if (windowUs > 0) {
+      if (found0) _idleCore0Percent = 100.0f * (float)(idle0 - _prevIdle0Runtime) / (float)windowUs;
+      if (found1) _idleCore1Percent = 100.0f * (float)(idle1 - _prevIdle1Runtime) / (float)windowUs;
+    }
+  }
+  _prevIdle0Runtime = idle0;
+  _prevIdle1Runtime = idle1;
+  _lastCpuSampleUs  = nowUs;
+  _haveIdlePrev     = true;
+}
+#endif

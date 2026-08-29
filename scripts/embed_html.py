@@ -236,7 +236,33 @@ def generate_embedded_html(source, target, env):
             ble_shuntsource_option = ''
             ble_fallbacksource_option = ''
             ble_shunt_section = ''
-        
+
+        # Per-core CPU headroom (Diagnostics.cpp's SampleCpuUsage(), gated the
+        # same way there). S3-only by request - every S3 env's name contains
+        # 'esp32s3' (the DevKit family and xiao-esp32s3 alike), which nothing
+        # else here does.
+        board_is_s3 = 'esp32s3' in env_name
+        if board_is_s3:
+            cpu_headroom_section = '''<div class="stat-box stat-status">
+            <div class="stat-label">CPU Headroom (Core 0)</div>
+            <div class="stat-value sm" id="cpuHeadroom0">--</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">CPU Headroom (Core 1)</div>
+            <div class="stat-value sm" id="cpuHeadroom1">--</div>
+          </div>'''
+            cpu_headroom_handler = '''if(obj.hasOwnProperty('cpuheadroom0')) {
+        var e0=document.getElementById('cpuHeadroom0');
+        if(e0) e0.textContent = obj.cpuheadroom0 >= 0 ? obj.cpuheadroom0.toFixed(0) + '%' : '--';
+      }
+      if(obj.hasOwnProperty('cpuheadroom1')) {
+        var e1=document.getElementById('cpuHeadroom1');
+        if(e1) e1.textContent = obj.cpuheadroom1 >= 0 ? obj.cpuheadroom1.toFixed(0) + '%' : '--';
+      }'''
+        else:
+            cpu_headroom_section = ''
+            cpu_headroom_handler = ''
+
         # The fan field used to be hidden on the C3, which has no MCPWM. The fan
         # now runs on LEDC, which every variant has, so it is shown everywhere.
         fan_field = '''<div class="form-group">
@@ -256,7 +282,9 @@ def generate_embedded_html(source, target, env):
         html_content = html_content.replace('{{BLE_SHUNTSOURCE_OPTION}}', ble_shuntsource_option)
         html_content = html_content.replace('{{BLE_FALLBACKSOURCE_OPTION}}', ble_fallbacksource_option)
         html_content = html_content.replace('{{BLE_SHUNT_SECTION}}', ble_shunt_section)
-        
+        html_content = html_content.replace('{{CPU_HEADROOM_SECTION}}', cpu_headroom_section)
+        html_content = html_content.replace('{{CPU_HEADROOM_HANDLER}}', cpu_headroom_handler)
+
         # Gzip the HTML - served with Content-Encoding: gzip, decompressed by the browser.
         # mtime=0 keeps output byte-identical between builds so the header only changes
         # when the HTML actually changes.

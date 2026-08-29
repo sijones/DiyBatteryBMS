@@ -126,6 +126,19 @@ bool FirstRun = true;
 
 void setup()
 {
+  /* setup() and loop() both run inside the Arduino core's own loopTask, which
+     the framework creates at priority 1 (cores/esp32/main.cpp) - the lowest
+     priority anything in this project runs at, on whichever core
+     CONFIG_ARDUINO_RUNNING_CORE names (1, here). CANBUS's send task shares
+     that core at priority 6, so loop() - which is what drains VE.Direct's
+     Serial1 - was the lowest-priority task on its own core, able to be
+     preempted for as long as CANBUS had work. Priority 7 clears that while
+     staying under AsyncTCP's task (priority 10, unpinned - may or may not
+     land on this core), which still needs to win when it actually has
+     network data waiting. NULL means "the calling task", which is this
+     one. */
+  vTaskPrioritySet(NULL, 7);
+
   pref.begin();
   Serial.begin(115200);
 #if defined(BMS_S3) || defined(BMS_C3)

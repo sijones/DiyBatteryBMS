@@ -2191,6 +2191,7 @@
             <div class="stat-label">App Partition</div>
             <div class="stat-value sm" id="fwPartition">--</div>
           </div>
+          {{CPU_HEADROOM_SECTION}}
         </div>
 
         <div id="partitionWarn" class="status-warnings error" hidden>
@@ -3576,6 +3577,7 @@
         var w=document.getElementById('partitionWarn');
         if(w) w.hidden = !obj.legacypartitions;
       }
+      {{CPU_HEADROOM_HANDLER}}
       if(obj.hasOwnProperty('wifihostname') && obj.wifihostname) {
         var h=document.getElementById('hostName');
         if(h) { h.textContent=obj.wifihostname; document.getElementById('hostMeta').hidden = false; }

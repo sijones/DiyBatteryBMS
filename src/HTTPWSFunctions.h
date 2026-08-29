@@ -24,6 +24,32 @@ extern uint8_t activeShuntLink;
 #include "RemoteOverride.h"
 #include "GPIOForbidden.h"
 
+// Every GPIO role the web UI lets the user pin-assign. Kept in one place so a
+// newly assigned pin can be checked against every other role, not just its own.
+struct PinRole { const char* field; const char* prefKey; };
+static const PinRole PIN_ROLES[] = {
+  {"fanpin",       ccFanPin},
+  {"onewirepin",   ccOneWirePin},
+  {"canbuscspin",  ccCanCSPin},
+  {"victronrxpin", ccVictronRX},
+  {"victrontxpin", ccVictronTX},
+  {"can_rx_pin",   ccCAN_RX_PIN},
+  {"can_tx_pin",   ccCAN_TX_PIN},
+  {"can_en_pin",   ccCAN_EN_PIN},
+};
+
+// Field name of another configured role already assigned to `pin`, or nullptr
+// if `pin` is free. `excludeField` is the role being written, so a pin is not
+// reported as conflicting with its own previously stored value.
+static inline const char* FindPinConflict(uint8_t pin, const char* excludeField) {
+  if (pin == 0) return nullptr;
+  for (const PinRole &role : PIN_ROLES) {
+    if (strcmp(role.field, excludeField) == 0) continue;
+    if (pref.getUInt8(role.prefKey, 0) == pin) return role.field;
+  }
+  return nullptr;
+}
+
 volatile bool otaInProgress = false;
 
 // Broadcasts skipped for want of a big enough contiguous block. Non-zero means
@@ -733,6 +759,13 @@ static void buildDataDoc(JsonDocument& doc, bool All)
   }
 
   doc["RealTime"] = true;
+#if defined(BMS_S3)
+  // Diag samples these every ~5s, not every broadcast - the field rides along
+  // on the existing RealTime tick rather than earning its own, but the value
+  // itself only actually changes on Diag's own schedule.
+  doc["cpuheadroom0"] = Diag.CpuHeadroomCore0();
+  doc["cpuheadroom1"] = Diag.CpuHeadroomCore1();
+#endif
   taskENTER_CRITICAL(&(Inverter.CANMutex));
   /* One decimal, always, including the .0.
    *
@@ -1328,8 +1361,10 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         if (!doc[field].isNull()) { \
           uint8_t _pv = (uint8_t) doc[field]; \
           handled = true; \
+          const char* _conflict = FindPinConflict(_pv, field); \
           if (_pv == 0 && !(allowZero)) { log_w("Ignoring %s value 0", field); } \
           else if (_pv != 0 && IsForbiddenPin(_pv)) { wsclient->printf("{\"ERROR\" : \"%s %u is forbidden\"}", field, _pv); } \
+          else if (_conflict) { wsclient->printf("{\"ERROR\" : \"%s %u already used by %s\"}", field, _pv, _conflict); } \
           else { pref.putUInt8(prefKey, _pv); notifyWSClients(); } \
         }
       #define HANDLE_PIN(field, prefKey) HANDLE_PIN_EX(field, prefKey, false)
@@ -1692,16 +1727,23 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       if (!doc["fanpin"].isNull()) {
         uint8_t value = doc["fanpin"];
         if (value == 0) {
-          log_w("Ignoring fanpin value 0");
           handled = true;
+          pref.putUInt8(ccFanPin,value);
+          FanDeinit();
+          WS_LOG_I("Fan disabled (fanpin cleared)");
+          notifyWSClients();
         } else if (IsForbiddenPin(value)) {
           wsclient->printf("{\"ERROR\" : \"fanpin %u is forbidden\"}", value);
+          handled = true;
+        } else if (const char* conflict = FindPinConflict(value, "fanpin")) {
+          wsclient->printf("{\"ERROR\" : \"fanpin %u already used by %s\"}", value, conflict);
           handled = true;
         } else {
           handled = true;
           pref.putUInt8(ccFanPin,value);
-          if (!FAN_INIT)
-            FanInit(value);
+          if (FAN_INIT)
+            FanDeinit();
+          FanInit(value);
           notifyWSClients();
         }
       }
@@ -1713,6 +1755,9 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           handled = true;
         } else if (IsForbiddenPin(value)) {
           wsclient->printf("{\"ERROR\" : \"onewirepin %u is forbidden\"}", value);
+          handled = true;
+        } else if (const char* conflict = FindPinConflict(value, "onewirepin")) {
+          wsclient->printf("{\"ERROR\" : \"onewirepin %u already used by %s\"}", value, conflict);
           handled = true;
         } else {
           handled = true;

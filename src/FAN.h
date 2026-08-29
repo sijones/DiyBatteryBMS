@@ -60,6 +60,20 @@ void FanInit(uint8_t FAN_PIN)
     log_d("Fan PWM on GPIO %u at %u Hz", FAN_PIN, FANPWMFREQ);
 }
 
+void FanDeinit()
+{
+    if (!FAN_INIT) return;
+
+    ledcWrite(_fanPin, 0);
+    ledcDetach(_fanPin);
+    gpio_pulldown_dis((gpio_num_t) _fanPin);
+    log_d("Fan PWM deinitialized on GPIO %u", _fanPin);
+
+    _fanPin = 0;
+    FAN_INIT = false;
+    FAN_PWM = 0;
+}
+
 void FanUpdate(float Speed)
 {
     if (!FAN_INIT) return;
