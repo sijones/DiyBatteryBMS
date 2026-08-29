@@ -3459,9 +3459,28 @@
         var viaBle = obj.shuntlink === 'ble';
         var viaMqtt = obj.shuntlink === 'mqtt';
         var badge = document.getElementById('shuntLink');
-        if(badge) badge.textContent = viaBle ? 'over Bluetooth'
-                                    : viaMqtt ? 'over MQTT'
-                                    : obj.shuntlink === 'vedirect' ? 'over VE.Direct' : 'not seen yet';
+        if(badge) {
+          badge.textContent = viaBle ? 'over Bluetooth'
+                                      : viaMqtt ? 'over MQTT'
+                                      : obj.shuntlink === 'vedirect' ? 'over VE.Direct' : 'not seen yet';
+
+          /* Green when the link actually answering is the configured primary,
+             orange when it is only the fallback taking over, red when nothing
+             is answering at all. shuntsource/fallbacksource are numeric
+             (SHUNT_SRC_* from mEEPROM.h) and only arrive on a full sync, so
+             they are read back off their own <select>s rather than cached
+             from this message - which may not carry them. */
+          badge.classList.remove('v-ok', 'v-warn', 'v-err');
+          var SHUNT_SRC_NAMES = ['vedirect', 'ble', 'mqtt'];
+          var primarySel = document.getElementById('shuntsource');
+          var fallbackSel = document.getElementById('fallbacksource');
+          var primaryName = primarySel ? SHUNT_SRC_NAMES[Number(primarySel.value)] : undefined;
+          var fallbackName = (fallbackSel && Number(fallbackSel.value) !== 255)
+                              ? SHUNT_SRC_NAMES[Number(fallbackSel.value)] : undefined;
+          if (obj.shuntlink === 'none') badge.classList.add('v-err');
+          else if (obj.shuntlink === primaryName) badge.classList.add('v-ok');
+          else if (obj.shuntlink === fallbackName) badge.classList.add('v-warn');
+        }
 
         /* MQTT carries readings and nothing else: no model, firmware, serial or
            product id travels with a bare number on a topic. So the whole
