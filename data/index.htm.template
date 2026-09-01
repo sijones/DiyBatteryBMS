@@ -207,6 +207,7 @@
       transition: background .3s, box-shadow .3s;
     }
     .dot.connected { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+    .dot.fallback { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent); }
     .conn-status.online { color: var(--text); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
 
     /* ---------- Tabs ---------- */
@@ -1316,6 +1317,7 @@
       .danger-body { border-top-color: var(--err); }
       .btn-danger { border-color: var(--err); }
       .dot.connected { box-shadow: none; }
+      .dot.fallback { box-shadow: none; }
       .toggle-box[aria-pressed="true"] .switch { background: var(--ok); }
       .toggle-box[aria-pressed="true"].tg-force .switch { background: var(--err); }
       input:focus, select:focus { box-shadow: 0 0 0 3px var(--accent-dim); }
@@ -3062,6 +3064,29 @@
       reconnectTimer = setTimeout(initWebSocket, delay);
     }
 
+    /* 'ok' when the link actually answering is the configured primary, 'warn'
+       when it is only the fallback covering for it, 'err' when nothing is
+       answering at all, undefined if there is nothing yet to judge. Shared by
+       the shunt-link badge and the Home tab's Shunt Data dot, so a silent
+       fallback reads the same way in both places rather than looking healthy
+       on one and not the other. shuntsource/fallbacksource are numeric
+       (SHUNT_SRC_* from mEEPROM.h) and only arrive on a full sync, so they are
+       read back off their own <select>s rather than cached from a message
+       that may not carry them. */
+    function ShuntTier(link) {
+      if (link === undefined) return undefined;
+      if (link === 'none') return 'err';
+      var SHUNT_SRC_NAMES = ['vedirect', 'ble', 'mqtt'];
+      var primarySel = document.getElementById('shuntsource');
+      var fallbackSel = document.getElementById('fallbacksource');
+      var primaryName = primarySel ? SHUNT_SRC_NAMES[Number(primarySel.value)] : undefined;
+      var fallbackName = (fallbackSel && Number(fallbackSel.value) !== 255)
+                          ? SHUNT_SRC_NAMES[Number(fallbackSel.value)] : undefined;
+      if (link === primaryName) return 'ok';
+      if (link === fallbackName) return 'warn';
+      return undefined;
+    }
+
     function onMessage(event) {
       // One malformed frame must not take the handler down with it - everything
       // after this point, dashboard updates included, would stop arriving.
@@ -3443,9 +3468,18 @@
         var viaBle = obj.shuntlink === 'ble';
         var viaMqtt = obj.shuntlink === 'mqtt';
         var badge = document.getElementById('shuntLink');
-        if(badge) badge.textContent = viaBle ? 'over Bluetooth'
-                                    : viaMqtt ? 'over MQTT'
-                                    : obj.shuntlink === 'vedirect' ? 'over VE.Direct' : 'not seen yet';
+        if(badge) {
+          badge.textContent = viaBle ? 'over Bluetooth'
+                                      : viaMqtt ? 'over MQTT'
+                                      : obj.shuntlink === 'vedirect' ? 'over VE.Direct' : 'not seen yet';
+
+          // 'ok' when the link actually answering is the configured primary,
+          // 'warn' when it is only the fallback taking over, 'err' when
+          // nothing is answering at all - see ShuntTier() above.
+          badge.classList.remove('v-ok', 'v-warn', 'v-err');
+          var tier = ShuntTier(obj.shuntlink);
+          if (tier) badge.classList.add('v-' + tier);
+        }
 
         /* MQTT carries readings and nothing else: no model, firmware, serial or
            product id travels with a bare number on a topic. So the whole
@@ -3532,7 +3566,20 @@
       }
       if(obj.hasOwnProperty('victrondata')) {
         var dot=document.getElementById('shuntDot');
-        if(dot) dot.classList.toggle('connected', !!obj.victrondata);
+        if(dot) {
+          // Green only on the configured primary; amber when the fallback is
+          // quietly covering for it - a plain "data is flowing" boolean would
+          // stay green through a fallback and hide exactly the thing this dot
+          // exists to catch. Falls back to the old plain boolean if shuntlink
+          // hasn't arrived yet (e.g. the very first frame after connecting).
+          var tier = ShuntTier(obj.shuntlink);
+          dot.classList.remove('connected', 'fallback');
+          if (tier === 'ok') dot.classList.add('connected');
+          else if (tier === 'warn') dot.classList.add('fallback');
+          else if (tier === undefined && obj.shuntlink === undefined) {
+            dot.classList.toggle('connected', !!obj.victrondata);
+          }
+        }
         latestState.victrondata = obj.victrondata;
       }
       if(obj.hasOwnProperty('mqttconnected')) {
