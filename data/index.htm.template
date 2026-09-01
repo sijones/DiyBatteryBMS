@@ -1322,8 +1322,6 @@
       input:focus, select:focus { box-shadow: 0 0 0 3px var(--accent-dim); }
     }
   </style>
-  <!-- Optional features may add their own <style>/<script> here. Empty in a
-       build that has none - see scripts/embed_html.py. -->
   {{EXT_HEAD}}
 </head>
 <body>
@@ -1528,9 +1526,7 @@
           </button>
         </div>
 
-        <!-- Optional feature panels, below the built-in readouts. -->
         {{EXT_HOME_PANELS}}
-
         <div class="last-update">
           Last updated <span id="lastUpdate">--</span>
         </div>
@@ -2064,7 +2060,6 @@
           </div>
         </details>
 
-        <!-- Optional feature settings, after the built-in ones. -->
         {{EXT_SETTINGS_SECTIONS}}
       </section>
 
@@ -3629,7 +3624,6 @@
         if(w) w.hidden = !obj.legacypartitions;
       }
       {{CPU_HEADROOM_HANDLER}}
-      /* Optional features read their own fields off the same update. */
       {{EXT_WS_HANDLERS}}
       if(obj.hasOwnProperty('wifihostname') && obj.wifihostname) {
         var h=document.getElementById('hostName');
