@@ -935,6 +935,11 @@ static void buildDataDoc(JsonDocument& doc, bool All)
   doc["heapmin"] = Diag.HeapMin();
   doc["heapblock"] = Diag.BlockMin();
 
+  /* Optional features add their own fields last, so a feature can never
+     displace one of the fields above by picking the same key. No-op when none
+     are compiled in - see Features.h. */
+  Feature::BuildDocAll(doc, All);
+
 }
 
 /* The String form, for the MQTT publish of /Data - mqttPublish() wants a
@@ -2095,6 +2100,16 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           handled = true;
           ESP.restart();
         }
+      }
+
+      /* Optional features get the message last, after every built-in key has
+         had its turn, so a feature cannot shadow a core setter. Offered the
+         message even when something above already claimed it: the settings page
+         batches several keys into one update, and a feature's key can ride
+         along with core ones. */
+      if (Feature::HandleWSAll(doc)) {
+        handled = true;
+        notifyWSClients();
       }
 
       if (!handled)

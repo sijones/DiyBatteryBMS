@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>DIY Battery BMS</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='4' width='18' height='4.6' rx='2.3' fill='%2335c9d4'/%3E%3Crect x='3' y='10.2' width='12.5' height='4.6' rx='2.3' fill='%23e6edf5'/%3E%3Crect x='3' y='16.4' width='7' height='4.6' rx='2.3' fill='%23e6edf5' opacity='0.45'/%3E%3C/svg%3E">
+  <title>{{PRODUCT_TITLE}}</title>
+  <link rel="icon" type="image/svg+xml" href="{{PRODUCT_FAVICON}}">
   <style>
     /* ============================================================
-       DIY Battery BMS - instrumentation panel
+       {{PRODUCT_TITLE}} - instrumentation panel
        Design tokens. Dark is the default (wall-mounted / night use);
        light mode is a full first-class theme, not an afterthought.
        The theme toggle writes data-theme on <html>, which wins over
@@ -128,14 +128,13 @@
 
     .brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 200px; }
 
-    /* State-of-charge mark: three cells draining left to right, the full one
-       accented. Drawn from currentColor and --accent through classes rather
-       than fill= attributes, because CSS variables are not valid in SVG
-       presentation attributes - that is what lets one copy follow both themes. */
-    .brand-mark { width: 23px; height: 23px; flex: none; color: var(--text); }
-    .brand-mark .lvl-full { fill: var(--accent); }
-    .brand-mark .lvl      { fill: currentColor; }
-    .brand-mark .lvl-low  { fill: currentColor; opacity: .45; }
+    /* The brand mark, supplied by embed_html.py so a build can carry its own.
+       The stock one is a state-of-charge mark: three cells draining left to
+       right, the full one accented. Drawn from currentColor and --accent
+       through classes rather than fill= attributes, because CSS variables are
+       not valid in SVG presentation attributes - that is what lets one copy
+       follow both themes, and any replacement should keep that property. */
+    {{PRODUCT_MARK_CSS}}
 
     .brand-words { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 
@@ -1323,18 +1322,17 @@
       input:focus, select:focus { box-shadow: 0 0 0 3px var(--accent-dim); }
     }
   </style>
+  <!-- Optional features may add their own <style>/<script> here. Empty in a
+       build that has none - see scripts/embed_html.py. -->
+  {{EXT_HEAD}}
 </head>
 <body>
   <div class="container">
     <header class="header">
       <div class="brand">
-        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
-          <rect class="lvl-full" x="3" y="4" width="18" height="4.6" rx="2.3"/>
-          <rect class="lvl" x="3" y="10.2" width="12.5" height="4.6" rx="2.3"/>
-          <rect class="lvl-low" x="3" y="16.4" width="7" height="4.6" rx="2.3"/>
-        </svg>
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">{{PRODUCT_MARK_SVG}}</svg>
         <div class="brand-words">
-          <h1>diy<span class="accent">-</span>battery<span class="accent">-</span>bms</h1>
+          <h1>{{PRODUCT_WORDMARK}}</h1>
           <span class="subtitle">Inverter Bridge</span>
         </div>
       </div>
@@ -1529,6 +1527,9 @@
             <span class="switch" aria-hidden="true"></span>
           </button>
         </div>
+
+        <!-- Optional feature panels, below the built-in readouts. -->
+        {{EXT_HOME_PANELS}}
 
         <div class="last-update">
           Last updated <span id="lastUpdate">--</span>
@@ -2062,6 +2063,9 @@
             </div>
           </div>
         </details>
+
+        <!-- Optional feature settings, after the built-in ones. -->
+        {{EXT_SETTINGS_SECTIONS}}
       </section>
 
       <!-- WiFi/MQTT Tab -->
@@ -2172,7 +2176,7 @@
 
       <!-- Firmware Tab -->
       <section id="firmware" class="tab-pane" role="tabpanel" aria-labelledby="tab-firmware">
-        <div class="section-title">DIY Battery BMS</div>
+        <div class="section-title">{{PRODUCT_TITLE}}</div>
         <div class="stat-grid">
           <div class="stat-box stat-status">
             <div class="stat-label">Firmware Version</div>
@@ -3625,6 +3629,8 @@
         if(w) w.hidden = !obj.legacypartitions;
       }
       {{CPU_HEADROOM_HANDLER}}
+      /* Optional features read their own fields off the same update. */
+      {{EXT_WS_HANDLERS}}
       if(obj.hasOwnProperty('wifihostname') && obj.wifihostname) {
         var h=document.getElementById('hostName');
         if(h) { h.textContent=obj.wifihostname; document.getElementById('hostMeta').hidden = false; }

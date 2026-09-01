@@ -52,6 +52,9 @@ mEEPROM pref;
 #include "FAN.h"
 #include "VictronBLE.h"
 #include "MqttShunt.h"
+// Optional features register themselves - nothing to include or call per
+// feature, see Features.h. Their own headers are pulled in by their .cpp files.
+#include "Features.h"
 
 uint32_t SendCanBusMQTTUpdates;
 CANBUS Inverter;
@@ -448,6 +451,15 @@ void setup()
     log_e("Forbidden or missing GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
   }
 
+  /* Optional features, after the web server and the shunt/CAN hardware so one
+     may use any of them. Which are compiled in is decided by the env rather
+     than by anything here, so the count is logged - an empty registry on a
+     build expected to have one is otherwise invisible. */
+  if (Feature::Count() > 0) {
+    log_i("Starting %u optional feature(s)", Feature::Count());
+    Feature::SetupAll();
+  }
+
   /* Victron BLE. Only brought up when it is in play in one role or the other -
      the radio and its stack cost RAM that an install reading the shunt over the
      wire has no reason to spend. A fallback has to be listening before the
@@ -657,6 +669,9 @@ void loop()
 
   // Monitor WiFi scan completion and send results via WebSocket
   UpdateWifiScanResults();
+
+  // Optional features. No-op when none are compiled in.
+  Feature::LoopAll();
 
   // Read serial data with timeout protection to prevent watchdog issues
   uint32_t serialStartTime = millis();
