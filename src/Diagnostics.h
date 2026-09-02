@@ -53,8 +53,8 @@ public:
 #if defined(BMS_S3)
   /* % of the last ~5s window each core's idle task actually ran - i.e. how
      much CPU headroom that core has free for new work right now. S3-only:
-     needs per-core idle tasks to mean anything, and the classic ESP32/C3
-     boards were not asked for this. -1 until the first two samples have
+     needs per-core idle tasks to mean anything, and the classic ESP32 boards
+     were not asked for this. -1 until the first two samples have
      landed, about 5s after boot. */
   float CpuHeadroomCore0() const { return _idleCore0Percent; }
   float CpuHeadroomCore1() const { return _idleCore1Percent; }

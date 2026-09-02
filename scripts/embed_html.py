@@ -239,31 +239,6 @@ def generate_embedded_html(source, target, env):
           AckUpdate('can_rx_pin');
           AckUpdate('can_tx_pin');
           AckUpdate('can_en_pin');'''
-            },
-            'esp32c3-ESPCAN': {
-                'title': 'ESPCAN Configuration',
-                'can_fields': '''<div class="form-row">
-                <div class="form-group">
-                  <label for="can_rx_pin">ESPCAN RX Pin:</label>
-                  <input type="number" id="can_rx_pin" onchange="EnqueueUpdate('can_rx_pin')" onkeypress="HandleEnter(event, 'can_rx_pin')">
-                </div>
-                <div class="form-group">
-                  <label for="can_tx_pin">ESPCAN TX Pin:</label>
-                  <input type="number" id="can_tx_pin" onchange="EnqueueUpdate('can_tx_pin')" onkeypress="HandleEnter(event, 'can_tx_pin')">
-                </div>
-              </div>
-              <div class="form-row full">
-                <div class="form-group">
-                  <label for="can_en_pin">ESPCAN Power/Enable Pin:</label>
-                  <input type="number" id="can_en_pin" onchange="EnqueueUpdate('can_en_pin')" onkeypress="HandleEnter(event, 'can_en_pin')">
-                </div>
-              </div>''',
-                'can_handlers': '''if(obj.hasOwnProperty('can_rx_pin')) document.getElementById('can_rx_pin').value=obj.can_rx_pin;
-          if(obj.hasOwnProperty('can_tx_pin')) document.getElementById('can_tx_pin').value=obj.can_tx_pin;
-          if(obj.hasOwnProperty('can_en_pin')) document.getElementById('can_en_pin').value=obj.can_en_pin;
-          AckUpdate('can_rx_pin');
-          AckUpdate('can_tx_pin');
-          AckUpdate('can_en_pin');'''
             }
         }
         # Same fields as the DevKit S3 family - the Settings page's CAN pin

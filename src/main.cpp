@@ -144,8 +144,8 @@ void setup()
 
   pref.begin();
   Serial.begin(115200);
-#if defined(BMS_S3) || defined(BMS_C3)
-  // ESP32-S3 and ESP32-C3 USB-CDC needs time to initialize
+#if defined(BMS_S3)
+  // ESP32-S3 USB-CDC needs time to initialize
   delay(2000);
 #else
   delay(100);
@@ -480,8 +480,8 @@ void setup()
     }
   }
   // Start NTP Clock Set Task
-#if defined(BMS_S3) || defined(BMS_C3)
-  // ESP32-S3 and ESP32-C3 require more stack space for String operations and NTP
+#if defined(BMS_S3)
+  // ESP32-S3 requires more stack space for String operations and NTP
   xTaskCreate(&TaskSetClock,"taskSetClock", 8192, NULL, 5, NULL);
 #else
   xTaskCreate(&TaskSetClock,"taskSetClock", 4096, NULL, 5, NULL);

@@ -80,7 +80,9 @@ const BOARDS = {
   },
   "esp32s3-MCP": { label: "ESP32-S3 with MCP2515", detail: "CAN over SPI" },
   "xiao-esp32s3": { label: "XIAO ESP32-S3 + CAN expansion", detail: "MCP2515 over SPI · CS 44" },
-  "esp32c3-ESPCAN": { label: "ESP32-C3 with built-in CAN", detail: "TWAI · TX 6, RX 7" },
+  // No esp32c3-ESPCAN entry: C3 support was dropped, see platformio.ini's
+  // header. The esp32c3 chip mappings below stay - they are generic, and an
+  // existing C3 install still needs them to read its own firmware.
 };
 
 /* Read platformio.ini the way PlatformIO reads it, which is more than reading

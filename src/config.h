@@ -31,9 +31,7 @@
 
 #define FW_VERSION "3.0.0-BETA8"
 
-#if defined(ESPCAN_C3)
-  #define FW_BUILD "ESP32-C3 TWAI"
-#elif defined(ESPCAN_S3)
+#if defined(ESPCAN_S3)
   #define FW_BUILD "ESP32-S3 TWAI"
 #elif defined(ESPCAN)
   #define FW_BUILD "ESP32 TWAI"
