@@ -163,7 +163,6 @@ def package_release(source, target, env):
 
         candidates = {
             "firmware.bin": os.path.join(BUILD_DIR, "firmware.bin"),
-            "littlefs.bin": os.path.join(BUILD_DIR, "littlefs.bin"),
             "bootloader.bin": os.path.join(BUILD_DIR, "bootloader.bin"),
             "partitions.bin": os.path.join(BUILD_DIR, "partitions.bin"),
             # Shipped with the binaries so the upgrade path travels with the
@@ -242,9 +241,3 @@ def package_release(source, target, env):
 
 # Package after firmware is built (ensures at least firmware.bin exists)
 env.AddPostAction("$BUILD_DIR/firmware.bin", package_release)
-
-# Also package after building filesystem image if invoked separately
-try:
-    env.AddPostAction("buildfs", package_release)
-except Exception:
-    pass
