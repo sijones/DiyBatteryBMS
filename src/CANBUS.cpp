@@ -405,11 +405,36 @@ bool CANBUS::StartRunTask(bool Run)
   return true;
 }
 
+/* Core 1 on the dual-core parts, keeping the CAN send task off core 0 where
+   WiFi and lwIP run - see main.cpp's note on loopTask's priority, which is the
+   other half of the same arrangement.
+
+   The C3 has one core, and this is not a preference there but a crash. IDF's
+   FreeRTOS asserts the core ID against the count it was built for:
+
+     configASSERT( (xCoreID >= 0 && xCoreID < 1) || xCoreID == tskNO_AFFINITY )
+
+   compiled into libfreertos.a with the 1 baked in (CONFIG_FREERTOS_UNICORE=y),
+   and with assertions enabled at level 2, so it aborts rather than compiling
+   away. Passing 1 there panicked the device the moment CAN started - which is
+   why it went unseen: a C3 with its CAN pins still at 0 never reaches this,
+   CanBusAvailable being false, so the board only died once someone configured
+   it properly.
+
+   tskNO_AFFINITY rather than 0: on a single core it means the same thing, and
+   it says "no opinion" instead of asserting a placement this chip cannot
+   express. */
+#if CONFIG_FREERTOS_UNICORE
+  #define CAN_SEND_TASK_CORE tskNO_AFFINITY
+#else
+  #define CAN_SEND_TASK_CORE 1
+#endif
+
 bool CANBUS::StartRunTask()
 {
   if(CanBusAvailable && _canbusEnabled){
-  // Create task and pin to Core
-    xTaskCreatePinnedToCore(&canSendTask,"canSendTask",4096,this,6,&tHandle,1);
+    xTaskCreatePinnedToCore(&canSendTask,"canSendTask",4096,this,6,&tHandle,
+                            CAN_SEND_TASK_CORE);
     return true;
   }
   else

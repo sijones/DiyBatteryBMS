@@ -157,7 +157,20 @@ uint8_t ONEWIRE_PIN = 0;
 
 
 
-#define AppCore 1
-#define SysCore 0
+/* Which core to hand a task. Unused at present - CANBUS.cpp defines its own,
+   because config.h defines variables at namespace scope and so cannot be
+   included by a second translation unit without duplicate symbols at link.
+
+   Chip-aware, and that is not decoration: the C3 is single-core, and IDF's
+   FreeRTOS asserts a core ID against the count it was built for, aborting on
+   one it does not have. A bare `#define AppCore 1` here was a loaded gun for
+   whoever used it first on that part - see the note in CANBUS.cpp. */
+#if CONFIG_FREERTOS_UNICORE
+  #define AppCore tskNO_AFFINITY
+  #define SysCore tskNO_AFFINITY
+#else
+  #define AppCore 1
+  #define SysCore 0
+#endif
 
 #endif
