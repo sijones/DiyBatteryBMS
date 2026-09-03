@@ -781,7 +781,7 @@ static void buildDataDoc(JsonDocument& doc, bool All)
    * nothing parsing it has to change. */
   doc["battsoc"] = serialized(String(Inverter.BattSOCPermille() / 10.0f, 1));
   doc["battvoltage"] = Inverter.BattVoltage();
-  doc["battcurrent"] = Inverter.BattCurrentmA();
+  doc["battcurrent"] = Inverter.BattCurrentDeciA();
   doc["battpower"] = Inverter.BattPower();
   doc["batttemp"] = Inverter.BattTemp();
   doc["timetogo"] = Inverter.TimeToGo();
@@ -1115,7 +1115,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
     }
     else if (strncmp(data,"GetBattCurrent()",len)==0) {
       taskENTER_CRITICAL(&(Inverter.CANMutex));
-      int32_t current = Inverter.BattCurrentmA();
+      int32_t current = Inverter.BattCurrentDeciA();
       taskEXIT_CRITICAL(&(Inverter.CANMutex));
       wsclient->printf("%s", GetWSDataJson("battcurrent", String(current)).c_str());
     }

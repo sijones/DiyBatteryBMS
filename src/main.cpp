@@ -852,7 +852,7 @@ void loop()
     Lcd.Data.CANBusData.setValue(!Inverter.CanBusFailed());
     Lcd.Data.ForceCharging.setValue(Inverter.ForceCharge());
     
-    int32_t b = Inverter.BattCurrentmA();
+    int32_t b = Inverter.BattCurrentDeciA();
     if (b < 0)
       b = -b;
     

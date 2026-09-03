@@ -6,16 +6,17 @@
    downstream - charge phases, CAN, MQTT, the LCD - cannot tell which source it
    came from and needs no per-source handling.
 
-   Watch the units. Inverter.BattVoltage() is centivolts and BattCurrentmA() is
-   deciamps despite its name, which is what the VE.Direct path converts to
-   above; BLE carries mV and mA, so both are scaled here rather than anywhere
-   further downstream. */
+   Watch the units. Inverter.BattVoltage() is centivolts and BattCurrentDeciA()
+   is deciamps - both say so in their names now, which they did not always: the
+   current accessor was called BattCurrentmA while holding 0.1 A, and MQTT.md
+   had to warn readers the name was "actively misleading". BLE carries mV and
+   mA, so both are scaled here rather than anywhere further downstream. */
 void BLEDataProcess()
 {
   taskENTER_CRITICAL(&(Inverter.CANMutex));
 
   Inverter.BattVoltage((uint16_t)(VictronBle.VoltagemV / 10));      // mV -> centivolts
-  Inverter.BattCurrentmA((int32_t)(VictronBle.CurrentmA / 100));    // mA -> deciamps
+  Inverter.BattCurrentDeciA((int32_t)(VictronBle.CurrentmA / 100));    // mA -> deciamps
   Inverter.BattSOCPermille(VictronBle.SOCPermille);                 // kept at 0.1%
 
   // The shunt sends power as a derived figure over serial but not over BLE, so
@@ -33,7 +34,7 @@ void BLEDataProcess()
   }
 
   Lcd.Data.BattVolts.setValue(Inverter.BattVoltage());
-  Lcd.Data.BattAmps.setValue(Inverter.BattCurrentmA());
+  Lcd.Data.BattAmps.setValue(Inverter.BattCurrentDeciA());
   Lcd.Data.BattSOC.setValue(Inverter.BattSOC());
 
   taskEXIT_CRITICAL(&(Inverter.CANMutex));
@@ -64,7 +65,7 @@ void MQTTShuntDataProcess()
   taskENTER_CRITICAL(&(Inverter.CANMutex));
 
   Inverter.BattVoltage(MqttShunt.VoltageCentiV);
-  Inverter.BattCurrentmA(MqttShunt.CurrentDeciA);
+  Inverter.BattCurrentDeciA(MqttShunt.CurrentDeciA);
   Inverter.BattSOCPermille(MqttShunt.SOCPermille);
 
   /* Power is derived, as it is for BLE - no topic carries it. Units:
@@ -76,7 +77,7 @@ void MQTTShuntDataProcess()
     Inverter.BattTemp(MqttShunt.TempC);
 
   Lcd.Data.BattVolts.setValue(Inverter.BattVoltage());
-  Lcd.Data.BattAmps.setValue(Inverter.BattCurrentmA());
+  Lcd.Data.BattAmps.setValue(Inverter.BattCurrentDeciA());
   Lcd.Data.BattSOC.setValue(Inverter.BattSOC());
 
   taskEXIT_CRITICAL(&(Inverter.CANMutex));
@@ -96,13 +97,20 @@ void VEDataProcess()
     if (isNeg)
       parsedValue[pLen++] = '-';
 
+    int digits = 0;
     for (const char* p = value; *p; p++) {
-      if (isDigit((unsigned char)*p) && pLen < (int)sizeof(parsedValue) - 1)
+      if (isDigit((unsigned char)*p) && pLen < (int)sizeof(parsedValue) - 1) {
         parsedValue[pLen++] = *p;
+        digits++;
+      }
     }
     parsedValue[pLen] = '\0';
 
-    bool dataValid = (pLen > 0);
+    /* Count digits, not characters. pLen includes the sign, so a field holding
+       just "-" gave pLen == 1, passed as valid, and atol("-") returned 0 - a
+       malformed reading accepted as a genuine zero, which for current or SOC is
+       a plausible-looking value that quietly displaces the last good one. */
+    bool dataValid = (digits > 0);
     long parsedNum = dataValid ? atol(parsedValue) : 0;
 
     if (strcmp(key, "V") == 0)
@@ -121,8 +129,8 @@ void VEDataProcess()
       log_i("Battery Current Update: %smA", parsedValue);
       if (dataValid) {
         taskENTER_CRITICAL(&(Inverter.CANMutex));
-        Inverter.BattCurrentmA((int32_t)(parsedNum * 0.01));
-        Lcd.Data.BattAmps.setValue(Inverter.BattCurrentmA());
+        Inverter.BattCurrentDeciA((int32_t)(parsedNum * 0.01));
+        Lcd.Data.BattAmps.setValue(Inverter.BattCurrentDeciA());
         taskEXIT_CRITICAL(&(Inverter.CANMutex));
       }
     }

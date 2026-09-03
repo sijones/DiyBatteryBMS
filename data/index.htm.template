@@ -1597,7 +1597,7 @@
         <div class="form-row">
           <div class="form-group">
             <label for="adjuststep"><span class="tip" data-tip="Amount to increase or decrease the charge current each step during absorption phase to hold voltage steady.">Charge Adjust Step (A):</span></label>
-            <input type="number" id="adjuststep" min="0" max="100" step="0.1" onchange="EnqueueUpdate('adjuststep')" onkeypress="HandleEnter(event, 'adjuststep')">
+            <input type="number" id="adjuststep" placeholder="Off" min="0" max="100" step="0.1" onchange="EnqueueUpdate('adjuststep')" onkeypress="HandleEnter(event, 'adjuststep')">
           </div>
           <div class="form-group">
             <label for="minchargecurr"><span class="tip" data-tip="Lowest charge current allowed during absorption. The adjust step won't reduce below this value. Do not set this too low: many inverters ignore a limit of a few hundred milliamps, and a limit at or near zero while the voltage target stays high leaves them no way to shed surplus power - some respond by discharging the battery. A few amps is a safer floor than a fraction of one.">Min Charge (A):</span></label>
@@ -1610,7 +1610,7 @@
         <div class="form-row">
           <div class="form-group">
             <label for="lowsoclimit"><span class="tip" data-tip="Discharge is disabled when SOC drops to or below this percentage. Set 0 to disable.">Low SOC (Stop Discharge):</span></label>
-            <input type="number" id="lowsoclimit" min="0" max="100" onchange="EnqueueUpdate('lowsoclimit')" onkeypress="HandleEnter(event, 'lowsoclimit')">
+            <input type="number" id="lowsoclimit" placeholder="Off" min="0" max="100" onchange="EnqueueUpdate('lowsoclimit')" onkeypress="HandleEnter(event, 'lowsoclimit')">
             <div class="field-error" id="err_lowsoclimit"></div>
           </div>
           <div class="form-group">
@@ -1624,19 +1624,19 @@
         <div class="form-row col4">
           <div class="form-group">
             <label for="slowchargesoc1"><span class="tip" data-tip="When SOC reaches this %, charge current is reduced to capacity / divider 1.">Slow Charge SOC 1:</span></label>
-            <input type="number" id="slowchargesoc1" onchange="EnqueueUpdate('slowchargesoc1')" onkeypress="HandleEnter(event, 'slowchargesoc1')">
+            <input type="number" id="slowchargesoc1" placeholder="Off" onchange="EnqueueUpdate('slowchargesoc1')" onkeypress="HandleEnter(event, 'slowchargesoc1')">
           </div>
           <div class="form-group">
             <label for="slowchargesoc1div"><span class="tip" data-tip="Capacity divider for slow charge 1. Charge current = capacity / this value. E.g. 100Ah / 2 = C/2 (50A).">Divider 1:</span></label>
-            <input type="number" id="slowchargesoc1div" onchange="EnqueueUpdate('slowchargesoc1div')" onkeypress="HandleEnter(event, 'slowchargesoc1div')">
+            <input type="number" id="slowchargesoc1div" placeholder="Off" onchange="EnqueueUpdate('slowchargesoc1div')" onkeypress="HandleEnter(event, 'slowchargesoc1div')">
           </div>
           <div class="form-group">
             <label for="slowchargesoc2"><span class="tip" data-tip="Second slow charge threshold. When SOC reaches this %, charge current is reduced further using divider 2.">Slow Charge SOC 2:</span></label>
-            <input type="number" id="slowchargesoc2" onchange="EnqueueUpdate('slowchargesoc2')" onkeypress="HandleEnter(event, 'slowchargesoc2')">
+            <input type="number" id="slowchargesoc2" placeholder="Off" onchange="EnqueueUpdate('slowchargesoc2')" onkeypress="HandleEnter(event, 'slowchargesoc2')">
           </div>
           <div class="form-group">
             <label for="slowchargesoc2div"><span class="tip" data-tip="Capacity divider for slow charge 2. Charge current = capacity / this value.">Divider 2:</span></label>
-            <input type="number" id="slowchargesoc2div" onchange="EnqueueUpdate('slowchargesoc2div')" onkeypress="HandleEnter(event, 'slowchargesoc2div')">
+            <input type="number" id="slowchargesoc2div" placeholder="Off" onchange="EnqueueUpdate('slowchargesoc2div')" onkeypress="HandleEnter(event, 'slowchargesoc2div')">
           </div>
         </div>
 
@@ -1672,7 +1672,7 @@
         <div class="form-row">
           <div class="form-group">
             <label for="floatvoltage"><span class="tip" data-tip="Voltage held after absorption finishes, instead of stopping the charge outright. Leave at 0 and it is worked out from the charge voltage (1.5% below, which suits LiFePO4, NMC and LTO alike). Setting it at or above the charge voltage turns the float stage off, and the cycle ends at Complete with a 0 A limit - some inverters answer that by discharging the pack or shutting down their PV.">Float Voltage (V):</span></label>
-            <input type="number" id="floatvoltage" min="0" max="65" step="0.1" onchange="EnqueueUpdate('floatvoltage')" onkeypress="HandleEnter(event, 'floatvoltage')">
+            <input type="number" id="floatvoltage" placeholder="Auto" min="0" max="65" step="0.1" onchange="EnqueueUpdate('floatvoltage')" onkeypress="HandleEnter(event, 'floatvoltage')">
             <div class="field-note" id="note_floatvoltage"></div>
             <div class="field-error" id="err_floatvoltage"></div>
           </div>
@@ -2305,6 +2305,38 @@
     // Pins that are allowed to be unset. These show blank rather than 0, and send 0
     // when cleared so the firmware unassigns the pin instead of ignoring the update.
     const OPTIONAL_PIN_FIELDS = ['victrontxpin'];
+    /* Settings whose off switch is 0, so clearing the box turns the feature off
+       rather than being ignored. They also show blank instead of 0, so "not
+       set" and "set to zero" look the same because they are the same.
+
+       Without this a number field could never be un-set from the UI at all:
+       SendQueuedUpdate() drops an empty numeric field on the floor with only a
+       console line, so the box looked cleared, nothing was sent, and the next
+       broadcast put the old value back. Typing 0 by hand worked; clearing did
+       nothing, silently.
+
+       Only fields the firmware actually treats as off belong here, and each was
+       checked against the code rather than the label:
+
+         slowchargesoc1/2, slowchargesoc1div/2div  CANBUS.cpp:490-493 gates the
+                                                   whole taper on `> 0`
+         lowsoclimit                               documented "Set 0 to disable"
+         adjuststep                                CANBUS.cpp:554 `_adjustStep > 0`
+         floatvoltage                              0 = derive it from the charge
+                                                   voltage (see config.h)
+
+       Deliberately NOT here:
+         - the temperature limits. 0 is a real temperature and a meaningful one
+           (lithium should not charge below 0C), so blank must not become 0.
+         - highsoclimit, whose off value is 100, not 0.
+         - smartinterval, where 0 means "adjust every pass", not "never".
+         - syslogport, where 0 is not a valid port.
+         - the voltage/current limits and cell/capacity figures, where 0 would
+           quietly disable a protection or stop charging rather than switch off
+           an optional extra. */
+    const OPTIONAL_ZERO_FIELDS = ['slowchargesoc1','slowchargesoc1div',
+                                  'slowchargesoc2','slowchargesoc2div',
+                                  'lowsoclimit','adjuststep','floatvoltage'];
     /* Sent to the device but never written to NVS, so they must not raise the
        unsaved-changes bar - there is nothing to save. Controls on the Logs tab
        are covered separately by where they sit, not by name. */
@@ -2324,8 +2356,9 @@
     function SetFieldValue(fieldId, rawValue) {
       const el = document.getElementById(fieldId);
       if (!el) return;
-      if (OPTIONAL_PIN_FIELDS.includes(fieldId) && Number(rawValue) === 0) {
-        el.value = '';   // unassigned, show the "Not used" placeholder
+      if ((OPTIONAL_PIN_FIELDS.includes(fieldId) || OPTIONAL_ZERO_FIELDS.includes(fieldId))
+          && Number(rawValue) === 0) {
+        el.value = '';   // unassigned / switched off - show the placeholder
         AckUpdate(fieldId);
         return;
       }
@@ -4352,6 +4385,7 @@
       const trimmed = (rawValue === undefined || rawValue === null) ? '' : rawValue.toString().trim();
       const isPinField = PIN_FIELDS.includes(fieldId);
       const isOptionalPin = OPTIONAL_PIN_FIELDS.includes(fieldId);
+      const isOptionalZero = OPTIONAL_ZERO_FIELDS.includes(fieldId);
 
       let payload;
 
@@ -4362,8 +4396,9 @@
         payload = { [fieldId]: element.checked };
       } else {
         if (trimmed === '') {
-          if (isOptionalPin) {
-            payload = { [fieldId]: 0 };  // clearing the field unassigns the pin
+          if (isOptionalPin || isOptionalZero) {
+            // Clearing the field unassigns the pin / switches the setting off
+            payload = { [fieldId]: 0 };
           } else if (element.type === 'number' || isPinField) {
             console.log('Ignoring empty value for ' + fieldId);
             return;
@@ -4508,7 +4543,7 @@
         r.tailcurrent   = { v: 0.01*s.cap,  lo: 0.004*s.cap, hi: 0.05*s.cap, d: 1 };
         r.floatcurrent  = { v: 0.01*s.cap,  lo: 0.002*s.cap, hi: 0.10*s.cap, d: 1, opt: true };
         r.minchargecurr = { v: Math.max(5, 0.005*s.cap), lo: 0.002*s.cap, hi: 0.05*s.cap, d: 1 };
-        r.adjuststep    = { v: Math.max(1, s.cap/500),   lo: 0.2,         hi: 0.02*s.cap, d: 1 };
+        r.adjuststep    = { v: Math.max(1, s.cap/500),   lo: 0.2,         hi: 0.02*s.cap, d: 1, opt: true };
         // Charge and discharge ceilings are inverter limits, not battery ones -
         // flag an implausible C-rate but never fill them in.
         r.maxchargecurrent    = { lo: 0.05*s.cap, hi: 0.5*s.cap, d: 1 };
@@ -4517,12 +4552,19 @@
       r.tailduration      = { v: 240, lo: 60, hi: 900, d: 0 };
       r.maxabsorptiontime = { v: 90,  lo: 15, hi: 360, d: 0 };
       r.rechargesoc       = { v: 90,  lo: 70, hi: 95,  d: 0 };
-      r.lowsoclimit       = { v: 15,  lo: 5,  hi: 40,  d: 0 };
+      r.lowsoclimit       = { v: 15,  lo: 5,  hi: 40,  d: 0, opt: true };
       r.highsoclimit      = { v: 100, lo: 80, hi: 100, d: 0 };
-      r.slowchargesoc1    = { v: 90,  lo: 70, hi: 97,  d: 0 };
-      r.slowchargesoc1div = { v: 12,  lo: 2,  hi: 50,  d: 0 };
-      r.slowchargesoc2    = { v: 95,  lo: 85, hi: 99,  d: 0 };
-      r.slowchargesoc2div = { v: 24,  lo: 4,  hi: 100, d: 0 };
+      /* No recommendation for the slow-charge SOC/divider pairs. They are a
+         manual stepped taper, and Smart Charge does the same job by itself -
+         so suggesting values here pushed people into hand-tuning something
+         that has an automatic equivalent.
+
+         They also read badly when switched off. 0 is the off value and the
+         one every device ships with, but these carried no `opt` flag, so a 0
+         failed the lo/hi band check and was answered with "Unusual - most
+         setups are between 2 and 50" - a warning for having left a feature
+         alone. The fields stay and still work for anyone who wants a manual
+         taper; they just no longer offer an opinion. */
       return r;
     }
 

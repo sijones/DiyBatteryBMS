@@ -481,7 +481,7 @@ bool CANBUS::SendAllUpdates()
       _socOverrideLogged = false;
     }
 
-    bool isCharging = (_battCurrentmA >= 1);
+    bool isCharging = (_battCurrentDeciA >= 1);
     bool _tempChargeEnabled = true;
 
     uint32_t baseChargeCurrent = _maxChargeCurrentmA;
@@ -591,11 +591,11 @@ bool CANBUS::SendAllUpdates()
       }
 
       // Both conditions share their definition with the UI via TailVoltageOK()
-      if (_battCurrentmA < tailDA && TailVoltageOK()) {
+      if (_battCurrentDeciA < tailDA && TailVoltageOK()) {
         if (!_tailCurrentSustained) {
           _tailCurrentSustained = true;
           _tailCurrentStartTime = t;
-          WS_LOG_D("Tail current detected: I=%d DA (threshold=%d DA), timer started", _battCurrentmA, tailDA);
+          WS_LOG_D("Tail current detected: I=%d DA (threshold=%d DA), timer started", _battCurrentDeciA, tailDA);
         } else if ((uint32_t)(t - _tailCurrentStartTime) >= ((uint32_t)_tailCurrentDuration * 1000UL)) {
           _chargePhase = FloatEnabled() ? PHASE_FLOAT : PHASE_COMPLETE;
           WS_LOG_I("CC-CV: ABSORPTION -> %s (tail current sustained %ds)",
@@ -605,7 +605,7 @@ bool CANBUS::SendAllUpdates()
         }
       } else {
         if (_tailCurrentSustained) {
-          WS_LOG_D("Tail current lost: I=%d DA, timer reset", _battCurrentmA);
+          WS_LOG_D("Tail current lost: I=%d DA, timer reset", _battCurrentDeciA);
         }
         _tailCurrentSustained = false;
         _tailCurrentStartTime = 0;
@@ -924,8 +924,8 @@ bool CANBUS::SendCANData_Pylontech(){
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
   CAN_MSG[0] = lowByte(_battVoltage);
   CAN_MSG[1] = highByte(_battVoltage);
-  CAN_MSG[2] = lowByte(int16_t(_battCurrentmA));
-  CAN_MSG[3] = highByte(int16_t(_battCurrentmA));
+  CAN_MSG[2] = lowByte(int16_t(_battCurrentDeciA));
+  CAN_MSG[3] = highByte(int16_t(_battCurrentDeciA));
   CAN_MSG[4] = lowByte(_tempBattTemp);
   CAN_MSG[5] = highByte(_tempBattTemp);
   CAN_SEND_MSG(0x356, 6, CAN_MSG);
@@ -1064,8 +1064,8 @@ bool CANBUS::SendCANData_SMA(){
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
   CAN_MSG[0] = lowByte(_battVoltage);
   CAN_MSG[1] = highByte(_battVoltage);
-  CAN_MSG[2] = lowByte(int16_t(_battCurrentmA));
-  CAN_MSG[3] = highByte(int16_t(_battCurrentmA));
+  CAN_MSG[2] = lowByte(int16_t(_battCurrentDeciA));
+  CAN_MSG[3] = highByte(int16_t(_battCurrentDeciA));
   CAN_MSG[4] = lowByte(_tempBattTemp);
   CAN_MSG[5] = highByte(_tempBattTemp);
   CAN_SEND_MSG(0x356, 6, CAN_MSG);
@@ -1120,8 +1120,8 @@ bool CANBUS::SendCANData_Victron(){
   memset(CAN_MSG,0x00,sizeof(CAN_MSG));
   CAN_MSG[0] = lowByte(_battVoltage);
   CAN_MSG[1] = highByte(_battVoltage);
-  CAN_MSG[2] = lowByte(int16_t(_battCurrentmA));
-  CAN_MSG[3] = highByte(int16_t(_battCurrentmA));
+  CAN_MSG[2] = lowByte(int16_t(_battCurrentDeciA));
+  CAN_MSG[3] = highByte(int16_t(_battCurrentDeciA));
   CAN_MSG[4] = lowByte(_tempBattTemp);
   CAN_MSG[5] = highByte(_tempBattTemp);
   CAN_SEND_MSG(0x356, 6, CAN_MSG);
