@@ -26,3 +26,9 @@ node_modules/
 site/app.js
 site/firmware/
 design/
+
+# Python bytecode. Section modules (scripts/sections/) are imported by
+# embed_html.py at build time, and a variant that carries private ones would
+# otherwise leave their compiled copies in the tree.
+__pycache__/
+*.pyc

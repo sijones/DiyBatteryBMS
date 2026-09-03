@@ -57,20 +57,52 @@ export async function backupNvs(session, { download = true } = {}) {
 }
 
 /**
+ * Slice one file's bytes around the nvs/otadata range described by `gap`, so
+ * writing it can never touch that range. See readGap() in
+ * web/scripts/build-manifests.mjs for exactly what gap covers and why this
+ * exists at all - short version: esptool erases and reprograms the FULL span
+ * of any file it writes as a normal part of writing it, "eraseAll" or not, so
+ * a merged image that runs from the bootloader through the app has always
+ * taken nvs with it on every "upgrade" that told the user otherwise. This is
+ * the fix: never send bytes for the range nvs lives in, so there is nothing
+ * for esptool to erase there in the first place.
+ *
+ * Returns one or two {bytes, address} chunks. No gap, or a part that does not
+ * overlap it (an OTA-only app image, say), comes back unchanged as one chunk.
+ */
+function splitAroundGap(bytes, address, gap) {
+  if (!gap) return [{ bytes, address }];
+
+  const fileStart = address;
+  const fileEnd = address + bytes.length;
+  const gapStart = gap.offset;
+  const gapEnd = gap.offset + gap.size;
+  if (gapEnd <= fileStart || gapStart >= fileEnd) return [{ bytes, address }];
+
+  const chunks = [];
+  if (gapStart > fileStart) chunks.push({ bytes: bytes.subarray(0, gapStart - fileStart), address: fileStart });
+  if (gapEnd < fileEnd) chunks.push({ bytes: bytes.subarray(gapEnd - fileStart), address: gapEnd });
+  return chunks;
+}
+
+/**
  * Write a build to the board.
  *
  * flashSize/flashMode/flashFreq are all "keep": a merged factory image already
  * carries the right values in its bootloader header, and overriding them with
  * anything else is how a board ends up flashed correctly and unable to boot.
  *
- * eraseAll stays FALSE for an upgrade. Erasing takes nvs with it, and the
- * caller has already established - via nvsVerdict - whether the settings can
- * survive. A first install passes true deliberately.
+ * Every part is sliced around manifest.gap regardless of eraseAll. On an
+ * upgrade that is what keeps nvs untouched - eraseAll was never what did
+ * that, whatever the option's name suggests, since esptool erases the span of
+ * whatever it is told to write either way. On a full erase the chip is
+ * already blank under that range, so skipping it changes nothing except not
+ * transferring bytes nobody needed sent.
  *
  * @param {(written:number, total:number)=>void} onProgress
  */
 export async function flashBuild(session, manifest, { eraseAll = false, onProgress } = {}) {
-  const parts = [];
+  const chunks = [];
 
   for (const part of manifest.parts) {
     const res = await fetch(`${manifest._dir}/${part.path}`, { cache: "no-cache" });
@@ -83,15 +115,69 @@ export async function flashBuild(session, manifest, { eraseAll = false, onProgre
       throw new Error(`${part.path} is ${bytes.length} bytes, manifest says ${part.size} - refusing to write it`);
     }
 
-    parts.push({ data: toBinaryString(bytes), address: part.offset });
+    chunks.push(...splitAroundGap(bytes, part.offset, manifest.gap));
   }
 
+  const totalBytes = chunks.reduce((sum, c) => sum + c.bytes.length, 0);
+
+  /* esptool-js reports progress per FILE in fileArray - written/total both
+     reset at each file boundary, and both are in COMPRESSED bytes (compress:
+     true below), not the uncompressed lengths totalBytes is counted in. That
+     makes written/total a valid 0..1 completion FRACTION for the current
+     file regardless of compression, but not a byte count safe to add
+     directly to a total measured in uncompressed bytes. Scale the fraction by
+     the current chunk's real (uncompressed) length instead of adding
+     written itself, and only fold a chunk's full length into completedBytes
+     once its file index has actually moved on - that keeps the bar exact on
+     the single-chunk case (identical to the old behaviour) and monotonic
+     once the gap split makes it two. */
+  let completedBytes = 0;
+  let lastFileIndex = -1;
+
   await session.loader.writeFlash({
-    fileArray: parts,
+    fileArray: chunks.map((c) => ({ data: toBinaryString(c.bytes), address: c.address })),
     flashSize: "keep",
     flashMode: "keep",
     flashFreq: "keep",
     eraseAll,
+    compress: true,
+    reportProgress: (fileIndex, written, total) => {
+      if (fileIndex !== lastFileIndex) {
+        if (lastFileIndex >= 0) completedBytes += chunks[lastFileIndex].bytes.length;
+        lastFileIndex = fileIndex;
+      }
+      const fraction = total ? written / total : 0;
+      onProgress?.(completedBytes + fraction * chunks[fileIndex].bytes.length, totalBytes);
+    },
+  });
+}
+
+/**
+ * Write a previously-downloaded nvs backup straight back onto the board.
+ *
+ * Unlike flashBuild this writes exactly the nvs partition and nothing either
+ * side of it - there is no merged image involved, so no gap to slice around.
+ * The length must match the board's live nvs partition exactly: a backup
+ * taken from a different flash size, or from before a partition table change,
+ * could be the wrong length, and writing a mismatched length would spill into
+ * whatever sits on either side of nvs rather than stopping short of it.
+ *
+ * @param {(written:number, total:number)=>void} onProgress
+ */
+export async function restoreNvs(session, bytes, { onProgress } = {}) {
+  if (!session.nvs) throw new Error("This board has no nvs partition to restore into.");
+  if (bytes.length !== session.nvs.size) {
+    throw new Error(
+      `This backup is ${bytes.length} bytes, but this board's nvs partition is ${session.nvs.size} bytes - refusing to write it.`,
+    );
+  }
+
+  await session.loader.writeFlash({
+    fileArray: [{ data: toBinaryString(bytes), address: session.nvs.offset }],
+    flashSize: "keep",
+    flashMode: "keep",
+    flashFreq: "keep",
+    eraseAll: false,
     compress: true,
     reportProgress: (_fileIndex, written, total) => onProgress?.(written, total),
   });

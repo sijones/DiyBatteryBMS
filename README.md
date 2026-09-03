@@ -2,6 +2,12 @@ This is a hobby project and I add features as and when I have time, it means som
 
 I now accept donations towards supporting the project: https://buymeacoffee.com/sijones2012
 
+The easiest to get started is to use the web flasher at https://diy.power-pilot.uk
+
+Use an ESP32-S3 with PSRAM. The Victron BLE shunt source needs real PSRAM, so it is only built
+into the `-psram` variants (and the XIAO, which has it soldered in); the classic ESP32 has BLE
+disabled for the same reason.
+
 You can now sponsor and donate to me, the link is on here to buy me a coffee ;)
 
 The new UI means no coding knowledge is required, just flash and set up.
@@ -21,10 +27,15 @@ This software supports:
 - ESP32 developer boards with MCP2515 CAN Bus adapter
 - ESP32 with built-in CAN controller (e.g. LilyGo T-CAN485)
 - ESP32-S3 with built-in CAN controller (using TWAI driver) or a MCP2515 adapter
-- ESP32-C3 with built-in CAN controller (using TWAI driver)
 - Seeed XIAO ESP32-S3 with a CAN expansion board
 
 - If you're buying new, a board with 8MB or 16MB flash and 8MB PSRAM - is best as it gives the web UI and MQTT plenty of headroom over a bare 4MB/no-PSRAM module.
+
+The **ESP32-C3 is no longer supported** as of 3.0.0-BETA9. It has no external RAM interface, so it
+can never have PSRAM and could never run the Victron BLE shunt source; it is single-core, against a
+design that keeps the CAN send task off the core running WiFi; and it was the tightest build here.
+If you are running a C3, the last build for it is 3.0.0-BETA8 — it will keep working, but it will
+not get new releases.
 
 See the WIKI for more detailed documentation.
 
@@ -178,8 +189,8 @@ Partition** size and warns when a device is still on the old table.
 
 ### What changed and why
 
-The old layout spent 1.375MB on a SPIFFS partition this project has never used — the web interface
-is compiled into the firmware and every setting lives in NVS. That space now goes to the app:
+The old layout spent 1.375MB on a SPIFFS partition that used to hold the UI — the web interface
+is now compiled into the firmware and every setting lives in NVS. That space now goes to the app:
 
 | | Old (`default.csv`) | New |
 |---|---|---|

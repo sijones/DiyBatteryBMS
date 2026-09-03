@@ -52,6 +52,9 @@ mEEPROM pref;
 #include "FAN.h"
 #include "VictronBLE.h"
 #include "MqttShunt.h"
+// Optional features register themselves - nothing to include or call per
+// feature, see Features.h. Their own headers are pulled in by their .cpp files.
+#include "Features.h"
 
 uint32_t SendCanBusMQTTUpdates;
 CANBUS Inverter;
@@ -126,10 +129,23 @@ bool FirstRun = true;
 
 void setup()
 {
+  /* setup() and loop() both run inside the Arduino core's own loopTask, which
+     the framework creates at priority 1 (cores/esp32/main.cpp) - the lowest
+     priority anything in this project runs at, on whichever core
+     CONFIG_ARDUINO_RUNNING_CORE names (1, here). CANBUS's send task shares
+     that core at priority 6, so loop() - which is what drains VE.Direct's
+     Serial1 - was the lowest-priority task on its own core, able to be
+     preempted for as long as CANBUS had work. Priority 7 clears that while
+     staying under AsyncTCP's task (priority 10, unpinned - may or may not
+     land on this core), which still needs to win when it actually has
+     network data waiting. NULL means "the calling task", which is this
+     one. */
+  vTaskPrioritySet(NULL, 7);
+
   pref.begin();
   Serial.begin(115200);
-#if defined(BMS_S3) || defined(BMS_C3)
-  // ESP32-S3 and ESP32-C3 USB-CDC needs time to initialize
+#if defined(BMS_S3)
+  // ESP32-S3 USB-CDC needs time to initialize
   delay(2000);
 #else
   delay(100);
@@ -158,12 +174,16 @@ void setup()
     // pref.putBool("MQTTEnabled", false);
     pref.putUInt8(ccCanCSPin, 0); // Must be set via web interface
 #endif
-    pref.putUInt8(ccVictronRX, 0); // Must be set via web interface
-    pref.putUInt8(ccVictronTX, 0); // Must be set via web interface
+    // 0 on a non-Waveshare build means "must be set via web interface"; see
+    // config.h for why the Waveshare build defaults RX instead.
+    pref.putUInt8(ccVictronRX, initVictronRX);
+    pref.putUInt8(ccVictronTX, 0); // VE.Direct is listen-only, TX need not be wired
 #ifdef ESPCAN
-    pref.putUInt8(ccCAN_EN_PIN, 0); // Must be set via web interface
-    pref.putUInt8(ccCAN_RX_PIN, 0); // Must be set via web interface
-    pref.putUInt8(ccCAN_TX_PIN, 0); // Must be set via web interface
+    // 0 on a non-Waveshare build means "must be set via web interface"; see
+    // config.h for why the Waveshare build defaults these instead.
+    pref.putUInt8(ccCAN_EN_PIN, initCAN_EN_PIN);
+    pref.putUInt8(ccCAN_RX_PIN, initCAN_RX_PIN);
+    pref.putUInt8(ccCAN_TX_PIN, initCAN_TX_PIN);
 #endif
     pref.putUInt16(ccChargeVolt, initBattChargeVoltage);
     pref.putUInt16(ccOverVoltage, initBattOverVoltage);
@@ -308,7 +328,10 @@ void setup()
     uint8_t tx = pref.getUInt8(ccCAN_TX_PIN, 0);
     uint8_t rx = pref.getUInt8(ccCAN_RX_PIN, 0);
     uint8_t en = pref.getUInt8(ccCAN_EN_PIN, 0);
-    if (tx && rx && en && !IsForbiddenPin(tx) && !IsForbiddenPin(rx) && !IsForbiddenPin(en)) {
+    // en==0 means this board's transceiver has no software enable line, not
+    // "not configured yet" - CANBUS::Begin() already skips driving it in that
+    // case, so the startup gate here has to match rather than refuse to try.
+    if (tx && rx && !IsForbiddenPin(tx) && !IsForbiddenPin(rx) && (!en || !IsForbiddenPin(en))) {
       WS_LOG_I("Initializing CAN Bus (TWAI) on TX:%d RX:%d EN:%d", tx, rx, en);
       if(Inverter.Begin(tx, rx, en))
       {
@@ -428,6 +451,15 @@ void setup()
     log_e("Forbidden or missing GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
   }
 
+  /* Optional features, after the web server and the shunt/CAN hardware so one
+     may use any of them. Which are compiled in is decided by the env rather
+     than by anything here, so the count is logged - an empty registry on a
+     build expected to have one is otherwise invisible. */
+  if (Feature::Count() > 0) {
+    log_i("Starting %u optional feature(s)", Feature::Count());
+    Feature::SetupAll();
+  }
+
   /* Victron BLE. Only brought up when it is in play in one role or the other -
      the radio and its stack cost RAM that an install reading the shunt over the
      wire has no reason to spend. A fallback has to be listening before the
@@ -448,8 +480,8 @@ void setup()
     }
   }
   // Start NTP Clock Set Task
-#if defined(BMS_S3) || defined(BMS_C3)
-  // ESP32-S3 and ESP32-C3 require more stack space for String operations and NTP
+#if defined(BMS_S3)
+  // ESP32-S3 requires more stack space for String operations and NTP
   xTaskCreate(&TaskSetClock,"taskSetClock", 8192, NULL, 5, NULL);
 #else
   xTaskCreate(&TaskSetClock,"taskSetClock", 4096, NULL, 5, NULL);
@@ -637,6 +669,9 @@ void loop()
 
   // Monitor WiFi scan completion and send results via WebSocket
   UpdateWifiScanResults();
+
+  // Optional features. No-op when none are compiled in.
+  Feature::LoopAll();
 
   // Read serial data with timeout protection to prevent watchdog issues
   uint32_t serialStartTime = millis();

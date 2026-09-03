@@ -15,6 +15,7 @@ import {
   browserName,
   isMobile,
   isPortBusy,
+  reconnectAndReadNvs,
 } from "./board.js";
 import { fmtHex, fmtSize, nvsVerdict } from "./partitions.js";
 import {
@@ -27,9 +28,9 @@ import {
   versionsIn,
   buildsFor,
 } from "./builds.js";
-import { backupNvs, flashBuild, restart } from "./flash.js";
+import { backupNvs, flashBuild, restoreNvs, restart } from "./flash.js";
 import { watchBoot } from "./watch.js";
-import { Console, scanNetworks, sendCredentials } from "./console.js";
+import { Console, awaitScanResult, sendCredentials, sendScan, waitReady } from "./console.js";
 import { parseScan, dedupe, signalBars, credentialLines } from "./wifi.js";
 
 const $ = (id) => document.getElementById(id);
@@ -42,6 +43,13 @@ let chosen = null;
 let verdict = null;
 let backedUp = false;
 let releaseIndex = null;
+/* nvs read right before an upgrade that was told it would keep its settings,
+ * held in memory only - never written to disk, since nvs can hold WiFi and
+ * MQTT passwords. Compared against a post-flash read once the board is back,
+ * so "safe" is something checked rather than just claimed. null whenever
+ * there is nothing to compare - a fresh install, an erase, or a build that
+ * did not declare itself safe in the first place. */
+let preFlashNvs = null;
 let selected = { channel: "release", version: null };
 
 function setStage(name) {
@@ -61,6 +69,12 @@ const row = (label, value, tone) =>
 /* ---------------------------------------------------------------- identify */
 
 function renderIdentity(s) {
+  // Reset from any previous connection - the DOM persists across sessions
+  // even though a fresh session object does not.
+  $("restore-status").hidden = true;
+  $("restore-nvs").disabled = false;
+  $("to-choose").disabled = false;
+
   const i = s.info;
   $("identity").innerHTML = [
     row("Family", i.chipName),
@@ -88,6 +102,11 @@ function renderIdentity(s) {
     (s.nvs
       ? `<p class="note ok">Settings live at ${fmtHex(s.nvs.offset)}, ${fmtSize(s.nvs.size)}.</p>`
       : `<p class="note warn">No nvs partition — there are no settings here to preserve.</p>`);
+
+  // Only offered where there is somewhere to put it back. Size is checked for
+  // real at write time, against this exact partition - this is just whether
+  // asking makes sense at all.
+  $("restore-nvs").hidden = !s.nvs;
 }
 
 /* What is published, shown before a board is connected.
@@ -297,6 +316,7 @@ function renderChoiceList() {
           </div>
           <div class="choice-detail${c.compat.ok ? "" : " bad"}">${esc(c.compat.ok ? c.manifest.detail : c.compat.reason)}</div>
           ${c.compat.ok && hidden ? `<div class="choice-note">Best match of ${hidden + 1} builds for this board</div>` : ""}
+          ${c.compat.ok && c.manifest.hint ? `<div class="choice-note">${esc(c.manifest.hint)}</div>` : ""}
         </div>
       </label>`;
 
@@ -332,7 +352,7 @@ function renderChoiceList() {
 
 function renderConfirm() {
   const m = chosen.manifest;
-  verdict = nvsVerdict(session.nvs, m.nvs);
+  verdict = nvsVerdict(session.nvs, m.nvs, m.gap);
   backedUp = false;
 
   $("verdict").className = `banner ${verdict.safe ? "ok" : verdict.kind === "fresh" ? "" : "err"}`;
@@ -433,6 +453,12 @@ let con = null;
 let networks = [];
 let pickedNetwork = null;
 
+/** Append a line to the WiFi step's console panel and keep it scrolled to the end. */
+function logConsole(text) {
+  $("wifi-log").textContent += text;
+  $("wifi-log").scrollTop = $("wifi-log").scrollHeight;
+}
+
 async function openWifiStep() {
   setStage("wifi");
   $("wifi-status").textContent = "Opening the console…";
@@ -441,13 +467,23 @@ async function openWifiStep() {
   $("wifi-connect").disabled = true;
 
   con = new Console(session.port);
-  con.onText = (chunk) => {
-    $("wifi-log").textContent += chunk;
-    $("wifi-log").scrollTop = $("wifi-log").scrollHeight;
-  };
+  con.onText = (chunk) => logConsole(chunk);
+  // Prefixed and on its own line so a command is visually distinct from the
+  // board's own output - onSend already redacted the passphrase by the time
+  // this sees it.
+  con.onSend = (line) => logConsole(`\n> ${line}\n`);
 
   try {
     await con.open();
+    // Opening the port resets this board - confirmed on the bench, not
+    // theoretical - so the console is not actually listening yet just
+    // because open() resolved. See waitReady() for why.
+    $("wifi-status").textContent = "Waiting for the board to finish restarting…";
+    const ready = await waitReady(con);
+    if (!ready) {
+      $("wifi-status").textContent = "The board did not answer after restarting. Try again, or type the name in.";
+      return;
+    }
     await doScan();
   } catch (e) {
     $("wifi-status").textContent = `Could not open the console: ${e.message}`;
@@ -455,10 +491,21 @@ async function openWifiStep() {
 }
 
 async function doScan() {
-  $("wifi-status").textContent = "Scanning… (a few seconds)";
+  $("wifi-status").textContent = "Sending the scan command…";
   $("wifi-rescan").disabled = true;
 
-  const { text, timedOut } = await scanNetworks(con);
+  // Wait for the board's own "[scan] scanning..." line rather than assuming
+  // it the moment the command is sent - send() only proves bytes left the
+  // USB lead, not that anything on the other end was listening for them.
+  const acked = await sendScan(con);
+  if (!acked) {
+    $("wifi-status").textContent = "The board did not acknowledge the scan command. Try again, or type the name in.";
+    $("wifi-rescan").disabled = false;
+    return;
+  }
+
+  $("wifi-status").textContent = "Scanning… (a few seconds)";
+  const { text, timedOut } = await awaitScanResult(con);
   $("wifi-rescan").disabled = false;
 
   if (timedOut) {
@@ -580,14 +627,26 @@ async function onWifiConnect() {
     return;
   }
 
-  $("wifi-status").textContent = res.apMode
+  const failMessage = res.apMode
     ? "The board did not join — it came back up on its own access point. Check the passphrase."
     : "No address came back within 30 seconds. It may still be trying; check the log.";
+  $("wifi-status").textContent = failMessage;
   $("wifi-connect").disabled = false;
-  // Reopen so another attempt can be made without starting over
+  // Reopen so another attempt can be made without starting over. The failed
+  // "connect" already restarted the board once, so this reopen races the
+  // same reset-on-open behaviour openWifiStep() waits out - wait here too
+  // rather than leaving the next click to find out the hard way.
   con = new Console(session.port);
-  con.onText = (chunk) => { $("wifi-log").textContent += chunk; };
-  try { await con.open(); } catch { /* the user can go back and retry */ }
+  con.onText = (chunk) => logConsole(chunk);
+  con.onSend = (line) => logConsole(`\n> ${line}\n`);
+  try {
+    await con.open();
+    if (!(await waitReady(con))) {
+      $("wifi-status").textContent = `${failMessage} The console has not answered since restarting either - reconnecting may help.`;
+    }
+  } catch {
+    /* the user can go back and retry */
+  }
 }
 
 /* ------------------------------------------------------------------- done */
@@ -663,6 +722,68 @@ async function onBackup() {
   }
 }
 
+/**
+ * Write a previously-downloaded nvs-*.bin backup back onto the connected
+ * board, from the Identified screen - no build needs choosing, since this
+ * touches nothing but the settings partition already on the board.
+ *
+ * Confirmed with a native confirm() rather than the styled dialog the rest of
+ * this page uses elsewhere, because there isn't one here yet and this is a
+ * single yes/no gate on a destructive action - not worth building a modal for.
+ */
+async function onRestoreNvsFile(input) {
+  const file = input.files[0];
+  input.value = ""; // so picking the same file again still fires a change event
+  if (!file) return;
+
+  if (
+    !confirm(
+      `Write ${file.name} (${file.size} bytes) to this board's settings partition at ` +
+        `${fmtHex(session.nvs.offset)}? This overwrites every setting currently on the board and ` +
+        `reboots it. This cannot be undone.`,
+    )
+  ) {
+    return;
+  }
+
+  const status = $("restore-status");
+  const text = $("restore-status-text");
+  status.hidden = false;
+  $("restore-nvs").disabled = true;
+  $("to-choose").disabled = true;
+  text.textContent = "Reading the backup file…";
+
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+
+    text.textContent = "Writing settings…";
+    await restoreNvs(session, bytes, {
+      onProgress: (written, total) => {
+        const pct = total ? Math.round((written / total) * 100) : 0;
+        text.textContent = `Writing settings… ${pct}%`;
+      },
+    });
+
+    // Same reboot sequence onFlash() uses and for the same reason: esptool's
+    // own reset only releases RTS, relying on state that does not survive
+    // closing the port, so detach first and let the watcher drive the reset.
+    text.textContent = "Restarting the board…";
+    await detachTransport(session);
+    session.finished = true;
+
+    const boot = await watchBoot(session.port, () => {});
+    text.textContent = boot.problem
+      ? `Settings restored, but the board did not come back cleanly: ${boot.problem}. Disconnect and reconnect to check on it.`
+      : "Settings restored — the board has restarted with them. Disconnect and reconnect if you want to do anything else.";
+    // The port closed under watchBoot and session.finished is now set - there
+    // is nothing left here for either button to act on until reconnecting.
+  } catch (err) {
+    text.textContent = `Could not restore: ${err.message}`;
+    $("restore-nvs").disabled = false;
+    $("to-choose").disabled = false;
+  }
+}
+
 async function onFlash() {
   const m = chosen.manifest;
   const eraseAll = eraseChosen();
@@ -671,6 +792,14 @@ async function onFlash() {
   setStage("flashing");
   $("flash-what").textContent = `${m.board} · ${m.version}`;
   progress(0, 1);
+
+  /* Independent of the backup checkbox above, which only controls whether a
+     FILE gets offered - this is an in-memory safety net for the one case that
+     matters: an upgrade the Confirm screen just told the user would keep its
+     settings. Nothing to verify on a fresh install (nothing there yet) or a
+     chosen erase (the point was to wipe it). */
+  preFlashNvs = null;
+  const wantVerify = !eraseAll && verdict?.safe && session.nvs;
 
   try {
     /* Only if asked. It used to run regardless, which is a download nobody
@@ -681,6 +810,17 @@ async function onFlash() {
       $("flash-step").textContent = "Saving your settings…";
       await backupNvs(session);
       backedUp = true;
+    }
+
+    if (wantVerify) {
+      $("flash-step").textContent = "Reading settings to verify afterward…";
+      try {
+        const snap = await backupNvs(session, { download: false });
+        preFlashNvs = snap?.bytes ?? null;
+      } catch {
+        // The flash itself does not depend on this - just nothing to verify.
+        preFlashNvs = null;
+      }
     }
 
     $("flash-step").textContent = eraseAll ? "Erasing and writing…" : "Writing firmware…";
@@ -716,9 +856,71 @@ async function onFlash() {
        eraseAll flag, which is also true when someone chooses to wipe a board
        that has been running for a year. */
     reportFlash(verdict?.kind === "fresh" ? "install" : "upgrade");
+
+    // After renderDone(), not before: the done screen should appear straight
+    // away rather than wait on a second reconnect, and this only updates one
+    // card within it once it resolves.
+    await verifySettingsSurvived();
   } catch (err) {
     showFailure(err);
   }
+}
+
+/**
+ * The safety net preFlashNvs exists for: reconnect once the board is back up
+ * and check nvs actually matches what was read right before writing, rather
+ * than trusting the Confirm screen's own promise unverified. A silent no-op
+ * whenever there was nothing to compare - see preFlashNvs's own comment for
+ * the cases that skips.
+ *
+ * Informational only - there used to be a one-click "Restore now" here, and
+ * it was wrong to offer it. A byte-for-byte partition compare is not proof
+ * of data loss: ESP32's NVS is a page-based log, and writing or updating
+ * ANY key can relocate OTHER, unrelated entries to different physical
+ * offsets during its own housekeeping, changing the raw bytes with no
+ * logical value ever changing. A board's first real boot makes this worse -
+ * main.cpp's own first-run block writes roughly forty default keys the
+ * moment "EEPROMSetup" is not already set, which alone is enough to fail a
+ * raw compare against a snapshot taken one boot earlier. Restoring on a
+ * false positive would write that PRE-defaults snapshot back over a board
+ * that had just correctly initialised itself - actively worse than doing
+ * nothing. A mismatch here is a prompt to go and check the Settings page,
+ * not evidence to act on unverified.
+ */
+async function verifySettingsSurvived() {
+  if (!preFlashNvs) return;
+  const before = preFlashNvs;
+  const hadBackup = backedUp; // capture before anything below can change it
+  preFlashNvs = null; // one check per flash, whatever the outcome
+
+  const card = $("verify-status");
+  const text = $("verify-text");
+  card.hidden = false;
+  text.textContent = "Checking the settings partition…";
+
+  const backupNote = hadBackup
+    ? " Your settings were also saved to a file before flashing, if you need it."
+    : " No settings file was saved before flashing, so there is nothing to fall back on beyond this.";
+
+  let after;
+  try {
+    after = await reconnectAndReadNvs(session.port, session.nvs, () => {});
+  } catch (e) {
+    text.textContent = `Could not reconnect to check: ${e.message}.${backupNote}`;
+    return;
+  }
+
+  const same = before.length === after.length && before.every((b, i) => b === after[i]);
+  if (same) {
+    text.textContent = "The settings partition is unchanged from right before flashing.";
+    return;
+  }
+
+  text.textContent =
+    "The settings partition's raw bytes changed from right before flashing. This is not necessarily a " +
+    "problem — ESP32's NVS storage can relocate unrelated entries internally, and a board's first real " +
+    "boot writes its own defaults the same way — so check the device's own Settings page before assuming " +
+    `anything was lost.${backupNote}`;
 }
 
 /* ------------------------------------------------------------------- flow */
@@ -868,6 +1070,11 @@ function boot() {
     await loadChoices();
   });
   $("back-to-identified").addEventListener("click", () => setStage("identified"));
+  $("restore-nvs").addEventListener("click", () => {
+    $("restore-status").hidden = true;
+    $("restore-nvs-file").click();
+  });
+  $("restore-nvs-file").addEventListener("change", (e) => onRestoreNvsFile(e.target));
   $("to-confirm").addEventListener("click", () => {
     renderConfirm();
     setStage("confirm");

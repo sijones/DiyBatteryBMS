@@ -5,9 +5,134 @@ Generates a C++ header with HTML data stored in PROGMEM.
 
 from __future__ import print_function
 import gzip
+import importlib.util
 import os
+import re
 
 Import("env")
+
+# ---------------------------------------------------------------------------
+# Optional feature contributions to the page.
+#
+# The C++ half of an optional feature registers itself (see src/Features.h) and
+# needs nothing added to a shared file. Its web UI needs the same, or the saving
+# is only half made - a feature with settings would still mean editing this
+# script and index.htm.template by hand, which are the two largest shared files
+# there are.
+#
+# So a feature may also drop a module in scripts/sections/. Every .py file there
+# is loaded and asked what it wants to contribute, and there is no list of them
+# anywhere - adding one is adding a file, exactly as it is on the C++ side.
+#
+# A module may define any of:
+#
+#   applies(env_name, defines) -> bool
+#       Whether this feature is in this build at all. Defaults to True.
+#       `defines` is the env's -D flags as a set, so a module can gate on the
+#       same symbol its C++ half does rather than on env-name string matching.
+#
+#   sections(env_name, defines) -> {anchor: html}
+#       HTML or JS appended at a named EXT_ anchor in the template. Several
+#       modules may contribute to one anchor; all are joined in filename order.
+#
+#   branding(env_name, defines) -> {placeholder: text}
+#       Replaces a PRODUCT_ placeholder outright - the product name, wordmark
+#       and mark. Unlike sections these do not accumulate, so exactly one module
+#       in a build should set any given one; a second is reported rather than
+#       silently winning.
+#
+# The anchors below are the extension points the template offers. They are
+# deliberately few and generic: a feature fits itself to them rather than the
+# template growing a placeholder per feature, which is the whole point.
+EXT_ANCHORS = (
+    'EXT_HEAD',               # extra <style>/<script> in <head>
+    'EXT_HOME_PANELS',        # extra panels at the foot of the Home tab
+    'EXT_SETTINGS_SECTIONS',  # extra sections at the foot of the Settings tab
+    'EXT_WS_HANDLERS',        # extra JS inside the WebSocket update handler
+)
+
+
+def _env_defines(env):
+    """The env's -D symbols as a set of bare names, without any =value part."""
+    defines = set()
+    for entry in env.get('CPPDEFINES', []):
+        name = entry[0] if isinstance(entry, (list, tuple)) else entry
+        defines.add(str(name))
+    return defines
+
+
+def _load_section_modules(project_dir):
+    """Import every scripts/sections/*.py, in filename order.
+
+    Loaded by path rather than by import name: this runs inside SCons, whose
+    sys.path is not ours to extend, and the directory is frequently absent
+    altogether (a build with no optional features), which is not an error.
+    """
+    sections_dir = os.path.join(project_dir, 'scripts', 'sections')
+    if not os.path.isdir(sections_dir):
+        return []
+
+    modules = []
+    for filename in sorted(os.listdir(sections_dir)):
+        if not filename.endswith('.py') or filename.startswith('_'):
+            continue
+        path = os.path.join(sections_dir, filename)
+        spec = importlib.util.spec_from_file_location(
+            'bms_section_' + filename[:-3], path)
+        if spec is None or spec.loader is None:
+            continue
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except Exception as exc:
+            # A broken feature module must not take the build's page with it -
+            # the firmware would still build and boot, and a silently blank
+            # settings tab is far harder to diagnose than a printed name.
+            print("[EMBED] Error loading section module {}: {}".format(filename, exc))
+            continue
+        modules.append((filename, module))
+    return modules
+
+
+def collect_feature_contributions(project_dir, env_name, defines):
+    """Ask every section module what it contributes to this build.
+
+    Returns (anchors, branding): anchors maps each EXT_ name to the joined HTML
+    of every module that contributed to it, branding maps PRODUCT_ names to
+    their replacement text.
+    """
+    anchors = dict((name, []) for name in EXT_ANCHORS)
+    branding = {}
+    branding_owner = {}
+
+    for filename, module in _load_section_modules(project_dir):
+        applies = getattr(module, 'applies', None)
+        if callable(applies) and not applies(env_name, defines):
+            continue
+
+        provide = getattr(module, 'sections', None)
+        if callable(provide):
+            for anchor, html in (provide(env_name, defines) or {}).items():
+                if anchor not in anchors:
+                    print("[EMBED] {}: unknown anchor '{}' - ignored".format(filename, anchor))
+                    continue
+                anchors[anchor].append(html)
+
+        brand = getattr(module, 'branding', None)
+        if callable(brand):
+            for key, text in (brand(env_name, defines) or {}).items():
+                if key in branding_owner:
+                    print("[EMBED] {}: '{}' already set by {} - overriding".format(
+                        filename, key, branding_owner[key]))
+                branding[key] = text
+                branding_owner[key] = filename
+
+    joined = dict((name, '\n'.join(parts)) for name, parts in anchors.items())
+    active = [name for name, parts in anchors.items() if parts]
+    if active or branding:
+        print("[EMBED] Feature contributions: {}".format(
+            ', '.join(sorted(active + list(branding.keys()))) or 'branding only'))
+    return joined, branding
 
 def generate_embedded_html(source, target, env):
     """Generate compressed HTML header file from templates."""
@@ -114,36 +239,29 @@ def generate_embedded_html(source, target, env):
           AckUpdate('can_rx_pin');
           AckUpdate('can_tx_pin');
           AckUpdate('can_en_pin');'''
-            },
-            'esp32c3-ESPCAN': {
-                'title': 'ESPCAN Configuration',
-                'can_fields': '''<div class="form-row">
-                <div class="form-group">
-                  <label for="can_rx_pin">ESPCAN RX Pin:</label>
-                  <input type="number" id="can_rx_pin" onchange="EnqueueUpdate('can_rx_pin')" onkeypress="HandleEnter(event, 'can_rx_pin')">
-                </div>
-                <div class="form-group">
-                  <label for="can_tx_pin">ESPCAN TX Pin:</label>
-                  <input type="number" id="can_tx_pin" onchange="EnqueueUpdate('can_tx_pin')" onkeypress="HandleEnter(event, 'can_tx_pin')">
-                </div>
-              </div>
-              <div class="form-row full">
-                <div class="form-group">
-                  <label for="can_en_pin">ESPCAN Power/Enable Pin:</label>
-                  <input type="number" id="can_en_pin" onchange="EnqueueUpdate('can_en_pin')" onkeypress="HandleEnter(event, 'can_en_pin')">
-                </div>
-              </div>''',
-                'can_handlers': '''if(obj.hasOwnProperty('can_rx_pin')) document.getElementById('can_rx_pin').value=obj.can_rx_pin;
-          if(obj.hasOwnProperty('can_tx_pin')) document.getElementById('can_tx_pin').value=obj.can_tx_pin;
-          if(obj.hasOwnProperty('can_en_pin')) document.getElementById('can_en_pin').value=obj.can_en_pin;
-          AckUpdate('can_rx_pin');
-          AckUpdate('can_tx_pin');
-          AckUpdate('can_en_pin');'''
             }
         }
-        
-        # Get config for this environment
-        config = can_configs.get(env_name, can_configs['esp32dev'])
+        # Same fields as the DevKit S3 family - the Settings page's CAN pin
+        # inputs are plain number fields with no board-specific default baked
+        # in, so there is nothing here that differs by wiring. The Waveshare
+        # env has no -Nmb/-psram suffix (fixed single-SKU module, see
+        # platformio.ini), so it needs its own key rather than falling out of
+        # the suffix strip below the way esp32s3-ESPCAN-16mb-psram does.
+        can_configs['esp32s3-ESPCAN-waveshare'] = can_configs['esp32s3-ESPCAN']
+
+        # Get config for this environment.
+        #
+        # can_configs is keyed by WIRING FAMILY (e.g. 'esp32s3-ESPCAN'), but
+        # env['PIOENV'] is the full env name including its flash-size/PSRAM
+        # suffix (e.g. 'esp32s3-ESPCAN-16mb-psram') - platformio.ini names
+        # every env that way so a build can't be flashed onto the wrong
+        # module. A bare env_name lookup here never matches any suffixed env
+        # and silently falls back to the MCP2515 fields on every board,
+        # which is invisible on MCP2515 boards (the fallback is correct for
+        # them) and shows up as missing CAN pins on every ESPCAN board. Strip
+        # the same suffix build-manifests.mjs strips before looking up.
+        family = re.match(r'^(.*?)(?:-\d+mb)?(?:-psram)?$', env_name, re.IGNORECASE).group(1)
+        config = can_configs.get(family, can_configs['esp32dev'])
 
         # Victron BLE. The radio only runs with PSRAM behind it - NimBLE alone
         # can tip a ~70KB internal-RAM board into the failed-allocation crash
@@ -152,7 +270,15 @@ def generate_embedded_html(source, target, env):
         # is trimmed to match rather than left to discover that by trying:
         # every env here states PSRAM in its own name (see the header comment
         # in platformio.ini), so it is known at build time, not guessed.
-        board_has_psram = env_name.endswith('-psram') or env_name == 'xiao-esp32s3'
+        #
+        # Fixed single-SKU boards (XIAO, Waveshare) are the exception - their
+        # module always has PSRAM, so there is no -psram/no-psram pair to name
+        # in the env the way the DevKit families need one, the same reason
+        # they are missing from can_configs above.
+        board_has_psram = (
+            env_name.endswith('-psram')
+            or env_name in ('xiao-esp32s3', 'esp32s3-ESPCAN-waveshare')
+        )
 
         if board_has_psram:
             wifi_tab_label = 'WiFi/BLE/MQTT'
@@ -209,7 +335,33 @@ def generate_embedded_html(source, target, env):
             ble_shuntsource_option = ''
             ble_fallbacksource_option = ''
             ble_shunt_section = ''
-        
+
+        # Per-core CPU headroom (Diagnostics.cpp's SampleCpuUsage(), gated the
+        # same way there). S3-only by request - every S3 env's name contains
+        # 'esp32s3' (the DevKit family and xiao-esp32s3 alike), which nothing
+        # else here does.
+        board_is_s3 = 'esp32s3' in env_name
+        if board_is_s3:
+            cpu_headroom_section = '''<div class="stat-box stat-status">
+            <div class="stat-label">CPU Headroom (Core 0)</div>
+            <div class="stat-value sm" id="cpuHeadroom0">--</div>
+          </div>
+          <div class="stat-box stat-status">
+            <div class="stat-label">CPU Headroom (Core 1)</div>
+            <div class="stat-value sm" id="cpuHeadroom1">--</div>
+          </div>'''
+            cpu_headroom_handler = '''if(obj.hasOwnProperty('cpuheadroom0')) {
+        var e0=document.getElementById('cpuHeadroom0');
+        if(e0) e0.textContent = obj.cpuheadroom0 >= 0 ? obj.cpuheadroom0.toFixed(0) + '%' : '--';
+      }
+      if(obj.hasOwnProperty('cpuheadroom1')) {
+        var e1=document.getElementById('cpuHeadroom1');
+        if(e1) e1.textContent = obj.cpuheadroom1 >= 0 ? obj.cpuheadroom1.toFixed(0) + '%' : '--';
+      }'''
+        else:
+            cpu_headroom_section = ''
+            cpu_headroom_handler = ''
+
         # The fan field used to be hidden on the C3, which has no MCPWM. The fan
         # now runs on LEDC, which every variant has, so it is shown everywhere.
         fan_field = '''<div class="form-group">
@@ -218,6 +370,31 @@ def generate_embedded_html(source, target, env):
               </div>'''
         fan_handler = '''if(obj.hasOwnProperty('fanpin')) document.getElementById('fanpin').value=obj.fanpin;
           AckUpdate('fanpin');'''
+
+        # Product identity. Named here rather than written through the template
+        # so a build can be branded by contributing a branding() dict from one
+        # section module, instead of by a diff across the largest file in the
+        # project. These defaults are the project's own identity, so an ordinary
+        # build produces exactly the page it always did.
+        branding_defaults = {
+            'PRODUCT_TITLE': 'DIY Battery BMS',
+            # Set the way the device already names itself - the hostname, the
+            # MQTT client id, the discovery node - rather than as a product
+            # wordmark. A build that is a product may well want the other.
+            'PRODUCT_WORDMARK': 'diy<span class="accent">-</span>battery<span class="accent">-</span>bms',
+            'PRODUCT_FAVICON': "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect x='3' y='4' width='18' height='4.6' rx='2.3' fill='%2335c9d4'/%3E%3Crect x='3' y='10.2' width='12.5' height='4.6' rx='2.3' fill='%23e6edf5'/%3E%3Crect x='3' y='16.4' width='7' height='4.6' rx='2.3' fill='%23e6edf5' opacity='0.45'/%3E%3C/svg%3E",
+            'PRODUCT_MARK_CSS': '''.brand-mark { width: 23px; height: 23px; flex: none; color: var(--text); }
+    .brand-mark .lvl-full { fill: var(--accent); }
+    .brand-mark .lvl      { fill: currentColor; }
+    .brand-mark .lvl-low  { fill: currentColor; opacity: .45; }''',
+            'PRODUCT_MARK_SVG': '''<rect class="lvl-full" x="3" y="4" width="18" height="4.6" rx="2.3"/><rect class="lvl" x="3" y="10.2" width="12.5" height="4.6" rx="2.3"/><rect class="lvl-low" x="3" y="16.4" width="7" height="4.6" rx="2.3"/>''',
+        }
+
+        # Optional feature modules, if any - see collect_feature_contributions().
+        ext_anchors, ext_branding = collect_feature_contributions(
+            project_dir, env_name, _env_defines(env))
+        branding_values = dict(branding_defaults)
+        branding_values.update(ext_branding)
 
         # Substitute placeholders
         html_content = html_content.replace('{{CAN_CONFIG_TITLE}}', config['title'])
@@ -229,7 +406,26 @@ def generate_embedded_html(source, target, env):
         html_content = html_content.replace('{{BLE_SHUNTSOURCE_OPTION}}', ble_shuntsource_option)
         html_content = html_content.replace('{{BLE_FALLBACKSOURCE_OPTION}}', ble_fallbacksource_option)
         html_content = html_content.replace('{{BLE_SHUNT_SECTION}}', ble_shunt_section)
-        
+        html_content = html_content.replace('{{CPU_HEADROOM_SECTION}}', cpu_headroom_section)
+        html_content = html_content.replace('{{CPU_HEADROOM_HANDLER}}', cpu_headroom_handler)
+
+        # Product identity, then whatever optional features contributed. Both
+        # resolve to '' when nothing supplied them, so every placeholder is
+        # always consumed and no build can ship a page with a literal {{...}}
+        # showing in it.
+        for key, text in branding_values.items():
+            html_content = html_content.replace('{{' + key + '}}', text)
+        for anchor in EXT_ANCHORS:
+            html_content = html_content.replace('{{' + anchor + '}}', ext_anchors.get(anchor, ''))
+
+        # Anything left is a placeholder the template asks for and nothing
+        # answers - a typo in a name, or a section removed without its anchor.
+        # Left in place it would render as literal braces on the page, so it is
+        # named here instead, where a build log will show it.
+        leftover = sorted(set(re.findall(r'\{\{([A-Z0-9_]+)\}\}', html_content)))
+        if leftover:
+            print("[EMBED] Warning: unsubstituted placeholder(s): {}".format(', '.join(leftover)))
+
         # Gzip the HTML - served with Content-Encoding: gzip, decompressed by the browser.
         # mtime=0 keeps output byte-identical between builds so the header only changes
         # when the HTML actually changes.

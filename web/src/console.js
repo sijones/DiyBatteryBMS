@@ -18,6 +18,11 @@ export class Console {
     this.writer = null;
     this.buffer = "";
     this.onText = null;
+    // Fired with what send() actually put on the wire - the passphrase
+    // aside, which send() redacts before this ever sees it. Separate from
+    // onText, which is only what the board sent back, so the two stay
+    // distinguishable to whatever renders them.
+    this.onSend = null;
   }
 
   async open(baudRate = 115_200) {
@@ -52,6 +57,13 @@ export class Console {
   }
 
   async send(line) {
+    /* Never the real passphrase to onSend - a console transcript is exactly
+       the kind of thing that gets pasted into a bug report or screenshotted,
+       same reasoning as serialStatus() never echoing it back over the wire in
+       the first place. A fixed placeholder rather than asterisks matching the
+       length, so the transcript does not even leak how long it is. */
+    this.onSend?.(/^pass\s/i.test(line) ? "pass ********" : line);
+
     // The firmware reads one command per line and takes the rest of the line
     // as the value, so a passphrase with spaces in it arrives intact.
     await this.writer.write(new TextEncoder().encode(line + "\r\n"));
@@ -97,14 +109,47 @@ export class Console {
 }
 
 /**
- * Ask the board what networks it can see.
+ * Wait for the console to prove it is actually listening, not just open.
+ *
+ * Opening the port resets this board - confirmed directly: a fresh open logs
+ * `rst:0x15 (USB_UART_CHIP_RESET)` before anything else - and the reboot that
+ * follows takes several seconds of setup() running (every stored NVS key
+ * gets read, the CAN pin check runs, the access point comes up) before
+ * SerialSetup's serialSetupLoop() ever runs once. Serial.begin() itself only
+ * happens partway through that, so anything sent before this resolves is not
+ * delayed, it is gone - there is nothing running yet to have buffered it.
+ * serialBanner() prints the one line that only appears once the console loop
+ * is actually reading input, so waiting for it is what turns "send a command
+ * right after open()" from a race into something safe to rely on.
+ */
+export async function waitReady(con, ms = 15_000) {
+  return con.expect(/Type 'help' for WiFi setup/, ms);
+}
+
+/**
+ * Send the scan command and wait for the board to say it got it.
+ *
+ * SerialSetup.h prints "[scan] scanning..." synchronously, before it blocks
+ * on WiFi.scanNetworks() - so this line is real confirmation the command was
+ * received, not just sent. Split out from awaiting the result itself so a
+ * caller can stop claiming "scanning" the moment it is actually true, rather
+ * than the instant send() returns - send() only proves bytes left the USB
+ * lead, not that anything on the other end was listening for them.
+ */
+export async function sendScan(con, ms = 3_000) {
+  con.clear();
+  await con.send("scan");
+  return Boolean(await con.expect(/\[scan\]\s+scanning/i, ms));
+}
+
+/**
+ * Wait for the results of a scan sendScan() already confirmed the board is
+ * running.
  *
  * The scan is synchronous in the firmware and takes a couple of seconds, so
  * the wait is real rather than defensive.
  */
-export async function scanNetworks(con, ms = 15_000) {
-  con.clear();
-  await con.send("scan");
+export async function awaitScanResult(con, ms = 15_000) {
   // Either a count line followed by rows, or an outright failure
   const done = await con.expect(/\[scan\]\s+(\d+\s+network|no networks found|scan failed)/, ms);
   if (!done) return { text: con.buffer, timedOut: true };

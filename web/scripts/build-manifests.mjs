@@ -7,17 +7,33 @@
  * is the day someone needs the one before it, and a flasher that only offers
  * the newest build is no help at all then.
  *
- * Two things here are easy to get wrong and impossible to notice afterwards:
+ * Three things here are easy to get wrong and impossible to notice afterwards:
  *
- *   - The merged image starts at a DIFFERENT offset per chip: 0x1000 on the
- *     original ESP32, 0x0 on the S3 and C3, because that is where each chip's
- *     bootloader lives. A manifest with the wrong offset flashes cleanly and
- *     produces a board that never boots.
+ *   - The merged image is ALWAYS written at 0x0, on every chip. esptool's
+ *     merge_bin pads from address 0 up to wherever that chip's bootloader
+ *     really lives (0x1000 on the original ESP32, 0x0 on S3/C3, which is why
+ *     it looks like a no-op there) and bakes that padding into the file - that
+ *     is the entire point of a factory image, one offset for every chip. A
+ *     manifest that "corrects" the offset per chip double-shifts it: the real
+ *     bootloader lands 4KB past where the ROM loader looks for it, so the
+ *     write and the reboot both complete before the board dies with
+ *     "invalid header 0xffffffff" - this bricked an esp32dev board before it
+ *     was caught.
  *
  *   - nvs is read out of the env's own partition CSV rather than assumed. It is
  *     what the flasher compares against the board's live table to decide whether
  *     an upgrade keeps the user's settings, so a guess here would defeat the
  *     whole check.
+ *
+ *   - gap is what actually makes that check true rather than aspirational.
+ *     Comparing nvs offsets only proves the board and the build AGREE where
+ *     nvs is - it says nothing about whether the write leaves it alone. The
+ *     flasher writes one contiguous merged image, and esptool erases and
+ *     reprograms the full span of any file it writes as a normal part of
+ *     writing it, no matter what eraseAll says - so a merged image that runs
+ *     from the bootloader through the app has always taken nvs with it,
+ *     silently, on every "upgrade" that told the user otherwise. gap is the
+ *     range flash.js slices back out before it writes. See readGap() below.
  */
 
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync, statSync, rmSync } from "node:fs";
@@ -29,8 +45,8 @@ const ROOT = join(HERE, "..", "..");
 const BUILD = join(ROOT, ".pio", "build");
 const OUT = join(ROOT, "site", "firmware");
 
-/** Bootloader offset, which is where a merged factory image must be written. */
-const MERGED_OFFSET = { esp32: 0x1000, esp32s3: 0x0, esp32c3: 0x0, esp32s2: 0x0 };
+/** Where a merged factory image must be written - always 0x0, see above. */
+const MERGED_OFFSET = { esp32: 0x0, esp32s3: 0x0, esp32c3: 0x0, esp32s2: 0x0 };
 
 /** What esptool-js reports as chip.CHIP_NAME, per board family. */
 const CHIP_FAMILY = { esp32: "ESP32", esp32s3: "ESP32-S3", esp32c3: "ESP32-C3", esp32s2: "ESP32-S2" };
@@ -46,10 +62,27 @@ const BOARDS = {
   "esp32dev": { label: "ESP32 with MCP2515", detail: "CAN over SPI · CS 2, INT 22" },
   "esp32plus": { label: "ESP32 'plus' board", detail: "CAN over SPI · CS 5, INT 13" },
   "esp32-ESPCAN": { label: "LilyGo T-CAN485", detail: "Built-in CAN · TX 27, RX 26, EN 23" },
-  "esp32s3-ESPCAN": { label: "ESP32-S3 DevKit, built-in CAN", detail: "TWAI · TX 27, RX 26, EN 23" },
+  "esp32s3-ESPCAN": {
+    label: "ESP32-S3 DevKit, built-in CAN",
+    detail: "TWAI · TX 27, RX 26, EN 23",
+    // The pins above are only the default until the Settings page changes
+    // them - TWAI runs on whichever GPIOs are configured there, not ones
+    // baked into the build.
+  },
+  "esp32s3-ESPCAN-waveshare": {
+    label: "Waveshare ESP32-S3-RS485-CAN",
+    detail: "TWAI · TX 15, RX 16, no EN pin",
+    // Unlike every other S3 build, native USB is the only console this board
+    // has - there's no UART0 broken out to fall back to - so this one keeps
+    // CDC on at the cost of s3_base's reset/overrun/panic-backtrace tradeoffs.
+    // See platformio.ini's esp32s3-ESPCAN-waveshare env for the full reasoning.
+    hint: "Console and WiFi-setup wizard both need this build specifically - the generic ESP32-S3 DevKit build has no console on this board's USB port.",
+  },
   "esp32s3-MCP": { label: "ESP32-S3 with MCP2515", detail: "CAN over SPI" },
   "xiao-esp32s3": { label: "XIAO ESP32-S3 + CAN expansion", detail: "MCP2515 over SPI · CS 44" },
-  "esp32c3-ESPCAN": { label: "ESP32-C3 with built-in CAN", detail: "TWAI · TX 6, RX 7" },
+  // No esp32c3-ESPCAN entry: C3 support was dropped, see platformio.ini's
+  // header. The esp32c3 chip mappings below stay - they are generic, and an
+  // existing C3 install still needs them to read its own firmware.
 };
 
 /* Read platformio.ini the way PlatformIO reads it, which is more than reading
@@ -150,6 +183,49 @@ function readNvs(csvName) {
   return null;
 }
 
+/**
+ * The byte range a firmware write must never touch: from nvs through
+ * whatever else (otadata, in every table this project ships) sits between it
+ * and the first app slot.
+ *
+ * This is what actually lets an upgrade preserve settings. The flasher writes
+ * one merged image - bootloader, partition table and app in a single
+ * contiguous blob - and esptool erases and reprograms the ENTIRE span of any
+ * file it writes as a normal part of flashing it, "eraseAll" or not. Since
+ * that blob runs from the bootloader straight through to the app, it always
+ * used to include nvs, silently wiping every setting on every upgrade
+ * regardless of what the UI promised. The fix is not erasing less - it's
+ * flash.js slicing this range back out of the file before it writes, so the
+ * bytes that would land on nvs are simply never sent.
+ *
+ * Generalised past "skip exactly nvs.size bytes" on purpose: hardcoding
+ * otadata's size here would silently stop covering it the day a table gains
+ * another data partition in between. Skipping everything up to the first app
+ * partition covers whatever data partitions exist between nvs and the app,
+ * present or future, without this file needing to know their names.
+ */
+function readGap(csvName, nvs) {
+  if (!nvs) return null;
+  const path = join(ROOT, csvName);
+  if (!existsSync(path)) return null;
+
+  let appStart = null;
+  for (const raw of readFileSync(path, "utf8").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const [, type, , offset] = line.split(",").map((s) => s.trim());
+    if (type !== "app") continue;
+    const off = Number(offset);
+    if (appStart === null || off < appStart) appStart = off;
+  }
+
+  // A table with no app partition, or one that puts it before nvs, is not one
+  // this project would ever generate - refuse to guess rather than publish a
+  // gap that could be wrong in either direction.
+  if (appStart === null || appStart <= nvs.offset) return null;
+  return { offset: nvs.offset, size: appStart - nvs.offset };
+}
+
 function fwVersion() {
   const cfg = readFileSync(join(ROOT, "src", "config.h"), "utf8");
   const m = /#define\s+FW_VERSION\s+"([^"]+)"/.exec(cfg);
@@ -203,7 +279,7 @@ function describe(env, opts) {
     .filter(Boolean)
     .join(" · ");
 
-  return { label: base.label, detail, psram };
+  return { label: base.label, detail, psram, hint: base.hint ?? null };
 }
 
 /**
@@ -249,9 +325,12 @@ for (const env of Object.keys(ini)) {
   const chip = chipOf(env, ini);
   const csv = ini[env]["board_build.partitions"];
   const nvs = csv ? readNvs(csv) : null;
+  const gap = csv ? readGap(csv, nvs) : null;
 
   if (!nvs) {
     console.warn(`! ${env}: no nvs found in ${csv ?? "(no partition table set)"} - upgrades cannot be checked`);
+  } else if (!gap) {
+    console.warn(`! ${env}: could not work out the range around nvs to skip - upgrades will be forced to erase`);
   }
 
   const destDir = join(OUT, version, env);
@@ -264,8 +343,8 @@ for (const env of Object.keys(ini)) {
   /* The app image as well as the merged one. They are for different jobs and
      are NOT interchangeable:
        - firmware.factory.bin is bootloader + partition table + app, written
-         over serial from offset 0x1000 (ESP32) or 0x0 (S3/C3). That is what
-         this flasher writes.
+         over serial from offset 0x0 on every chip. That is what this flasher
+         writes.
        - firmware.bin is the app alone, which is what an over-the-air update
          writes into the spare OTA slot. Handing OTA the merged image would
          write a bootloader into an app partition.
@@ -287,6 +366,9 @@ for (const env of Object.keys(ini)) {
         env,
         board: board.label,
         detail: board.detail,
+        // A second board this same build fits, when its wiring differs enough
+        // to be worth calling out - null for every family that has only one.
+        hint: board.hint,
         chipFamily: CHIP_FAMILY[chip],
         // Minimum flash the partition table needs. A 16MB table on a 4MB chip
         // is the fastest way to brick a board, so the flasher greys those out.
@@ -296,6 +378,11 @@ for (const env of Object.keys(ini)) {
         // with, and it is the flag the board has to live up to.
         psramRequired: board.psram,
         nvs,
+        // The byte range flash.js must slice out of the merged image before
+        // writing it, so an upgrade never touches nvs. See readGap() above -
+        // null means the flasher cannot promise nvs survives on this build,
+        // and must force an erase instead of claiming otherwise.
+        gap,
         published: new Date().toISOString(),
         // What the serial flasher writes
         parts: [{ path: "firmware.factory.bin", offset: MERGED_OFFSET[chip], size }],

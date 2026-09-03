@@ -89,9 +89,6 @@
 				"esp32s3-MCP-16mb",
 				"esp32s3-MCP-8mb-psram",
 				"esp32s3-MCP-16mb-psram",
-				"esp32c3-ESPCAN-4mb",
-				"esp32c3-ESPCAN-8mb",
-				"esp32c3-ESPCAN-16mb",
 				"xiao-esp32s3"
 			]
 		}

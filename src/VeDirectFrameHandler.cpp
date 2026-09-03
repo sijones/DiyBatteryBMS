@@ -35,6 +35,7 @@
  
 #include <Arduino.h>
 #include "VeDirectFrameHandler.h"
+#include "WebLog.h"
 
 
 void VETaskHandler(void * pointer)
@@ -77,8 +78,41 @@ bool VeDirectFrameHandler::OpenSerial(uint8_t _rxPin,uint8_t _txPin)
 	#endif
     int8_t txArg = _txPin ? (int8_t) _txPin : (int8_t) -1;
     log_d("Opening Serial Port rxPin: %i, txPin %i",_rxPin,txArg);
+
+    /* Sized against a real frame, not a guess - measured 141-165 bytes on a
+       real shunt (a one-off byte-count log at frame-complete, since removed),
+       well under the 256-byte Arduino-ESP32 default. That default still
+       leaves little slack for loop() being briefly busy elsewhere before it
+       drains Serial1 - a stall past the buffer's free space corrupts that
+       second's frame. Must be set before begin(). */
+#ifdef BOARD_HAS_PSRAM
+    /* CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL on this platform is 4096 bytes -
+       anything at or above that is eligible to come from PSRAM instead of the
+       internal budget every other board here has to share (confirmed against
+       esp-idf's uart_driver_install: UART_MALLOC_CAPS is MALLOC_CAP_DEFAULT,
+       not forced internal, because CONFIG_UART_ISR_IN_IRAM is unset on this
+       platform's sdkconfig). Generous on purpose - this is close to free on
+       a board with 8MB of PSRAM to spare. */
+    size_t heapBefore = ESP.getFreeHeap();
+    Serial1.setRxBufferSize(8192);
+#else
+    // ~2.3x the largest frame measured on real hardware - internal RAM is
+    // scarce on these boards, so this stays modest rather than padded for a
+    // worst case that does not happen here.
+    Serial1.setRxBufferSize(384);
+#endif
+
     Serial1.begin(19200, SERIAL_8N1, _rxPin, txArg);
     Serial1.flush();
+
+#ifdef BOARD_HAS_PSRAM
+    // One-off confirmation that the 8KB buffer actually came from PSRAM
+    // rather than the internal heap it was sized specifically to avoid -
+    // remove alongside the frame-size logging in rxData() once confirmed.
+    long delta = (long) heapBefore - (long) ESP.getFreeHeap();
+    WS_LOG_I("VE.Direct RX buffer: internal heap dropped by %ld bytes opening it (expect near 0 if it landed in PSRAM)", delta);
+#endif
+
     return true;
 }
 

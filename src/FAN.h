@@ -7,9 +7,11 @@
    This drove the fan through MCPWM, which was the wrong peripheral for the job:
    it is a motor-control block - dead time, fault handling, capture inputs - and
    none of that is wanted to vary the speed of one 4-pin fan. It also does not
-   exist on the ESP32-C3, so that board carried a stub that logged "FAN not
-   supported" and did nothing. LEDC is on every variant, so the stub is gone and
-   the C3 gets fan control like everything else.
+   exist on the ESP32-C3, which was a supported board at the time, so that
+   board carried a stub that logged "FAN not supported" and did nothing. LEDC
+   is on every variant, so the stub is gone. (The C3 has since been dropped
+   entirely - see platformio.ini's header - but the peripheral was the wrong
+   choice regardless of which boards are in the list.)
 
    The move was due anyway: the legacy driver/mcpwm.h this used is deprecated in
    ESP-IDF 5.x and warns on every build.
@@ -20,7 +22,7 @@
 
 #define FANPWMFREQ   25000   // 25kHz - above audible, and what 4-pin fans expect
 #define FANPWMBITS   8       // 0-255 duty. At 25kHz the LEDC clock allows ~11 bits,
-                             // so 8 is comfortable on every variant including the C3.
+                             // so 8 is comfortable on every variant.
 
 uint8_t FAN_PWM = 0;         // last duty as a percentage, for MQTT and the web UI
 bool FAN_INIT = false;
@@ -58,6 +60,20 @@ void FanInit(uint8_t FAN_PIN)
     FAN_INIT = true;
     ledcWrite(_fanPin, 0);
     log_d("Fan PWM on GPIO %u at %u Hz", FAN_PIN, FANPWMFREQ);
+}
+
+void FanDeinit()
+{
+    if (!FAN_INIT) return;
+
+    ledcWrite(_fanPin, 0);
+    ledcDetach(_fanPin);
+    gpio_pulldown_dis((gpio_num_t) _fanPin);
+    log_d("Fan PWM deinitialized on GPIO %u", _fanPin);
+
+    _fanPin = 0;
+    FAN_INIT = false;
+    FAN_PWM = 0;
 }
 
 void FanUpdate(float Speed)

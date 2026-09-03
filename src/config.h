@@ -29,11 +29,9 @@
 
 #define SYSLOG 1
 
-#define FW_VERSION "3.0.0-BETA4"
+#define FW_VERSION "3.0.0-BETA8"
 
-#if defined(ESPCAN_C3)
-  #define FW_BUILD "ESP32-C3 TWAI"
-#elif defined(ESPCAN_S3)
+#if defined(ESPCAN_S3)
   #define FW_BUILD "ESP32-S3 TWAI"
 #elif defined(ESPCAN)
   #define FW_BUILD "ESP32 TWAI"
@@ -41,6 +39,27 @@
   #define FW_BUILD "ESP32-S3 MCP2515"
 #else
   #define FW_BUILD "ESP32 MCP2515"
+#endif
+
+// CAN pin defaults written to NVS on first boot. Every other ESPCAN board
+// still starts at 0/0/0 ("must be set via web interface") because its env
+// fits more than one physical wiring - the Waveshare env is the only one
+// that IS one fixed wiring, so it is the only one worth defaulting. 0 for
+// the enable pin is a real value here, not a placeholder: this board's CAN
+// transceiver has no software enable line at all.
+#if defined(ESPCAN_S3_WAVESHARE)
+  #define initCAN_TX_PIN 15
+  #define initCAN_RX_PIN 16
+  #define initCAN_EN_PIN 0
+  // GPIO1/GPIO2 are the two data lines on this board's pluggable IO header
+  // (J4), unused by anything else on the board - GPIO1 is wired to the VE.Direct
+  // RX default below.
+  #define initVictronRX 1
+#else
+  #define initCAN_TX_PIN 0
+  #define initCAN_RX_PIN 0
+  #define initCAN_EN_PIN 0
+  #define initVictronRX 0
 #endif
 
 #define initBattChargeVoltage 0       // Battery Charge Voltage sent to inverter
@@ -136,7 +155,20 @@ uint8_t ONEWIRE_PIN = 0;
 
 
 
-#define AppCore 1
-#define SysCore 0
+/* Which core to hand a task. Unused at present - CANBUS.cpp defines its own,
+   because config.h defines variables at namespace scope and so cannot be
+   included by a second translation unit without duplicate symbols at link.
+
+   Chip-aware, and that is not decoration: the C3 is single-core, and IDF's
+   FreeRTOS asserts a core ID against the count it was built for, aborting on
+   one it does not have. A bare `#define AppCore 1` here was a loaded gun for
+   whoever used it first on that part - see the note in CANBUS.cpp. */
+#if CONFIG_FREERTOS_UNICORE
+  #define AppCore tskNO_AFFINITY
+  #define SysCore tskNO_AFFINITY
+#else
+  #define AppCore 1
+  #define SysCore 0
+#endif
 
 #endif

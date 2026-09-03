@@ -3,9 +3,13 @@
 #include <ArduinoJson.h>
 
 /* Compiled out on space-constrained targets via -DDISABLE_SCHEDULER.
-   The ESP32-C3 build has the least flash headroom of the supported boards and
-   is a niche target, so it ships without scheduling rather than forcing every
-   other board to stay small enough for it. */
+
+   No env defines it, and none ever has - the escape hatch exists but has never
+   been taken, so every build ships with scheduling. This used to say the C3
+   shipped without it, which was wrong twice over: that flag was never set on
+   the C3 either, and the C3 is no longer a target at all (see platformio.ini's
+   header). The tightest build now is the classic ESP32 at 72.1% of a 4MB app
+   slot, which has room. */
 #ifndef DISABLE_SCHEDULER
 
 /*

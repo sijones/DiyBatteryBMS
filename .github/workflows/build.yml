@@ -31,7 +31,6 @@ jobs:
           - esp32-ESPCAN-4mb          # classic ESP32, built-in CAN
           - esp32dev-4mb              # classic ESP32, MCP2515 over SPI
           - esp32s3-ESPCAN-16mb-psram # S3 with PSRAM, the octal path
-          - esp32c3-ESPCAN-4mb        # C3, the RISC-V core
 
     steps:
       - uses: actions/checkout@v7
