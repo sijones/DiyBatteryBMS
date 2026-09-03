@@ -134,7 +134,7 @@ bool _initialBattData = false;
 volatile uint8_t _battSOC = 0;
 volatile uint8_t _battSOH = 100;
 volatile uint16_t _battVoltage = 0;
-volatile int32_t _battCurrentmA = 0;
+volatile int32_t _battCurrentDeciA = 0;
 volatile int16_t _battTemp = 10;
 volatile uint32_t _battCapacity = 0;
 
@@ -564,7 +564,9 @@ public:
   }
   void BattVoltage(uint16_t voltage){_initialBattVoltage = true; _battVoltage = voltage;}
   void BattSOH(uint8_t soh){_battSOH = soh;}
-  void BattCurrentmA(int32_t currentmA){_initialBattCurrent = true; _battCurrentmA = currentmA;}
+  // Deciamps (0.1 A), signed - positive charging, negative discharging. Every
+  // shunt source converts to this at its own edge; see DataProcessing.h.
+  void BattCurrentDeciA(int32_t currentDeciA){_initialBattCurrent = true; _battCurrentDeciA = currentDeciA;}
   void BattTemp(int16_t batttemp){_battTemp = batttemp;}
   void EnableSOCTrick(bool State) {_enableSOCTrick = State;} 
   void EnableRequestFlags(bool State) {_enableRequestFlags = State;}
@@ -573,7 +575,7 @@ public:
   uint16_t BattSOCPermille(){return _battSOCPermille;}
   uint16_t BattVoltage(){return _battVoltage;}
   uint8_t BattSOH(){return _battSOH;}
-  int32_t BattCurrentmA(){return _battCurrentmA;}
+  int32_t BattCurrentDeciA(){return _battCurrentDeciA;}
   int16_t BattTemp(){return _battTemp;}
   bool ForceCharge(){return _forceCharge;}
   bool RequestFullCharge(){return _requestFullCharge;}

@@ -277,7 +277,7 @@ bool sendVE2MQTT() {
   mqttPublish(_mqTopicBuf, generateDatatoJSON(false).c_str(), false);
 
   sprintf(buffer, "%u", Inverter.BattVoltage());   pub("V", buffer);
-  sprintf(buffer, "%i", Inverter.BattCurrentmA());  pub("I", buffer);
+  sprintf(buffer, "%i", Inverter.BattCurrentDeciA());  pub("I", buffer);
   sprintf(buffer, "%i", Inverter.BattSOC());         pub("SOC", buffer);
   sprintf(buffer, "%ld", Inverter.BattPower());      pub("P", buffer);
   sprintf(buffer, "%d", Inverter.BattTemp());        pub("T", buffer);

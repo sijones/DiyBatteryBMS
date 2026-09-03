@@ -34,7 +34,7 @@ class MqttShuntSource {
   public:
     // ---- decoded values, in the units the CANBUS setters take ----
     volatile uint16_t VoltageCentiV = 0;   // 0.01 V  -> Inverter.BattVoltage()
-    volatile int32_t  CurrentDeciA  = 0;   // 0.1 A   -> Inverter.BattCurrentmA()
+    volatile int32_t  CurrentDeciA  = 0;   // 0.1 A   -> Inverter.BattCurrentDeciA()
     volatile uint16_t SOCPermille   = 0;   // 0.1 %   -> Inverter.BattSOCPermille()
     volatile int16_t  TempC         = 0;   // whole C -> Inverter.BattTemp()
 
