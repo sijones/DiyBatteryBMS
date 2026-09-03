@@ -3490,7 +3490,7 @@
 
           // 'ok' when the link actually answering is the configured primary,
           // 'warn' when it is only the fallback taking over, 'err' when
-          // nothing is answering at all - see ShuntTier() below.
+          // nothing is answering at all - see ShuntTier() above.
           badge.classList.remove('v-ok', 'v-warn', 'v-err');
           var tier = ShuntTier(obj.shuntlink);
           if (tier) badge.classList.add('v-' + tier);
