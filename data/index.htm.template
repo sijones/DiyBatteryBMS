@@ -1915,8 +1915,8 @@
 
         <div class="form-row">
           <div class="form-group">
-            <label for="victronrxpin"><span class="tip" data-tip="GPIO pin connected to the Victron shunt TX line (VE.Direct data in). Required - this is the only VE.Direct connection the BMS needs.">Victron RX Pin:</span></label>
-            <input type="number" id="victronrxpin" onchange="EnqueueUpdate('victronrxpin')" onkeypress="HandleEnter(event, 'victronrxpin')">
+            <label for="victronrxpin"><span class="tip" data-tip="GPIO pin connected to the Victron shunt TX line (VE.Direct data in) - the only VE.Direct connection the BMS needs. Required if VE.Direct is your shunt source or its fallback; leave blank if you read the shunt over Bluetooth or MQTT instead, and the serial reader is not started at all.">Victron RX Pin:</span></label>
+            <input type="number" id="victronrxpin" placeholder="Not used" onchange="EnqueueUpdate('victronrxpin')" onkeypress="HandleEnter(event, 'victronrxpin')">
           </div>
           <div class="form-group">
             <label for="victrontxpin"><span class="tip" data-tip="Optional. GPIO pin connected to the Victron shunt RX line. Nothing is ever sent to the shunt (passive listen only), so leave this blank unless you have a reason to wire it. Clearing it frees the pin.">Victron TX Pin (optional):</span></label>
@@ -2311,7 +2311,16 @@
        anything under 1 for a non-optional pin, so 0 could not be typed, and an
        empty box was ignored. A board whose transceiver is always on had no way
        to say so. */
-    const OPTIONAL_PIN_FIELDS = ['victrontxpin','can_en_pin'];
+    /* fanpin: main.cpp starts the fan only when the pin is > 0, and the field's
+       own tooltip used to say "Set 0 to disable" - which the send path below
+       then rejected as an invalid pin, so the documented way to turn the fan
+       off did not work.
+
+       victronrxpin: 0 means the VE.Direct serial reader is never started. That
+       stopped being an error when the shunt gained BLE and MQTT sources - a
+       device reading the shunt either of those ways has no VE.Direct pin to
+       give, and previously could not say so. */
+    const OPTIONAL_PIN_FIELDS = ['victrontxpin','can_en_pin','fanpin','victronrxpin'];
     /* Settings whose off switch is 0, so clearing the box turns the feature off
        rather than being ignored. They also show blank instead of 0, so "not
        set" and "set to zero" look the same because they are the same.

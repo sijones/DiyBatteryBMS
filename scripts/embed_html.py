@@ -365,8 +365,8 @@ def generate_embedded_html(source, target, env):
         # The fan field used to be hidden on the C3, which has no MCPWM. The fan
         # now runs on LEDC, which every variant has, so it is shown everywhere.
         fan_field = '''<div class="form-group">
-                <label for="fanpin"><span class="tip" data-tip="GPIO pin for PWM fan output. Set to 0 to disable.">FAN Pin:</span></label>
-                <input type="number" id="fanpin" onchange="EnqueueUpdate('fanpin')" onkeypress="HandleEnter(event, 'fanpin')">
+                <label for="fanpin"><span class="tip" data-tip="Optional. GPIO pin for PWM fan output. Leave blank if no fan is fitted - the pin is then left alone and nothing is driven.">FAN Pin (optional):</span></label>
+                <input type="number" id="fanpin" placeholder="Not used" onchange="EnqueueUpdate('fanpin')" onkeypress="HandleEnter(event, 'fanpin')">
               </div>'''
         fan_handler = '''if(obj.hasOwnProperty('fanpin')) document.getElementById('fanpin').value=obj.fanpin;
           AckUpdate('fanpin');'''
