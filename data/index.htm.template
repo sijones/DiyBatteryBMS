@@ -1915,8 +1915,8 @@
 
         <div class="form-row">
           <div class="form-group">
-            <label for="victronrxpin"><span class="tip" data-tip="GPIO pin connected to the Victron shunt TX line (VE.Direct data in). Required - this is the only VE.Direct connection the BMS needs.">Victron RX Pin:</span></label>
-            <input type="number" id="victronrxpin" onchange="EnqueueUpdate('victronrxpin')" onkeypress="HandleEnter(event, 'victronrxpin')">
+            <label for="victronrxpin"><span class="tip" data-tip="GPIO pin connected to the Victron shunt TX line (VE.Direct data in) - the only VE.Direct connection the BMS needs. Required if VE.Direct is your shunt source or its fallback; leave blank if you read the shunt over Bluetooth or MQTT instead, and the serial reader is not started at all.">Victron RX Pin:</span></label>
+            <input type="number" id="victronrxpin" placeholder="Not used" onchange="EnqueueUpdate('victronrxpin')" onkeypress="HandleEnter(event, 'victronrxpin')">
           </div>
           <div class="form-group">
             <label for="victrontxpin"><span class="tip" data-tip="Optional. GPIO pin connected to the Victron shunt RX line. Nothing is ever sent to the shunt (passive listen only), so leave this blank unless you have a reason to wire it. Clearing it frees the pin.">Victron TX Pin (optional):</span></label>
@@ -2304,7 +2304,23 @@
     const PIN_FIELDS = ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin','canbuscspin','fanpin','onewirepin'];
     // Pins that are allowed to be unset. These show blank rather than 0, and send 0
     // when cleared so the firmware unassigns the pin instead of ignoring the update.
-    const OPTIONAL_PIN_FIELDS = ['victrontxpin'];
+    /* can_en_pin is here because the firmware already treats 0 as "this board's
+       transceiver has no software enable line" rather than "not configured" -
+       see main.cpp's CAN startup, which starts on TX/RX alone when en is 0.
+       The UI was the only thing insisting on a pin: the check below rejects
+       anything under 1 for a non-optional pin, so 0 could not be typed, and an
+       empty box was ignored. A board whose transceiver is always on had no way
+       to say so. */
+    /* fanpin: main.cpp starts the fan only when the pin is > 0, and the field's
+       own tooltip used to say "Set 0 to disable" - which the send path below
+       then rejected as an invalid pin, so the documented way to turn the fan
+       off did not work.
+
+       victronrxpin: 0 means the VE.Direct serial reader is never started. That
+       stopped being an error when the shunt gained BLE and MQTT sources - a
+       device reading the shunt either of those ways has no VE.Direct pin to
+       give, and previously could not say so. */
+    const OPTIONAL_PIN_FIELDS = ['victrontxpin','can_en_pin','fanpin','victronrxpin'];
     /* Settings whose off switch is 0, so clearing the box turns the feature off
        rather than being ignored. They also show blank instead of 0, so "not
        set" and "set to zero" look the same because they are the same.
@@ -3773,9 +3789,26 @@
         var el = document.getElementById(f);
         if (el) settings[f] = Number(el.value);
       });
+      /* Pins export only above 0, because for a required role 0 means "never
+         configured" and a backup should not carry an absence as if it were a
+         setting.
+
+         The optional roles are the exception, and have to be: for them 0 is a
+         decision - no fan fitted, no VE.Direct cable, no transceiver enable
+         line - and it is exactly what a blank field produces. Skipped, "no fan"
+         would silently fail to survive an export/import, leaving whatever the
+         importing device already had. */
       EXPORT_FIELDS.pins.forEach(function(f) {
         var el = document.getElementById(f);
-        if (el && el.value !== '' && Number(el.value) > 0) settings[f] = Number(el.value);
+        if (!el) return;
+        var optional = OPTIONAL_PIN_FIELDS.includes(f);
+        if (el.value === '') {
+          if (optional) settings[f] = 0;
+          return;
+        }
+        var n = Number(el.value);
+        if (!Number.isFinite(n)) return;
+        if (optional ? n >= 0 : n > 0) settings[f] = n;
       });
       // WiFi SSID from select - exported as hex so a name in any encoding
       // restores as the same bytes on any device
