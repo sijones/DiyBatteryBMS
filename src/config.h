@@ -29,7 +29,7 @@
 
 #define SYSLOG 1
 
-#define FW_VERSION "3.0.0-BETA8"
+#define FW_VERSION "3.0.0-BETA9"
 
 #if defined(ESPCAN_S3)
   #define FW_BUILD "ESP32-S3 TWAI"
