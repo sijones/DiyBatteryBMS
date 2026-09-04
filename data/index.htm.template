@@ -3789,9 +3789,26 @@
         var el = document.getElementById(f);
         if (el) settings[f] = Number(el.value);
       });
+      /* Pins export only above 0, because for a required role 0 means "never
+         configured" and a backup should not carry an absence as if it were a
+         setting.
+
+         The optional roles are the exception, and have to be: for them 0 is a
+         decision - no fan fitted, no VE.Direct cable, no transceiver enable
+         line - and it is exactly what a blank field produces. Skipped, "no fan"
+         would silently fail to survive an export/import, leaving whatever the
+         importing device already had. */
       EXPORT_FIELDS.pins.forEach(function(f) {
         var el = document.getElementById(f);
-        if (el && el.value !== '' && Number(el.value) > 0) settings[f] = Number(el.value);
+        if (!el) return;
+        var optional = OPTIONAL_PIN_FIELDS.includes(f);
+        if (el.value === '') {
+          if (optional) settings[f] = 0;
+          return;
+        }
+        var n = Number(el.value);
+        if (!Number.isFinite(n)) return;
+        if (optional ? n >= 0 : n > 0) settings[f] = n;
       });
       // WiFi SSID from select - exported as hex so a name in any encoding
       // restores as the same bytes on any device
