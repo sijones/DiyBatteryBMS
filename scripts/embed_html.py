@@ -204,8 +204,8 @@ def generate_embedded_html(source, target, env):
               </div>
               <div class="form-row full">
                 <div class="form-group">
-                  <label for="can_en_pin">ESPCAN Power/Enable Pin:</label>
-                  <input type="number" id="can_en_pin" onchange="EnqueueUpdate('can_en_pin')" onkeypress="HandleEnter(event, 'can_en_pin')">
+                  <label for="can_en_pin"><span class="tip" data-tip="Optional. GPIO that powers or enables the CAN transceiver, if yours has one - many do not, and the transceiver is simply always on. Leave blank if there is no enable line; the firmware then drives nothing and starts CAN on TX/RX alone.">ESPCAN Power/Enable Pin (optional):</span></label>
+                  <input type="number" id="can_en_pin" placeholder="Not used" onchange="EnqueueUpdate('can_en_pin')" onkeypress="HandleEnter(event, 'can_en_pin')">
                 </div>
               </div>''',
                 'can_handlers': '''if(obj.hasOwnProperty('can_rx_pin')) document.getElementById('can_rx_pin').value=obj.can_rx_pin;
@@ -229,8 +229,8 @@ def generate_embedded_html(source, target, env):
               </div>
               <div class="form-row full">
                 <div class="form-group">
-                  <label for="can_en_pin">ESPCAN Power/Enable Pin:</label>
-                  <input type="number" id="can_en_pin" onchange="EnqueueUpdate('can_en_pin')" onkeypress="HandleEnter(event, 'can_en_pin')">
+                  <label for="can_en_pin"><span class="tip" data-tip="Optional. GPIO that powers or enables the CAN transceiver, if yours has one - many do not, and the transceiver is simply always on. Leave blank if there is no enable line; the firmware then drives nothing and starts CAN on TX/RX alone.">ESPCAN Power/Enable Pin (optional):</span></label>
+                  <input type="number" id="can_en_pin" placeholder="Not used" onchange="EnqueueUpdate('can_en_pin')" onkeypress="HandleEnter(event, 'can_en_pin')">
                 </div>
               </div>''',
                 'can_handlers': '''if(obj.hasOwnProperty('can_rx_pin')) document.getElementById('can_rx_pin').value=obj.can_rx_pin;

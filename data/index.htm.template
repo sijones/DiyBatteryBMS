@@ -2304,7 +2304,14 @@
     const PIN_FIELDS = ['victronrxpin','victrontxpin','can_rx_pin','can_tx_pin','can_en_pin','canbuscspin','fanpin','onewirepin'];
     // Pins that are allowed to be unset. These show blank rather than 0, and send 0
     // when cleared so the firmware unassigns the pin instead of ignoring the update.
-    const OPTIONAL_PIN_FIELDS = ['victrontxpin'];
+    /* can_en_pin is here because the firmware already treats 0 as "this board's
+       transceiver has no software enable line" rather than "not configured" -
+       see main.cpp's CAN startup, which starts on TX/RX alone when en is 0.
+       The UI was the only thing insisting on a pin: the check below rejects
+       anything under 1 for a non-optional pin, so 0 could not be typed, and an
+       empty box was ignored. A board whose transceiver is always on had no way
+       to say so. */
+    const OPTIONAL_PIN_FIELDS = ['victrontxpin','can_en_pin'];
     /* Settings whose off switch is 0, so clearing the box turns the feature off
        rather than being ignored. They also show blank instead of 0, so "not
        set" and "set to zero" look the same because they are the same.
