@@ -59,15 +59,23 @@ const CHIP_FAMILY = { esp32: "ESP32", esp32s3: "ESP32-S3", esp32c3: "ESP32-C3", 
  * rather than written down twice. Thirty envs sharing seven wirings would
  * otherwise be thirty lines here, drifting apart one careless edit at a time. */
 const BOARDS = {
-  "esp32dev": { label: "ESP32 with MCP2515", detail: "CAN over SPI · CS 2, INT 22" },
-  "esp32plus": { label: "ESP32 'plus' board", detail: "CAN over SPI · CS 5, INT 13" },
+  // The MCP2515's interrupt line is not read by anything - CANBUS.cpp polls the
+  // controller - so CS is the only pin these two builds care about. The "INT 22"
+  // / "INT 13" that used to be printed here came from platformio.ini's CAN0_INT,
+  // a define no source file has ever referenced.
+  "esp32dev": { label: "ESP32 with MCP2515", detail: "CAN over SPI · CS 2" },
+  "esp32plus": { label: "ESP32 'plus' board", detail: "CAN over SPI · CS 5" },
   "esp32-ESPCAN": { label: "LilyGo T-CAN485", detail: "Built-in CAN · TX 27, RX 26, EN 23" },
   "esp32s3-ESPCAN": {
     label: "ESP32-S3 DevKit, built-in CAN",
-    detail: "TWAI · TX 27, RX 26, EN 23",
-    // The pins above are only the default until the Settings page changes
-    // them - TWAI runs on whichever GPIOs are configured there, not ones
-    // baked into the build.
+    detail: "TWAI · CAN pins set in the web UI",
+    /* No pin numbers here, on purpose. This env is a chip and a CAN controller,
+       not a wiring: config.h leaves TX/RX/EN at 0 for every board except the
+       Waveshare, so there is no default to report and anything printed would be
+       a suggestion. The suggestion that used to be printed - TX 27, RX 26,
+       EN 23 - was the LilyGo's, from the line above, and could not work on any
+       board this build runs on: GPIO 26-32 are the SPI flash on an ESP32-S3 and
+       the DevKitC-1 does not bring them out at all. */
   },
   "esp32s3-ESPCAN-waveshare": {
     label: "Waveshare ESP32-S3-RS485-CAN",
@@ -402,6 +410,44 @@ for (const env of Object.keys(ini)) {
 
 /* ---- 2. rebuild the index from everything on disk ----------------------- */
 
+/* A published manifest is two different kinds of fact in one file, and only one
+ * of them is frozen at build time.
+ *
+ * minFlashBytes, psramRequired, the part offsets and sizes describe the binary
+ * sitting next to it: they were true when it was built and must never be
+ * touched afterwards. board/detail/hint describe the WIRING - which controller,
+ * which pins, which board this image is for - and that is documentation. When
+ * it turns out to be wrong it is wrong on every build already published, and
+ * those are exactly the ones people are reading, on the page they read before
+ * choosing what to flash.
+ *
+ * They cannot simply be corrected on disk: site/firmware is gitignored, and
+ * restore-published.mjs rewrites every older manifest.json verbatim from the
+ * live site before each deploy - so an edit made by hand is guaranteed to be
+ * replaced by the copy carrying the mistake. This runs after that restore and
+ * re-states the wiring half from BOARDS above, so a correction reaches the
+ * builds that are already out rather than only the next one.
+ *
+ * The flash-size and PSRAM tail of `detail` is deliberately kept as published:
+ * that half is about the binary, and an env that has since changed flash size
+ * must not have its old build re-described as something it is not.
+ */
+function refreshWiring(path, m, tag) {
+  const base = BOARDS[/^(.*?)(?:-\d+mb)?(?:-psram)?$/i.exec(m.env ?? "")[1]] ?? BOARDS[m.env];
+  if (!base?.detail) return;
+
+  const tail = String(m.detail ?? "").match(/\s·\s\d+MB flash.*$/);
+  const detail = base.detail + (tail ? tail[0] : "");
+  const hint = base.hint ?? null;
+  if (m.board === base.label && m.detail === detail && (m.hint ?? null) === hint) return;
+
+  m.board = base.label;
+  m.detail = detail;
+  m.hint = hint;
+  writeFileSync(path, JSON.stringify(m, null, 2) + "\n");
+  console.log(`  ~ ${tag}: wiring text updated to "${base.label} - ${detail}"`);
+}
+
 mkdirSync(OUT, { recursive: true });
 
 const versions = [];
@@ -415,6 +461,7 @@ for (const vdir of readdirSync(OUT)) {
     if (!existsSync(mpath)) continue;
     try {
       const m = JSON.parse(readFileSync(mpath, "utf8"));
+      refreshWiring(mpath, m, `${vdir}/${edir}`);
       builds.push({
         env: m.env,
         board: m.board,

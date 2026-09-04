@@ -24,18 +24,39 @@ extern uint8_t activeShuntLink;
 #include "RemoteOverride.h"
 #include "GPIOForbidden.h"
 
-// Every GPIO role the web UI lets the user pin-assign. Kept in one place so a
-// newly assigned pin can be checked against every other role, not just its own.
+/* Every GPIO role the web UI lets the user pin-assign IN THIS BUILD. Kept in
+   one place so a newly assigned pin can be checked against every other role,
+   not just its own.
+ *
+ * Gated the same way the settings payload is, and for a reason that took a
+ * board out of service to find: NVS survives a reflash - deliberately, and the
+ * clone kit in scripts/Upgrade-DiyBatteryBMS.ps1 copies these very keys from
+ * one board to another on purpose - so an MCP2515 board reflashed with an
+ * ESPCAN build still holds whatever CS pin it was configured with. Listed
+ * unconditionally, that dead value goes on being checked against, and setting
+ * CAN TX to the same GPIO is refused with
+ *
+ *   can_tx_pin 5 already used by canbuscspin
+ *
+ * naming a field that this build does not render, cannot render, and offers no
+ * way to clear. CAN then cannot be brought up at all, and the message says
+ * nothing a user can act on. A role that has no field on the page is not a
+ * claim on a pin. */
 struct PinRole { const char* field; const char* prefKey; };
 static const PinRole PIN_ROLES[] = {
   {"fanpin",       ccFanPin},
+#ifdef USE_ONEWIRE
   {"onewirepin",   ccOneWirePin},
-  {"canbuscspin",  ccCanCSPin},
+#endif
   {"victronrxpin", ccVictronRX},
   {"victrontxpin", ccVictronTX},
+#ifdef ESPCAN
   {"can_rx_pin",   ccCAN_RX_PIN},
   {"can_tx_pin",   ccCAN_TX_PIN},
   {"can_en_pin",   ccCAN_EN_PIN},
+#else
+  {"canbuscspin",  ccCanCSPin},
+#endif
 };
 
 // Field name of another configured role already assigned to `pin`, or nullptr
@@ -698,7 +719,9 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     }
     doc["overvoltage"] = Inverter.GetOverVoltage();
     doc["fanpin"] = pref.getUInt8(ccFanPin,0);
+#ifdef USE_ONEWIRE
     doc["onewirepin"] = pref.getUInt8(ccOneWirePin,0);
+#endif
     doc["autocharge"] = Inverter.AutoCharge();
     doc["smartinterval"] = Inverter.SmartInterval();
     doc["tailcurrent"] = Inverter.GetTailCurrentmA();
@@ -1373,12 +1396,22 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           else { pref.putUInt8(prefKey, _pv); notifyWSClients(); } \
         }
       #define HANDLE_PIN(field, prefKey) HANDLE_PIN_EX(field, prefKey, false)
-      HANDLE_PIN("canbuscspin", ccCanCSPin)
       HANDLE_PIN("victronrxpin", ccVictronRX)
       HANDLE_PIN_EX("victrontxpin", ccVictronTX, true) // VE.Direct is listen-only, TX need not be wired
+      /* Only this build's own CAN pins are writable, matching PIN_ROLES above
+         and the payload buildDataDoc() sends. Accepting the other family's key
+         would write a pin no code here reads and no page here shows - which is
+         exactly the stale value PIN_ROLES had to stop trusting. Nothing an
+         ordinary client sends is lost: settings import skips any key with no
+         field on the page, so an MCP2515 export never offers canbuscspin to an
+         ESPCAN build in the first place. */
+#ifdef ESPCAN
       HANDLE_PIN("can_rx_pin", ccCAN_RX_PIN)
       HANDLE_PIN("can_tx_pin", ccCAN_TX_PIN)
       HANDLE_PIN_EX("can_en_pin", ccCAN_EN_PIN, true) // some boards' CAN transceiver has no software enable line
+#else
+      HANDLE_PIN("canbuscspin", ccCanCSPin)
+#endif
       #undef HANDLE_PIN
       #undef HANDLE_PIN_EX
 
@@ -1753,6 +1786,15 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         }
       }
 
+      /* Behind the same switch as the sensor code it configures. USE_ONEWIRE is
+         defined by no env, so ONEWIRE.h is compiled into nothing and the pin is
+         stored and never read - and the settings page has no field for it on
+         any build, so it could not be set from the UI either. What it could
+         still do was hold a GPIO: a value left in NVS by an older firmware sat
+         in the conflict table above, refusing that pin to a role that does
+         exist, with no field anywhere to clear it from. Turn the sensors back
+         on and this comes back with them, field included. */
+#ifdef USE_ONEWIRE
       if (!doc["onewirepin"].isNull()) {
         uint8_t value = doc["onewirepin"];
         if (value == 0) {
@@ -1770,6 +1812,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           notifyWSClients();
         }
       }
+#endif
 
       if (!doc["autocharge"].isNull()) {
         bool value = doc["autocharge"];

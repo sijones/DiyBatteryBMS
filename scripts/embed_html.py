@@ -150,9 +150,10 @@ def generate_embedded_html(source, target, env):
         with open(index_template, 'r', encoding='utf-8') as f:
             html_content = f.read()
         
-        # Get environment name
+        # Get environment name and the -D symbols this build actually compiles with
         env_name = str(env['PIOENV'])
-        
+        defines = _env_defines(env)
+
         # MCP2515 CAN controller fields (SPI CS pin + crystal speed selector).
         # Shared by all MCP2515-based environments.
         mcp_can_fields = '''<div class="form-group">
@@ -168,31 +169,10 @@ def generate_embedded_html(source, target, env):
           AckUpdate('canbuscspin');
           AckUpdate('can16mhz');'''
 
-        # Define CAN configurations for all environments
-        can_configs = {
-            'esp32dev': {
-                'title': 'CAN Bus Configuration',
-                'can_fields': mcp_can_fields,
-                'can_handlers': mcp_can_handlers
-            },
-            'esp32plus': {
-                'title': 'CAN Bus Configuration',
-                'can_fields': mcp_can_fields,
-                'can_handlers': mcp_can_handlers
-            },
-            'esp32s3-MCP': {
-                'title': 'CAN Bus Configuration',
-                'can_fields': mcp_can_fields,
-                'can_handlers': mcp_can_handlers
-            },
-            'xiao-esp32s3': {
-                'title': 'CAN Bus Configuration',
-                'can_fields': mcp_can_fields,
-                'can_handlers': mcp_can_handlers
-            },
-            'esp32-ESPCAN': {
-                'title': 'ESPCAN Configuration',
-                'can_fields': '''<div class="form-row">
+        # Built-in CAN controller (TWAI) fields. Shared by every ESPCAN build -
+        # classic ESP32 and S3 alike, which is all one wiring question: the pins
+        # are plain number fields with nothing board-specific baked in.
+        espcan_can_fields = '''<div class="form-row">
                 <div class="form-group">
                   <label for="can_rx_pin">ESPCAN RX Pin:</label>
                   <input type="number" id="can_rx_pin" onchange="EnqueueUpdate('can_rx_pin')" onkeypress="HandleEnter(event, 'can_rx_pin')">
@@ -207,78 +187,50 @@ def generate_embedded_html(source, target, env):
                   <label for="can_en_pin"><span class="tip" data-tip="Optional. GPIO that powers or enables the CAN transceiver, if yours has one - many do not, and the transceiver is simply always on. Leave blank if there is no enable line; the firmware then drives nothing and starts CAN on TX/RX alone.">ESPCAN Power/Enable Pin (optional):</span></label>
                   <input type="number" id="can_en_pin" placeholder="Not used" onchange="EnqueueUpdate('can_en_pin')" onkeypress="HandleEnter(event, 'can_en_pin')">
                 </div>
-              </div>''',
-                'can_handlers': '''if(obj.hasOwnProperty('can_rx_pin')) document.getElementById('can_rx_pin').value=obj.can_rx_pin;
+              </div>'''
+        espcan_can_handlers = '''if(obj.hasOwnProperty('can_rx_pin')) document.getElementById('can_rx_pin').value=obj.can_rx_pin;
           if(obj.hasOwnProperty('can_tx_pin')) document.getElementById('can_tx_pin').value=obj.can_tx_pin;
           if(obj.hasOwnProperty('can_en_pin')) document.getElementById('can_en_pin').value=obj.can_en_pin;
           AckUpdate('can_rx_pin');
           AckUpdate('can_tx_pin');
           AckUpdate('can_en_pin');'''
-            },
-            'esp32s3-ESPCAN': {
-                'title': 'ESPCAN Configuration',
-                'can_fields': '''<div class="form-row">
-                <div class="form-group">
-                  <label for="can_rx_pin">ESPCAN RX Pin:</label>
-                  <input type="number" id="can_rx_pin" onchange="EnqueueUpdate('can_rx_pin')" onkeypress="HandleEnter(event, 'can_rx_pin')">
-                </div>
-                <div class="form-group">
-                  <label for="can_tx_pin">ESPCAN TX Pin:</label>
-                  <input type="number" id="can_tx_pin" onchange="EnqueueUpdate('can_tx_pin')" onkeypress="HandleEnter(event, 'can_tx_pin')">
-                </div>
-              </div>
-              <div class="form-row full">
-                <div class="form-group">
-                  <label for="can_en_pin"><span class="tip" data-tip="Optional. GPIO that powers or enables the CAN transceiver, if yours has one - many do not, and the transceiver is simply always on. Leave blank if there is no enable line; the firmware then drives nothing and starts CAN on TX/RX alone.">ESPCAN Power/Enable Pin (optional):</span></label>
-                  <input type="number" id="can_en_pin" placeholder="Not used" onchange="EnqueueUpdate('can_en_pin')" onkeypress="HandleEnter(event, 'can_en_pin')">
-                </div>
-              </div>''',
-                'can_handlers': '''if(obj.hasOwnProperty('can_rx_pin')) document.getElementById('can_rx_pin').value=obj.can_rx_pin;
-          if(obj.hasOwnProperty('can_tx_pin')) document.getElementById('can_tx_pin').value=obj.can_tx_pin;
-          if(obj.hasOwnProperty('can_en_pin')) document.getElementById('can_en_pin').value=obj.can_en_pin;
-          AckUpdate('can_rx_pin');
-          AckUpdate('can_tx_pin');
-          AckUpdate('can_en_pin');'''
-            }
-        }
-        # Same fields as the DevKit S3 family - the Settings page's CAN pin
-        # inputs are plain number fields with no board-specific default baked
-        # in, so there is nothing here that differs by wiring. The Waveshare
-        # env has no -Nmb/-psram suffix (fixed single-SKU module, see
-        # platformio.ini), so it needs its own key rather than falling out of
-        # the suffix strip below the way esp32s3-ESPCAN-16mb-psram does.
-        can_configs['esp32s3-ESPCAN-waveshare'] = can_configs['esp32s3-ESPCAN']
 
-        # Get config for this environment.
+        # Which CAN controller this build talks to, asked of the build itself.
         #
-        # can_configs is keyed by WIRING FAMILY (e.g. 'esp32s3-ESPCAN'), but
-        # env['PIOENV'] is the full env name including its flash-size/PSRAM
-        # suffix (e.g. 'esp32s3-ESPCAN-16mb-psram') - platformio.ini names
-        # every env that way so a build can't be flashed onto the wrong
-        # module. A bare env_name lookup here never matches any suffixed env
-        # and silently falls back to the MCP2515 fields on every board,
-        # which is invisible on MCP2515 boards (the fallback is correct for
-        # them) and shows up as missing CAN pins on every ESPCAN board. Strip
-        # the same suffix build-manifests.mjs strips before looking up.
-        family = re.match(r'^(.*?)(?:-\d+mb)?(?:-psram)?$', env_name, re.IGNORECASE).group(1)
-        config = can_configs.get(family, can_configs['esp32dev'])
+        # This used to be a table keyed by wiring family, looked up with the env
+        # name stripped of its -Nmb/-psram suffix, defaulting to the MCP2515
+        # fields for anything unrecognised. Two things were wrong with that. The
+        # default is silent and wrong in only one direction - an ESPCAN board
+        # that misses gets a page with no CAN pins on it at all and no way to
+        # start CAN, which is how a bare-env_name lookup was found in the first
+        # place - and the table had to be extended by hand for every new env,
+        # including ones this file never sees (envs/*.ini, see platformio.ini).
+        #
+        # ESPCAN is the symbol the firmware's own #ifdefs switch on: main.cpp's
+        # CAN startup, buildDataDoc()'s payload, PIN_ROLES, the WS write
+        # handlers. Reading the same symbol here means the page and the
+        # firmware cannot disagree about which controller this build has -
+        # whatever the env ends up being called.
+        espcan = 'ESPCAN' in defines
+        if espcan:
+            config = {'can_fields': espcan_can_fields, 'can_handlers': espcan_can_handlers}
+        else:
+            config = {'can_fields': mcp_can_fields, 'can_handlers': mcp_can_handlers}
+        print("[EMBED] CAN settings block: {}".format('ESPCAN (TWAI)' if espcan else 'MCP2515'))
 
         # Victron BLE. The radio only runs with PSRAM behind it - NimBLE alone
         # can tip a ~70KB internal-RAM board into the failed-allocation crash
         # documented in Diagnostics.h, and the firmware now refuses to start
         # the radio on such a board regardless of what the UI offers. The UI
-        # is trimmed to match rather than left to discover that by trying:
-        # every env here states PSRAM in its own name (see the header comment
-        # in platformio.ini), so it is known at build time, not guessed.
+        # is trimmed to match rather than left to discover that by trying.
         #
-        # Fixed single-SKU boards (XIAO, Waveshare) are the exception - their
-        # module always has PSRAM, so there is no -psram/no-psram pair to name
-        # in the env the way the DevKit families need one, the same reason
-        # they are missing from can_configs above.
-        board_has_psram = (
-            env_name.endswith('-psram')
-            or env_name in ('xiao-esp32s3', 'esp32s3-ESPCAN-waveshare')
-        )
+        # Read off the build's own flag rather than the env name, for the reason
+        # the CAN block above is: the name says -psram only where there is a
+        # pair of envs to tell apart, and the fixed single-SKU boards (XIAO,
+        # Waveshare) have PSRAM without saying so in their name. The flag is
+        # what NimBLE is linked against and what VictronBLE::Begin() compiles
+        # against, so it is the thing the page has to agree with.
+        board_has_psram = 'BOARD_HAS_PSRAM' in defines
 
         if board_has_psram:
             wifi_tab_label = 'WiFi/BLE/MQTT'
@@ -336,11 +288,12 @@ def generate_embedded_html(source, target, env):
             ble_fallbacksource_option = ''
             ble_shunt_section = ''
 
-        # Per-core CPU headroom (Diagnostics.cpp's SampleCpuUsage(), gated the
-        # same way there). S3-only by request - every S3 env's name contains
-        # 'esp32s3' (the DevKit family and xiao-esp32s3 alike), which nothing
-        # else here does.
-        board_is_s3 = 'esp32s3' in env_name
+        # Per-core CPU headroom (Diagnostics.cpp's SampleCpuUsage()). S3-only,
+        # and gated on the same BMS_S3 the firmware's own #if is gated on -
+        # buildDataDoc() only puts cpuheadroom0/1 in the payload for a build
+        # that defines it, so anything else here would be two boxes reading '--'
+        # for the life of the device.
+        board_is_s3 = 'BMS_S3' in defines
         if board_is_s3:
             cpu_headroom_section = '''<div class="stat-box stat-status">
             <div class="stat-label">CPU Headroom (Core 0)</div>
@@ -397,7 +350,6 @@ def generate_embedded_html(source, target, env):
         branding_values.update(ext_branding)
 
         # Substitute placeholders
-        html_content = html_content.replace('{{CAN_CONFIG_TITLE}}', config['title'])
         html_content = html_content.replace('{{CAN_CONFIG_FIELDS}}', config['can_fields'])
         html_content = html_content.replace('{{CAN_FIELD_HANDLERS}}', config['can_handlers'])
         html_content = html_content.replace('{{FAN_PIN_FIELD}}', fan_field)
