@@ -119,10 +119,10 @@ function collect(version) {
     for (const name of ["firmware.factory.bin", "firmware.bin", "manifest.json"]) {
       const path = join(edir, name);
       /* Release assets share one flat namespace, so the env has to be in the
-         name. Three files called firmware.factory.bin would not collide and
-         fail - GitHub would accept them and silently rename the second and
-         third, leaving a release where nobody can tell which board a binary is
-         for. That is worse than a rejection. */
+         name. Nineteen files called firmware.factory.bin would be nineteen
+         attempts to write one name: the API refuses a duplicate outright with
+         422 already_exists, part-way through, leaving a release holding one
+         board's binary and an error for the rest. */
       if (existsSync(path)) files.push({ path, name: `${env}-${name}` });
     }
     builds.push({ env, manifest, files });
@@ -342,11 +342,35 @@ else {
   console.log(`  + created ${tag} at ${head.slice(0, 8)}`);
 }
 
+/* Every asset on the release, not the first page of them.
+ *
+ * This endpoint pages at 30 by default, and a release here is one manifest and
+ * two binaries per env - 57 assets across nineteen envs, and it grows every
+ * time a board is added. Unpaginated, the replace below deleted the first
+ * thirty and left the rest, so the thirty-first upload landed on a name that
+ * still existed and the whole release died on
+ *
+ *   POST .../assets?name=esp32s3-MCP-16mb-firmware.factory.bin -> 422
+ *   {"code":"already_exists","field":"name"}
+ *
+ * after uploading half a release. 100 is the maximum page size the API allows,
+ * so the loop is what makes this correct rather than merely enough for now. */
+async function allAssets(releaseId) {
+  const all = [];
+  for (let page = 1; ; page++) {
+    const batch = (await gh("GET", `${API}/repos/${slug}/releases/${releaseId}/assets?per_page=100&page=${page}`)) ?? [];
+    all.push(...batch);
+    if (batch.length < 100) return all;
+  }
+}
+
 /* Replace rather than add. Re-running a deploy for the same version is normal -
    a build gets fixed and goes out again - and an upload onto an existing name
-   is accepted and renamed rather than refused, so the old asset has to go
-   first. */
-const existing = (await gh("GET", `${API}/repos/${slug}/releases/${release.id}/assets`)) ?? [];
+   is refused outright, so the old asset has to go first. A release left
+   half-replaced by the failure above heals on the next run for the same reason:
+   what is deleted is every name this build is about to write, however it got
+   there. */
+const existing = await allAssets(release.id);
 const wanted = new Set(builds.flatMap((b) => b.files.map((f) => f.name)));
 for (const asset of existing) {
   if (!wanted.has(asset.name)) continue;
