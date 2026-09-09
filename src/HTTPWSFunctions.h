@@ -1256,16 +1256,28 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         notifyWSClients(); }
       // Force charge - RAM only in the firmware, so nothing to persist. Exposed
       // over WebSocket as well as MQTT so a controller can assert it without
-      // needing a broker. Latches the lever so the scheduler does not undo it on
-      // its next pass - see RemoteOverride.h. "indefinite" is how the dashboard
-      // toggle asks for a hold that outlives the watchdog timeout, same as the
-      // other two levers.
+      // needing a broker. A one-off dashboard toggle: holds indefinitely -
+      // see RemoteOverride.h. A continuous supervisor should use
+      // supervisorforcecharge below instead, so it stays on a watchdog.
       if (!doc["forcecharge"].isNull()) {
-        bool indefinite = doc["indefinite"] | false;
         Inverter.ForceCharge((bool) doc["forcecharge"]);
-        RemoteOverride.Arm(OV_FORCE, indefinite);
+        RemoteOverride.Arm(OV_FORCE);
         WS_LOG_I("Force charge set to: %s", (bool) doc["forcecharge"] ? "ON" : "OFF");
         if ((bool) doc["forcecharge"] && !Inverter.RequestFlagsActive())
+          WS_LOG_W("Force charge set but 0x35C flags are not being sent - the "
+                   "inverter will not see it. Enable Request Flags on a "
+                   "Pylontech 1.2, Pylontech 1.3 or Growatt protocol.");
+        handled = true;
+        notifyWSClients(); }
+      // Same as forcecharge above, but for a continuous supervisor such as
+      // PowerPilot: the lever is held on a watchdog instead of indefinitely,
+      // so a supervisor that crashes or disconnects cannot leave force charge
+      // asserted forever - see RemoteOverride.h.
+      if (!doc["supervisorforcecharge"].isNull()) {
+        Inverter.ForceCharge((bool) doc["supervisorforcecharge"]);
+        RemoteOverride.ArmTimed(OV_FORCE);
+        WS_LOG_I("Force charge (supervisor) set to: %s", (bool) doc["supervisorforcecharge"] ? "ON" : "OFF");
+        if ((bool) doc["supervisorforcecharge"] && !Inverter.RequestFlagsActive())
           WS_LOG_W("Force charge set but 0x35C flags are not being sent - the "
                    "inverter will not see it. Enable Request Flags on a "
                    "Pylontech 1.2, Pylontech 1.3 or Growatt protocol.");
@@ -1307,24 +1319,36 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         WS_LOG_I("Set Discharge Enabled to %s", (bool) doc["dischargeenabled"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
-      // Both latch, so a toggle here or from a controller survives the next
-      // scheduler pass instead of snapping back within the second. The
-      // dashboard's own toggles set "indefinite" so a human's manual choice
-      // holds until changed again rather than expiring on the watchdog timeout
-      // - see RemoteOverride.h. A supervisor steering the lever continuously
-      // omits it and keeps the timed latch.
+      // Both latch indefinitely - a dashboard toggle survives the next
+      // scheduler pass instead of snapping back within the second, and stays
+      // put until it is changed again or clearoverride is sent. A continuous
+      // supervisor should use the supervisorallow* keys below instead, so a
+      // crash or disconnect hands control back rather than sticking forever.
       if (!doc["manualallowcharge"].isNull()) {
-        bool indefinite = doc["indefinite"] | false;
         Inverter.ManualAllowCharge((bool) doc["manualallowcharge"]);
-        RemoteOverride.Arm(OV_CHARGE, indefinite);
+        RemoteOverride.Arm(OV_CHARGE);
         WS_LOG_I("Manual Allow Charge set to %s", (bool) doc["manualallowcharge"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
       if (!doc["manualallowdischarge"].isNull()) {
-        bool indefinite = doc["indefinite"] | false;
         Inverter.ManualAllowDischarge((bool) doc["manualallowdischarge"]);
-        RemoteOverride.Arm(OV_DISCHARGE, indefinite);
+        RemoteOverride.Arm(OV_DISCHARGE);
         WS_LOG_I("Manual Allow Discharge set to %s", (bool) doc["manualallowdischarge"] ? "true" : "false");
+        handled = true;
+        notifyWSClients(); }
+      // Same as manualallowcharge/manualallowdischarge above, but for a
+      // continuous supervisor such as PowerPilot: held on a watchdog rather
+      // than indefinitely - see RemoteOverride.h.
+      if (!doc["supervisorallowcharge"].isNull()) {
+        Inverter.ManualAllowCharge((bool) doc["supervisorallowcharge"]);
+        RemoteOverride.ArmTimed(OV_CHARGE);
+        WS_LOG_I("Manual Allow Charge (supervisor) set to %s", (bool) doc["supervisorallowcharge"] ? "true" : "false");
+        handled = true;
+        notifyWSClients(); }
+      if (!doc["supervisorallowdischarge"].isNull()) {
+        Inverter.ManualAllowDischarge((bool) doc["supervisorallowdischarge"]);
+        RemoteOverride.ArmTimed(OV_DISCHARGE);
+        WS_LOG_I("Manual Allow Discharge (supervisor) set to %s", (bool) doc["supervisorallowdischarge"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
 #ifndef DISABLE_SCHEDULER
@@ -1337,7 +1361,11 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         }
         handled = true;
         notifyWSClients(); }
-      // Seconds a lever stays latched. 0 disables the latch entirely.
+      // Seconds a supervisorallow*/supervisorforcecharge lever stays latched
+      // without a refresh. Has no effect on the indefinite holds taken by
+      // manualallowcharge/manualallowdischarge/forcecharge or by MQTT/Home
+      // Assistant. 0 disables the watchdog entirely - a supervisor can never
+      // take a lever.
       if (!doc["overridetimeout"].isNull()) {
         uint16_t secs = (uint16_t) doc["overridetimeout"];
         if (secs > OVERRIDE_TIMEOUT_MAX) secs = OVERRIDE_TIMEOUT_MAX;

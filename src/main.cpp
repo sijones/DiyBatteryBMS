@@ -555,8 +555,10 @@ void UpdateWifiScanResults() {
    grant. Force charge is gated inside evaluate() on the same flag, and again
    below for a force asserted from outside the schedule.
 
-   Levers taken by the web UI, MQTT or a WebSocket supervisor are left alone
-   here until their latch times out - see RemoteOverride.h.
+   Levers taken by the web UI or MQTT/Home Assistant are left alone here
+   indefinitely; one taken by a continuous WebSocket supervisor such as
+   PowerPilot is left alone until its watchdog latch times out - see
+   RemoteOverride.h.
 
    Runs once a second; the setters are no-ops when nothing changed.
 */

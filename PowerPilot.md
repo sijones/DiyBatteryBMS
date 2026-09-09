@@ -58,11 +58,25 @@ continuously rather than clicking a setting occasionally:
   [Force charge vs full charge](#force-charge-vs-full-charge) for what it does on the wire and when
   it will not reach the inverter at all.
 
-- **The override latch** — the charge scheduler re-asserts its decision once a second, so without
-  this anything an outside system set would be undone within the second. Setting `forcecharge`,
-  `manualallowcharge` or `manualallowdischarge` takes that *one* lever off the scheduler until
-  the override times out. Nothing else is affected: a controller holding force charge does not stop
-  the schedule managing discharge.
+  **This holds indefinitely.** `forcecharge`, `manualallowcharge` and `manualallowdischarge` are the
+  same keys the dashboard's toggles and Home Assistant use, and all three now latch their lever
+  until it is set again or `clearoverride` is sent — with no timeout to outlive. That is deliberate:
+  it is what a one-off toggle from a person should do, and making it time out was the bug behind "I
+  turned discharge off and it turned itself back on 5-7 minutes later". **PowerPilot should not use
+  these three for anything it steers continuously** — see the watchdog keys below instead.
+
+- **The supervisor watchdog** — `supervisorforcecharge`, `supervisorallowcharge` and
+  `supervisorallowdischarge` do the same thing as `forcecharge`/`manualallowcharge`/
+  `manualallowdischarge`, but take the lever on a timed latch instead of indefinitely:
+
+  ```json
+  {"supervisorallowdischarge": false}
+  ```
+
+  The charge scheduler re-asserts its decision once a second, so without a latch anything PowerPilot
+  set would be undone within the second. These three take *one* lever off the scheduler until the
+  override times out, refreshed by every subsequent send. Nothing else is affected: holding force
+  charge this way does not stop the schedule managing discharge.
 
   The timeout is the safety net, not an inconvenience. A supervisor that crashes, loses the network
   or is simply switched off stops refreshing its latch, and the device falls back to the schedule
@@ -73,22 +87,13 @@ continuously rather than clicking a setting occasionally:
   |---|---|
   | Default | 300 seconds |
   | Set it | Schedule tab → Outside Control, or `{"overridetimeout": 300}` (accepts `persist`) |
-  | Disable it | Set to `0` — the scheduler then always wins, as before |
-  | Hand control back early | `{"clearoverride": true}`, or MQTT `<topic>/set/ClearOverride`, or the **Return to Schedule** button |
-  | Read the state | `ovrcharge` / `ovrdischarge` / `ovrforce` / `ovrsecs` in the pushed JSON, and MQTT `<topic>/Schedule/Override` and `/Schedule/OverrideSecs` |
+  | Disable it | Set to `0` — a supervisor can then never take a lever; indefinite holds are unaffected |
+  | Hand control back early | `{"clearoverride": true}`, or MQTT `<topic>/set/ClearOverride`, or the **Return to Schedule** button — clears both indefinite and timed holds |
+  | Read the state | `ovrcharge` / `ovrdischarge` / `ovrforce` / `ovrsecs` in the pushed JSON, and MQTT `<topic>/Schedule/Override` and `/Schedule/OverrideSecs` — `ovrsecs` is 0 whenever every held lever is an indefinite hold, since there is nothing to count down |
 
   A controller shutting down cleanly should send `clearoverride` rather than leaving the schedule
   waiting out the timeout. One thing a latch cannot hold off is safety: if protection disables
   charging, an externally forced charge is dropped regardless, exactly as a scheduled one would be.
-
-  There is one exception to the timeout: adding `"indefinite": true` alongside `forcecharge`,
-  `manualallowcharge` or `manualallowdischarge` latches that lever until it is set again or
-  `clearoverride` is sent, with no timeout to outlive. That is for a one-off human toggle — the
-  dashboard uses it on all three, and Home Assistant gets it automatically on the MQTT
-  ChargeEnable/DischargeEnable/ForceCharge topics — so a manual switch does not quietly revert to
-  the schedule's default a few minutes later. It is not for a supervisor: PowerPilot should keep
-  omitting it on the WebSocket set-commands and rely on the timed latch, since that is what lets the
-  device notice PowerPilot has stopped steering and fall back to the local schedule.
 
 ## Force charge vs full charge
 
@@ -104,23 +109,25 @@ for:
 | Means | **Start charging the pack now** — pulling from the grid if that is what it takes | **When you next charge, take it to 100%** rather than stopping at your own SOC limit |
 | Starts a charge? | Yes, that is the whole point | **No.** It only changes where an existing charge stops |
 | Use it for | Off-peak grid charging, holding a pack up ahead of a forecast deficit | SOC calibration and cell rebalancing, on a pack normally cycled to 80–90% |
-| Override latch | Yes — takes the force lever off the scheduler until the timeout (`ovrforce`) | No. It is not a scheduler lever, so nothing to latch |
+| Override latch | Yes — `forcecharge` holds indefinitely; `supervisorforcecharge` holds until the timeout (`ovrforce`) instead | No. It is not a scheduler lever, so nothing to latch |
 | Persistence | RAM only, clears on reboot | RAM only, clears on reboot |
-| Cleared by | You, the schedule, or the override timeout | **Itself**, once the charge completes — see below |
-| Set it | `{"forcecharge": true}`, MQTT `<topic>/set/ForceCharge` | `{"requestfullcharge": true}`, MQTT `<topic>/set/RequestFullCharge` |
+| Cleared by | You, the schedule, `clearoverride`, or (`supervisorforcecharge` only) the override timeout | **Itself**, once the charge completes — see below |
+| Set it | `{"forcecharge": true}` or `{"supervisorforcecharge": true}`, MQTT `<topic>/set/ForceCharge` | `{"requestfullcharge": true}`, MQTT `<topic>/set/RequestFullCharge` |
 | Read it | `forcecharge` in the pushed JSON, MQTT `<topic>/Param/ForceCharge` | `requestfullcharge`, MQTT `<topic>/Param/RequestFullCharge` |
 
-A supervisor wanting a monthly calibration charge should set **both**: `forcecharge` to make the
-charge happen, `requestfullcharge` so it runs to the top rather than to the inverter's own ceiling.
-For ordinary tariff-driven charging, `forcecharge` alone is right.
+A supervisor wanting a monthly calibration charge should set **both**: `supervisorforcecharge` to
+make the charge happen (see [above](#steering-the-device-continuously) for why PowerPilot wants the
+`supervisor*` key, not `forcecharge`), `requestfullcharge` so it runs to the top rather than to the
+inverter's own ceiling. For ordinary tariff-driven charging, `supervisorforcecharge` alone is right.
 
 **`requestfullcharge` is a one-shot.** The device clears it when the charge it asked about finishes
 — when absorption ends, on sustained tail current or on the max absorption timer — because a flag
 left set would quietly send every later charge to 100% as well, which is the opposite of what
 cycling a pack to 80–90% is for. A hardware BMS drops the bit the same way. A controller can
 therefore treat `requestfullcharge` going `false` as **"the calibration charge you asked for is
-done"**, and does not need to clear it itself. `forcecharge` is *not* one-shot: it holds until
-something clears it or the override times out.
+done"**, and does not need to clear it itself. `forcecharge`/`supervisorforcecharge` are *not*
+one-shot: they hold until something clears them, or (`supervisorforcecharge` only) the override
+times out.
 
 **Check `requestflagsactive` before trusting either.** The flag bits only go out when **Request
 Flags** is enabled under Settings → Inverter Tricks, and only on the **Pylontech 1.2**, **Pylontech

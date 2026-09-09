@@ -222,7 +222,7 @@ const char* const ccNTPServer = "NTPServer";
 const char* const ccNTPFromDHCP = "NTPDHCP";
 const char* const ccTimeZone = "TimeZone";
 const char* const ccSchedule = "Schedule";
-const char* const ccOverrideTime = "OvrTimeout";   // remote override latch, seconds. 0 = off
+const char* const ccOverrideTime = "OvrTimeout";   // supervisor override watchdog, seconds. 0 = off
 const char* const ccReqTimeout = "ReqTimeout";     // live current request staleness, seconds
 const char* const ccSyslogServer = "SyslogSrv";
 const char* const ccSyslogPort = "SyslogPort";

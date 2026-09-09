@@ -1813,7 +1813,7 @@
         </p>
         <div class="form-row">
           <div class="form-group">
-            <label for="overridetimeout"><span class="tip" data-tip="Seconds an outside command holds a lever off the schedule. A supervisor should re-send well inside this. 0 disables the hold entirely, so the schedule always wins.">Override Timeout (s):</span></label>
+            <label for="overridetimeout"><span class="tip" data-tip="Seconds a continuous supervisor (e.g. PowerPilot) holds a lever off the schedule without a refresh; it should re-send well inside this. Does not apply to this dashboard's own toggles or MQTT/Home Assistant, which hold until changed again. 0 disables the supervisor hold entirely, so the schedule always wins for it.">Override Timeout (s):</span></label>
             <input type="number" id="overridetimeout" min="0" max="3600" onchange="EnqueueUpdate('overridetimeout')" onkeypress="HandleEnter(event, 'overridetimeout')">
           </div>
           <div class="form-group">
@@ -4094,22 +4094,18 @@
       showFeedback('Returning control to the schedule…');
     }
 
-    // "indefinite" tells the device this is a person setting the lever by
-    // hand, not a supervisor steering it continuously, so it should hold until
-    // toggled again rather than expire on the override watchdog and hand
-    // control back to the schedule a few minutes later - see RemoteOverride.h.
     function toggleChargeEnable() {
       chargeEnabled = !chargeEnabled;
       console.log('Toggling Charge Enable to: ' + chargeEnabled);
       showFeedback(chargeEnabled ? 'Enabling charge...' : 'Disabling charge...');
-      websocket.send(JSON.stringify({"manualallowcharge": chargeEnabled, "indefinite": true}));
+      websocket.send(JSON.stringify({"manualallowcharge": chargeEnabled}));
     }
 
     function toggleDischargeEnable() {
       dischargeEnabled = !dischargeEnabled;
       console.log('Toggling Discharge Enable to: ' + dischargeEnabled);
       showFeedback(dischargeEnabled ? 'Enabling discharge...' : 'Disabling discharge...');
-      websocket.send(JSON.stringify({"manualallowdischarge": dischargeEnabled, "indefinite": true}));
+      websocket.send(JSON.stringify({"manualallowdischarge": dischargeEnabled}));
     }
 
     /* Live state rather than a saved setting, so no update queue here either.
@@ -4123,7 +4119,7 @@
                   : (btn && btn.getAttribute('aria-pressed') === 'true');
       const on = !now;
       showFeedback(on ? 'Forcing charge...' : 'Clearing force charge...');
-      websocket.send(JSON.stringify({"forcecharge": on, "indefinite": true}));
+      websocket.send(JSON.stringify({"forcecharge": on}));
     }
 
     /* Not a saved setting, so it does not go through the update queue - the
