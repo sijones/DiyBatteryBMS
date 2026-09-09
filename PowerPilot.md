@@ -81,6 +81,15 @@ continuously rather than clicking a setting occasionally:
   waiting out the timeout. One thing a latch cannot hold off is safety: if protection disables
   charging, an externally forced charge is dropped regardless, exactly as a scheduled one would be.
 
+  There is one exception to the timeout: adding `"indefinite": true` alongside `forcecharge`,
+  `manualallowcharge` or `manualallowdischarge` latches that lever until it is set again or
+  `clearoverride` is sent, with no timeout to outlive. That is for a one-off human toggle — the
+  dashboard uses it on all three, and Home Assistant gets it automatically on the MQTT
+  ChargeEnable/DischargeEnable/ForceCharge topics — so a manual switch does not quietly revert to
+  the schedule's default a few minutes later. It is not for a supervisor: PowerPilot should keep
+  omitting it on the WebSocket set-commands and rely on the timed latch, since that is what lets the
+  device notice PowerPilot has stopped steering and fall back to the local schedule.
+
 ## Force charge vs full charge
 
 *`requestfullcharge`, `requestflagsactive` and `soctrickactive` are new in 2.8.0-BETA8.*

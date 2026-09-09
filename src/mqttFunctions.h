@@ -1150,11 +1150,14 @@ if (false) { }
     WS_LOG_I("Charge current set to: %.1f A (%d mA)", currentA, currentmA);
   }
   // The next three latch their lever so the scheduler does not undo them on its
-  // next pass. The latch times out - see RemoteOverride.h.
+  // next pass, indefinitely - these topics are how a Home Assistant switch is
+  // flipped by hand, not a supervisor steering the lever continuously, so they
+  // should hold until set again rather than expire on the watchdog timeout and
+  // hand control back to the schedule underneath the user. See RemoteOverride.h.
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ForceCharge") {
     bool forcecharge = (message == "ON") ? true : false;
     Inverter.ForceCharge((message == "ON") ? true : false);
-    RemoteOverride.Arm(OV_FORCE);
+    RemoteOverride.Arm(OV_FORCE, true);
     log_d("Force charge set to: %d", forcecharge);
     WS_LOG_I("Force charge set to: %s", (message == "ON") ? "ON" : "OFF");
   }
@@ -1167,13 +1170,13 @@ if (false) { }
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/DischargeEnable") {
     Inverter.ManualAllowDischarge((message == "ON") ? true : false);
-    RemoteOverride.Arm(OV_DISCHARGE);
+    RemoteOverride.Arm(OV_DISCHARGE, true);
     log_d("Discharge enable set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("Discharge enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
   else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ChargeEnable") {
     Inverter.ManualAllowCharge((message == "ON") ? true : false);
-    RemoteOverride.Arm(OV_CHARGE);
+    RemoteOverride.Arm(OV_CHARGE, true);
     log_d("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }

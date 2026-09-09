@@ -4094,18 +4094,22 @@
       showFeedback('Returning control to the schedule…');
     }
 
+    // "indefinite" tells the device this is a person setting the lever by
+    // hand, not a supervisor steering it continuously, so it should hold until
+    // toggled again rather than expire on the override watchdog and hand
+    // control back to the schedule a few minutes later - see RemoteOverride.h.
     function toggleChargeEnable() {
       chargeEnabled = !chargeEnabled;
       console.log('Toggling Charge Enable to: ' + chargeEnabled);
       showFeedback(chargeEnabled ? 'Enabling charge...' : 'Disabling charge...');
-      websocket.send(JSON.stringify({"manualallowcharge": chargeEnabled}));
+      websocket.send(JSON.stringify({"manualallowcharge": chargeEnabled, "indefinite": true}));
     }
 
     function toggleDischargeEnable() {
       dischargeEnabled = !dischargeEnabled;
       console.log('Toggling Discharge Enable to: ' + dischargeEnabled);
       showFeedback(dischargeEnabled ? 'Enabling discharge...' : 'Disabling discharge...');
-      websocket.send(JSON.stringify({"manualallowdischarge": dischargeEnabled}));
+      websocket.send(JSON.stringify({"manualallowdischarge": dischargeEnabled, "indefinite": true}));
     }
 
     /* Live state rather than a saved setting, so no update queue here either.
@@ -4119,7 +4123,7 @@
                   : (btn && btn.getAttribute('aria-pressed') === 'true');
       const on = !now;
       showFeedback(on ? 'Forcing charge...' : 'Clearing force charge...');
-      websocket.send(JSON.stringify({"forcecharge": on}));
+      websocket.send(JSON.stringify({"forcecharge": on, "indefinite": true}));
     }
 
     /* Not a saved setting, so it does not go through the update queue - the

@@ -222,17 +222,19 @@ confirm the device took it.
 
 | Command | Payload | Effect |
 |---|---|---|
-| `<topic>/set/ChargeEnable` | `ON` / other | Manual allow-charge. Latches the lever against the scheduler |
-| `<topic>/set/DischargeEnable` | `ON` / other | Manual allow-discharge. Latches |
-| `<topic>/set/ForceCharge` | `ON` / other | Ask the inverter to charge now. Latches |
+| `<topic>/set/ChargeEnable` | `ON` / other | Manual allow-charge. Latches the lever against the scheduler, indefinitely |
+| `<topic>/set/DischargeEnable` | `ON` / other | Manual allow-discharge. Latches, indefinitely |
+| `<topic>/set/ForceCharge` | `ON` / other | Ask the inverter to charge now. Latches, indefinitely |
 | `<topic>/set/RequestFullCharge` | `ON` / other | Take the next charge to 100% for calibration. Does not start a charge, and does not latch |
 | `<topic>/set/ClearOverride` | any | Drop all latches and hand control straight back to the schedule |
 
-**The latch.** Charge, discharge and force charge each hold their lever against the scheduler for
-the override timeout (Settings, default 5 minutes) so the next scheduler pass does not immediately
-undo what you asked for. `ClearOverride` ends it early; `<topic>/Schedule/OverrideSecs` counts it
-down. A latch cannot hold off safety: if temperature protection disables charging, force charge is
-dropped regardless.
+**The latch.** Setting one of these takes its lever off the scheduler so the next scheduler pass
+does not immediately undo what you asked for. All three hold **indefinitely** over MQTT - these
+topics are how a Home Assistant switch is meant to be operated by hand, and none of them should
+quietly revert to the schedule's default a few minutes after you set it. `ClearOverride` ends any
+latch early; `<topic>/Schedule/OverrideSecs` reads 0 here, since MQTT never takes a timed latch -
+there is nothing to count down. A latch cannot hold off safety: if temperature protection disables
+charging, force charge is dropped regardless.
 
 ### Currents and voltages
 

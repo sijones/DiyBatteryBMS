@@ -1257,10 +1257,13 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       // Force charge - RAM only in the firmware, so nothing to persist. Exposed
       // over WebSocket as well as MQTT so a controller can assert it without
       // needing a broker. Latches the lever so the scheduler does not undo it on
-      // its next pass - see RemoteOverride.h.
+      // its next pass - see RemoteOverride.h. "indefinite" is how the dashboard
+      // toggle asks for a hold that outlives the watchdog timeout, same as the
+      // other two levers.
       if (!doc["forcecharge"].isNull()) {
+        bool indefinite = doc["indefinite"] | false;
         Inverter.ForceCharge((bool) doc["forcecharge"]);
-        RemoteOverride.Arm(OV_FORCE);
+        RemoteOverride.Arm(OV_FORCE, indefinite);
         WS_LOG_I("Force charge set to: %s", (bool) doc["forcecharge"] ? "ON" : "OFF");
         if ((bool) doc["forcecharge"] && !Inverter.RequestFlagsActive())
           WS_LOG_W("Force charge set but 0x35C flags are not being sent - the "
@@ -1305,16 +1308,22 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         notifyWSClients(); }
       // Both latch, so a toggle here or from a controller survives the next
-      // scheduler pass instead of snapping back within the second.
+      // scheduler pass instead of snapping back within the second. The
+      // dashboard's own toggles set "indefinite" so a human's manual choice
+      // holds until changed again rather than expiring on the watchdog timeout
+      // - see RemoteOverride.h. A supervisor steering the lever continuously
+      // omits it and keeps the timed latch.
       if (!doc["manualallowcharge"].isNull()) {
+        bool indefinite = doc["indefinite"] | false;
         Inverter.ManualAllowCharge((bool) doc["manualallowcharge"]);
-        RemoteOverride.Arm(OV_CHARGE);
+        RemoteOverride.Arm(OV_CHARGE, indefinite);
         WS_LOG_I("Manual Allow Charge set to %s", (bool) doc["manualallowcharge"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
       if (!doc["manualallowdischarge"].isNull()) {
+        bool indefinite = doc["indefinite"] | false;
         Inverter.ManualAllowDischarge((bool) doc["manualallowdischarge"]);
-        RemoteOverride.Arm(OV_DISCHARGE);
+        RemoteOverride.Arm(OV_DISCHARGE, indefinite);
         WS_LOG_I("Manual Allow Discharge set to %s", (bool) doc["manualallowdischarge"] ? "true" : "false");
         handled = true;
         notifyWSClients(); }
