@@ -308,7 +308,18 @@ function compareVersions(a, b) {
   if (A.pre === B.pre) return 0;
   if (!A.pre) return -1; // released sorts above its pre-release
   if (!B.pre) return 1;
-  /* Descending, so BETA2 sorts ahead of BETA1.
+  /* Descending, so BETA2 sorts ahead of BETA1 - and BETA10 ahead of BETA9,
+   * which plain string comparison gets backwards the moment a beta reaches
+   * double digits: "BETA10" < "BETA9" lexicographically, because "1" < "9" at
+   * the first character where they differ. That silently pruned 3.0.0-BETA10
+   * out from under itself the day it was built - build-manifests.mjs writes it
+   * to disk, then this comparator ranked it as the OLDEST of the three betas
+   * present and KEEP_PER_CHANNEL deleted it a few lines down, before
+   * publish-release.mjs ever got to read it back.
+   *
+   * Split the trailing run of digits off and compare that part numerically;
+   * compare whatever is left (the letters before it) as a string first, so an
+   * entirely different suffix - "rc" vs "beta" - still falls back to it.
    *
    * This read `A.pre < B.pre` and therefore called the OLDEST pre-release the
    * newest. Published 3.0.0-BETA2 alongside BETA1 and the site announced BETA1
@@ -317,7 +328,14 @@ function compareVersions(a, b) {
    * pruned the newest build off the site and kept the two oldest.
    *
    * A plain release still beats its own pre-release, which is the case above. */
-  return A.pre > B.pre ? -1 : 1;
+  const splitPre = (p) => {
+    const m = /^(.*?)(\d+)$/.exec(p);
+    return m ? { word: m[1], num: parseInt(m[2], 10) } : { word: p, num: null };
+  };
+  const preA = splitPre(A.pre), preB = splitPre(B.pre);
+  if (preA.word !== preB.word) return preA.word > preB.word ? -1 : 1;
+  if (preA.num === null || preB.num === null) return A.pre > B.pre ? -1 : 1;
+  return preB.num - preA.num;
 }
 
 const ini = parseIni(readFileSync(join(ROOT, "platformio.ini"), "utf8"));
