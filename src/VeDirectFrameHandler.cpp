@@ -36,6 +36,8 @@
 #include <Arduino.h>
 #include "VeDirectFrameHandler.h"
 #include "WebLog.h"
+// Parser health counters, kept in RTC memory so a panic does not take them with it
+#include "Diagnostics.h"
 
 
 void VETaskHandler(void * pointer)
@@ -140,6 +142,13 @@ void VeDirectFrameHandler::rxData(uint8_t inbyte)
 {
 	if (mStop) return;
 	if ( (inbyte == ':') && (mState != CHECKSUM) ) {
+		/* Count the message, and separately whether it arrived partway through
+		   a text block - the guard is what makes the two different, since a ':'
+		   while already in RECORD_HEX is payload, not a new message. A mid-frame
+		   arrival is the case Victron documents and the one that used to do the
+		   damage; between blocks it is harmless. */
+		if (mState != RECORD_HEX)
+			Diag.VeHexMessage(frameIndex > 0 || mState != IDLE);
 		mState = RECORD_HEX;
 	}
 	if (mState != RECORD_HEX) {
@@ -175,6 +184,17 @@ void VeDirectFrameHandler::rxData(uint8_t inbyte)
 					mState = CHECKSUM;
 					break;
 				}
+			} else {
+				/* A name that filled mName exactly left no room for the
+				   terminator above, so it was never written. textRxEvent's
+				   strcpy would then read past mName into mValue and beyond,
+				   looking for a zero that is not there, and write all of it
+				   into a 9-byte tempName slot. Terminate it here instead. An
+				   over-long name matches no field this parser wants, so the
+				   record is junk either way - the point is that it is junk of
+				   a bounded length. */
+				mName[sizeof(mName) - 1] = 0;
+				Diag.VeNameOverflow();
 			}
 			mTextPointer = mValue; /* Reset value pointer */
 			mState = RECORD_VALUE;
@@ -220,6 +240,14 @@ void VeDirectFrameHandler::rxData(uint8_t inbyte)
 		if (hexRxEvent(inbyte)) {
 			mChecksum = 0;
 			mState = IDLE;
+			/* A device sends asynchronous HEX messages unprompted, and Victron
+			   documents that they can interrupt a text frame mid-record. The
+			   half-built block left behind can never validate - its checksum
+			   accumulation was abandoned partway - so drop it here rather than
+			   leave frameIndex standing for the next block's records to be
+			   appended to it. That merge was the route to writing past the end
+			   of the temp buffers. */
+			frameIndex = 0;
 		}
 		break;
 	}
@@ -266,8 +294,29 @@ bool VeDirectFrameHandler::dataavailable()
  * This function is called every time a new name/value is successfully parsed.  It writes the values to the temporary buffer.
  */
 void VeDirectFrameHandler::textRxEvent(char * mName, char * mValue) {
-    strcpy(tempName[frameIndex], mName);    // copy name to temporary buffer
-    strcpy(tempValue[frameIndex], mValue);  // copy value to temporary buffer
+	/* frameIndex is only ever reset by frameEndEvent, which is only reached
+	   through the CHECKSUM state - so a block that loses its Checksum tag to a
+	   single corrupted or dropped byte never resets it, and the next block's
+	   records are appended to this one's. frameLen is the protocol's stated 22
+	   fields per block, so no single compliant block can overflow - but a merge
+	   trivially does: a published BMV-702 capture sends 12 fields in one block
+	   and 18 in the next, which merged is 30. Past the end these were unbounded
+	   strcpys running off tempValue into whatever the linker put after this
+	   object - a global here - which is the kind of corruption that panics
+	   minutes later and nowhere near the cause.
+
+	   Dropping the surplus is the whole fix. A merged block carries the residue
+	   of the checksum it missed, so it almost always fails validation and
+	   frameEndEvent discards it and clears frameIndex - one second of stale
+	   data instead of a silently corrupted heap. In the 1-in-256 case where the
+	   residue happens to land on zero it is accepted, but frameEndEvent already
+	   bounds veEnd, so the worst of that is a few junk fields for one second. */
+	if ( frameIndex >= frameLen ) {
+		Diag.VeRecordDropped();
+		return;
+	}
+	strcpy(tempName[frameIndex], mName);    // copy name to temporary buffer
+	strcpy(tempValue[frameIndex], mValue);  // copy value to temporary buffer
 	frameIndex++;
 }
 
@@ -304,6 +353,13 @@ void VeDirectFrameHandler::frameEndEvent(bool valid) {
         taskEXIT_CRITICAL(&_VEmutex);
 		log_d("Frame Index Value %d",frameIndex);
 	}
+	else {
+		/* A failed checksum is not by itself a fault - it is the normal outcome
+		   of a block that was interrupted, and the parser recovering as it
+		   should. It only means something as a rate: a handful a day is a link
+		   working, a steady stream is a wiring or baud problem. */
+		Diag.VeBlockDiscarded();
+	}
 	frameIndex = 0;	// reset frame
 }
 
@@ -322,8 +378,15 @@ void VeDirectFrameHandler::logE(char * _module, char * _error) {
 
 /*
  *	hexRxEvent
- *  This function included for continuity and possible future use.	
+ *  Consumes an asynchronous HEX message. True means "this message has ended",
+ *  at which point rxData clears the checksum and returns to text parsing.
  */
 bool VeDirectFrameHandler::hexRxEvent(uint8_t inbyte) {
-	return true;		// stubbed out for future
+	/* A HEX message runs from ':' to '\n', so only the newline ends it. The
+	   previous stub returned true on the very first byte, which handed the
+	   parser back to text mode in the middle of a hex payload - the rest of
+	   that payload was then read as record names and values. Nothing here
+	   decodes the message; it only has to be stepped over cleanly, which is
+	   all this project needs, since it never asks for one. */
+	return (inbyte == '\n');
 }

@@ -779,6 +779,25 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["prevheapmin"] = Diag.PrevHeapMin();
     doc["prevheapblock"] = Diag.PrevBlockMin();
     doc["wsskipped"] = wsSkippedLowHeap;
+
+    /* VE.Direct parser health, this run and the one before it. Sent only when
+       either has something in it, so a board with no shunt wired - or one whose
+       parser has simply had nothing to cope with - does not carry five zeroes
+       in every full update. */
+    if (Diag.VeCountersInteresting()) {
+      const DiagVeCounters& ve = Diag.VeCounters();
+      const DiagVeCounters& pv = Diag.PrevVeCounters();
+      doc["vehex"]        = ve.hexMessages;
+      doc["vehexmid"]     = ve.hexMidFrame;
+      doc["vediscarded"]  = ve.blocksDiscarded;
+      doc["vedropped"]    = ve.recordsDropped;
+      doc["venameovf"]    = ve.nameOverflows;
+      doc["prevvehex"]       = pv.hexMessages;
+      doc["prevvehexmid"]    = pv.hexMidFrame;
+      doc["prevvediscarded"] = pv.blocksDiscarded;
+      doc["prevvedropped"]   = pv.recordsDropped;
+      doc["prevvenameovf"]   = pv.nameOverflows;
+    }
   }
 
   doc["RealTime"] = true;

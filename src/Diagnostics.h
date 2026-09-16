@@ -27,6 +27,30 @@
 #include <Arduino.h>
 #include <esp_system.h>
 
+/* VE.Direct frame parser health.
+
+   A parser fault and a wiring fault look identical from the outside: the shunt
+   goes stale, the fallback takes over, and the log says only that it happened.
+   These separate them. hexMidFrame in particular is the one that needs
+   watching - Victron devices send asynchronous HEX messages unprompted and
+   document that they can interrupt a text frame, which is the event that used
+   to strand a half-built block for the next one to be appended to.
+
+   recordsDropped and nameOverflows should both stay at zero. They sit on the
+   bounds checks in VeDirectFrameHandler, so a non-zero count means something
+   reached them by a route that is not yet understood - which is worth far more
+   than the reboot it would otherwise have caused.
+
+   Small and fixed on purpose: this rides in RTC slow memory beside the heap
+   figures, and a copy is kept as the previous run's. */
+struct DiagVeCounters {
+  uint32_t hexMessages;     // asynchronous HEX messages seen at all
+  uint32_t hexMidFrame;     // ...of those, the ones that cut into a text block
+  uint32_t blocksDiscarded; // blocks dropped on a failed checksum
+  uint32_t recordsDropped;  // records refused because the block was already full
+  uint32_t nameOverflows;   // field names too long for the name buffer
+};
+
 class DiagnosticsClass
 {
 public:
@@ -75,6 +99,22 @@ public:
   uint32_t InternalMin() const;
   uint32_t BlockMin() const  { return _blockMin; }   // smallest largest-free-block this run
 
+  /* Counted where they happen, in the parser. Kept directly in RTC memory
+     rather than mirrored there once a second, so a board that panics reports
+     the counts as they actually stood when it went rather than as they were at
+     the last tick - the events and the crash are seconds apart at most. */
+  void VeHexMessage(bool midFrame);
+  void VeBlockDiscarded();
+  void VeRecordDropped();
+  void VeNameOverflow();
+
+  // This run so far.
+  const DiagVeCounters& VeCounters() const;
+  // And as the previous run left them. All zero when there is no history.
+  const DiagVeCounters& PrevVeCounters() const { return _prevVe; }
+  // Whether either set has anything in it, for deciding whether to print them.
+  bool VeCountersInteresting() const;
+
   // Zero when there is no history - a cold start, or a first boot on firmware
   // that did not keep any.
   uint32_t PrevUptimeSecs() const { return _prevUptime; }
@@ -91,6 +131,7 @@ private:
   uint32_t _prevUptime    = 0;
   uint32_t _prevHeapMin   = 0;
   uint32_t _prevBlockMin  = 0;
+  DiagVeCounters _prevVe  = {};
   uint32_t _lastTickMs    = 0;
   uint32_t _lastWarnedHeap = 0;   // 0 = nothing reported yet
   uint32_t _lastMilestoneFree = 0;

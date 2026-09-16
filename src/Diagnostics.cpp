@@ -23,7 +23,12 @@ DiagnosticsClass Diag;
 /* Carried across the reset, so the run that died can be described by the run
    that follows it. Deliberately small and fixed - RTC slow memory is scarce and
    shared with anything else that wants to survive a reboot. */
-#define DIAG_RTC_MAGIC 0x424D5344u   // 'BMSD'
+/* Bump this whenever the layout below changes. An OTA lands on a board whose
+   RTC memory still holds the old firmware's struct, and a warm reboot after
+   that would match the magic word and read the new fields out of whatever the
+   old layout had in those bytes. Changing the word costs one boot reported as
+   having no history, which is the correct answer. */
+#define DIAG_RTC_MAGIC 0x424D5345u   // 'BMSE'
 
 struct DiagRtcState {
   uint32_t magic;
@@ -31,6 +36,7 @@ struct DiagRtcState {
   uint32_t uptimeSecs;   // how long the run lasted, as of its last tick
   uint32_t heapMin;      // and its lowest free heap
   uint32_t blockMin;     // and its smallest largest-free-block
+  DiagVeCounters ve;     // and what its VE.Direct parser had been coping with
 };
 
 static RTC_NOINIT_ATTR DiagRtcState _rtc;
@@ -112,6 +118,28 @@ uint32_t DiagnosticsClass::InternalMin() const
   return (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
 }
 
+/* Straight into RTC memory. Called from the byte-at-a-time parser, so they stay
+   as cheap as an increment - the events themselves are rare, a handful a day at
+   most, and anything that made them expensive would be paid per byte. */
+void DiagnosticsClass::VeHexMessage(bool midFrame)
+{
+  _rtc.ve.hexMessages++;
+  if (midFrame) _rtc.ve.hexMidFrame++;
+}
+void DiagnosticsClass::VeBlockDiscarded() { _rtc.ve.blocksDiscarded++; }
+void DiagnosticsClass::VeRecordDropped()  { _rtc.ve.recordsDropped++; }
+void DiagnosticsClass::VeNameOverflow()   { _rtc.ve.nameOverflows++; }
+
+const DiagVeCounters& DiagnosticsClass::VeCounters() const { return _rtc.ve; }
+
+bool DiagnosticsClass::VeCountersInteresting() const
+{
+  const DiagVeCounters& c = _rtc.ve;
+  return c.hexMessages || c.blocksDiscarded || c.recordsDropped || c.nameOverflows
+      || _prevVe.hexMessages || _prevVe.blocksDiscarded
+      || _prevVe.recordsDropped || _prevVe.nameOverflows;
+}
+
 void DiagnosticsClass::Begin()
 {
   const esp_reset_reason_t reason = esp_reset_reason();
@@ -126,7 +154,12 @@ void DiagnosticsClass::Begin()
     _prevUptime   = _rtc.uptimeSecs;
     _prevHeapMin  = _rtc.heapMin;
     _prevBlockMin = _rtc.blockMin;
+    _prevVe       = _rtc.ve;
   }
+  /* Unconditionally, and after the copy above: on a cold start these bytes are
+     whatever the RTC domain powered up holding, so they are not zero until
+     something makes them zero. */
+  memset(&_rtc.ve, 0, sizeof(_rtc.ve));
 
   const uint32_t freeNow  = (uint32_t)esp_get_free_heap_size();
   const uint32_t blockNow = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
@@ -192,6 +225,29 @@ void DiagnosticsClass::Begin()
        that ended in the low thousands almost certainly did. */
     WS_LOG_W("Previous run lasted %s, heap low water %u B, smallest block %u B",
              dur, (unsigned)_prevHeapMin, (unsigned)_prevBlockMin);
+
+    /* The parser's side of the same question. Printed whenever there is a
+       history at all, zeros included: "the run that died saw no hex messages
+       and dropped nothing" rules the parser out, and that is as useful a
+       report as a count. Serial as well as the web log, for the reason the
+       boot lines above give - a board that keeps rebooting loses its
+       WebSocket every time, and this is exactly the board that will. */
+    Serial.printf("[boot] previous run VE.Direct: %u hex msgs (%u mid-frame), "
+                  "%u blocks discarded, %u records dropped, %u name overflows\r\n",
+                  (unsigned)_prevVe.hexMessages,  (unsigned)_prevVe.hexMidFrame,
+                  (unsigned)_prevVe.blocksDiscarded, (unsigned)_prevVe.recordsDropped,
+                  (unsigned)_prevVe.nameOverflows);
+    /* Warn rather than inform only when a bound was actually hit. Those two are
+       meant to be unreachable now, so a count is a finding and not a statistic
+       - see the note above DiagVeCounters. */
+    if (_prevVe.recordsDropped || _prevVe.nameOverflows)
+      WS_LOG_E("Previous run hit a VE.Direct parser bound: %u records dropped, "
+               "%u name overflows - please report this",
+               (unsigned)_prevVe.recordsDropped, (unsigned)_prevVe.nameOverflows);
+    else
+      WS_LOG_W("Previous run VE.Direct: %u hex msgs (%u mid-frame), %u blocks discarded",
+               (unsigned)_prevVe.hexMessages, (unsigned)_prevVe.hexMidFrame,
+               (unsigned)_prevVe.blocksDiscarded);
   }
 
   WS_LOG_I("Heap at boot: %u B free of %u B, largest block %u B",
