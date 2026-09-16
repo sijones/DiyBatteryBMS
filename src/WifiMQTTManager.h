@@ -23,6 +23,9 @@ class WifiMQTTManagerClass {
         unsigned long _lastWifiCheckTime = 0;
         unsigned long _wifiReconnectDelay = 10000; // 10 seconds between reconnect attempts
         bool _wifiWasConnected = false;
+        // millis() when the current outage started, 0 while connected
+        unsigned long _wifiDownSince = 0;
+        unsigned long _wifiDropCount = 0;   // drops since boot, for the rate
         String _wifiSSID = "";
         String _wifiPass = "";
         String _mqttServer = "";

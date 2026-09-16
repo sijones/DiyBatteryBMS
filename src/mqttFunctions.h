@@ -1,6 +1,7 @@
 
 #include <WiFi.h>
 #include <Arduino.h>
+#include <esp_heap_caps.h>   // haHeapFree() - internal-only free, see HA_MIN_FREE_HEAP
 #include "mEEPROM.h"
 
 extern "C" {
@@ -353,7 +354,19 @@ static bool haFits(int written, size_t cap, const char* id) {
    Resuming a paused group by re-running it is cheap on purpose: haSensor() and
    the rest build their payloads into static buffers, so a message already sent
    costs one snprintf on the way past and nothing at all from the heap. */
+/* Internal free, not total free - see haHeapFree() below. 24KB of internal RAM
+   is a meaningful floor; 24KB measured against a PSRAM board's 8.4MB total was
+   a gate that could never close. */
 #define HA_MIN_FREE_HEAP     24000
+
+/* The pool the discovery burst actually costs, and the pool WiFi and lwIP have
+   to share with it. ESP.getFreeHeap() reports every pool added together, which
+   on a PSRAM board is dominated by 8MB this burst cannot use and WiFi cannot
+   touch - it answered ~8.4M in the field logs while internal RAM was dipping to
+   26KB. Identical to ESP.getFreeHeap() on a board without PSRAM. */
+static inline uint32_t haHeapFree() {
+  return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+}
 
 /* ...and a cap on how many go out per pass, which turned out to be the part
    that actually matters.
@@ -384,7 +397,7 @@ void _haPublish(const char* type, const char* id, const char* payload,
 
   /* The per-message gate. Pausing here costs a repeat of the snprintf work on
      the next pass; carrying on regardless is what filled the outbox. */
-  if (ESP.getFreeHeap() < HA_MIN_FREE_HEAP) {
+  if (haHeapFree() < HA_MIN_FREE_HEAP) {
     haPaused = true;
     haResumeFrom = seq;
     return;
@@ -827,7 +840,7 @@ void haDiscoveryLoop() {
   /* Wait rather than overrun. Holding here is safe: the sequence simply resumes
      on a later pass once the outbox has drained and the heap recovered, and if
      it never does, no discovery is a great deal better than an abort(). */
-  if (ESP.getFreeHeap() < HA_MIN_FREE_HEAP) return;
+  if (haHeapFree() < HA_MIN_FREE_HEAP) return;
 
   haLastStepMs = millis();
   HaCtx c;

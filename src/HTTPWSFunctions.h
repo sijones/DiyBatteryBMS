@@ -1038,15 +1038,25 @@ void notifyWSClients(bool sendalldata = true) {
      one of the largest this firmware makes, on the path that runs most often.
      Skipping an update costs nothing: the next one is along in a moment and
      carries the same state. Aborting costs the whole device. */
-  if (heap_caps_get_largest_free_block(MALLOC_CAP_8BIT) < n + 1024) {
+  /* INTERNAL, not 8BIT. On a PSRAM board MALLOC_CAP_8BIT answers with the PSRAM
+     pool - 8.25MB of largest block in the field logs - so this gate could never
+     trip on exactly the boards it was written to protect. And the allocation it
+     guards does not come from there anyway: CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL
+     is 4096 on this platform, so everything smaller than that is taken from
+     internal RAM whatever PSRAM is free, and a JsonDocument grows in
+     increments well under it. Internal is the pool that runs out, the pool this
+     serialisation actually draws on, and the pool WiFi and lwIP cannot do
+     without. On a board with no PSRAM the two caps are the same and this reads
+     exactly as it did before. */
+  if (heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) < n + 1024) {
     /* Straight to serial and nothing else. Every other logging path on this
        board allocates, which is precisely what is not available right now. */
     static uint32_t lastMoan = 0;
     wsSkippedLowHeap++;
     if ((uint32_t)(millis() - lastMoan) > 5000) {
       lastMoan = millis();
-      Serial.printf("[heap] skipped a %u B broadcast, largest block %u B (%u skipped)\r\n",
-                    (unsigned)n, (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+      Serial.printf("[heap] skipped a %u B broadcast, largest internal block %u B (%u skipped)\r\n",
+                    (unsigned)n, (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
                     (unsigned)wsSkippedLowHeap);
     }
     return;

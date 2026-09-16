@@ -1,6 +1,12 @@
 
 //#ifdef WIFIMANAGER
 #include "WifiMQTTManager.h"
+/* WiFi coming and going is the one class of event this file used to keep to
+   itself. log_w and log_i reach neither the web log nor syslog, and at
+   CORE_DEBUG_LEVEL=1 they do not reach the serial cable either - so a board
+   that spent the night dropping and re-associating looked, in every log anyone
+   can actually collect, exactly like a board that had been up all night. */
+#include "WebLog.h"
 
 bool WifiMQTTManagerClass::begin()
 {
@@ -193,21 +199,35 @@ void WifiMQTTManagerClass::loop()
         
         // Detect connection loss and log it
         if (!isConnected && _wifiWasConnected) {
-            log_w("WiFi disconnected, attempting reconnection...");
+            WS_LOG_W("WiFi disconnected, attempting reconnection...");
             _wifiWasConnected = false;
             _lastWifiCheckTime = now;
+            _wifiDropCount++;
+            _wifiDownSince = now ? now : 1;   // 0 is the "not down" marker
         }
-        
+
         // Track successful connections
         if (isConnected && !_wifiWasConnected) {
-            log_i("WiFi reconnected successfully");
+            /* How long it was away, and how many times it has happened since
+               boot. A single drop is weather; the same minute repeating all
+               night is a fault, and only the count tells them apart after the
+               event. */
+            WS_LOG_I("WiFi reconnected after %lus (drop #%lu since boot)",
+                     (unsigned long)((now - _wifiDownSince) / 1000UL),
+                     (unsigned long)_wifiDropCount);
             _wifiWasConnected = true;
             _lastWifiCheckTime = now;
+            _wifiDownSince = 0;
         }
-        
+
         // Attempt reconnect with backoff timing
         if (!isConnected && (now - _lastWifiCheckTime) >= _wifiReconnectDelay) {
-            log_d("Triggering WiFi reconnect");
+            /* Every attempt, with how long this outage has run. A reconnect
+               that is being asked for and refused every ten seconds is a very
+               different fault from one that was never attempted, and the two
+               were previously indistinguishable - both were silent. */
+            WS_LOG_W("WiFi reconnect attempt, down %lus",
+                     (unsigned long)((now - _wifiDownSince) / 1000UL));
             WiFi.reconnect();
             _lastWifiCheckTime = now;
         }
