@@ -112,8 +112,6 @@ public:
   const DiagVeCounters& VeCounters() const;
   // And as the previous run left them. All zero when there is no history.
   const DiagVeCounters& PrevVeCounters() const { return _prevVe; }
-  // Whether either set has anything in it, for deciding whether to print them.
-  bool VeCountersInteresting() const;
 
   // Zero when there is no history - a cold start, or a first boot on firmware
   // that did not keep any.

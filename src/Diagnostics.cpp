@@ -132,14 +132,6 @@ void DiagnosticsClass::VeNameOverflow()   { _rtc.ve.nameOverflows++; }
 
 const DiagVeCounters& DiagnosticsClass::VeCounters() const { return _rtc.ve; }
 
-bool DiagnosticsClass::VeCountersInteresting() const
-{
-  const DiagVeCounters& c = _rtc.ve;
-  return c.hexMessages || c.blocksDiscarded || c.recordsDropped || c.nameOverflows
-      || _prevVe.hexMessages || _prevVe.blocksDiscarded
-      || _prevVe.recordsDropped || _prevVe.nameOverflows;
-}
-
 void DiagnosticsClass::Begin()
 {
   const esp_reset_reason_t reason = esp_reset_reason();

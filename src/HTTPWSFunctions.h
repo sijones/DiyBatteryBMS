@@ -780,24 +780,16 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["prevheapblock"] = Diag.PrevBlockMin();
     doc["wsskipped"] = wsSkippedLowHeap;
 
-    /* VE.Direct parser health, this run and the one before it. Sent only when
-       either has something in it, so a board with no shunt wired - or one whose
-       parser has simply had nothing to cope with - does not carry five zeroes
-       in every full update. */
-    if (Diag.VeCountersInteresting()) {
-      const DiagVeCounters& ve = Diag.VeCounters();
-      const DiagVeCounters& pv = Diag.PrevVeCounters();
-      doc["vehex"]        = ve.hexMessages;
-      doc["vehexmid"]     = ve.hexMidFrame;
-      doc["vediscarded"]  = ve.blocksDiscarded;
-      doc["vedropped"]    = ve.recordsDropped;
-      doc["venameovf"]    = ve.nameOverflows;
-      doc["prevvehex"]       = pv.hexMessages;
-      doc["prevvehexmid"]    = pv.hexMidFrame;
-      doc["prevvediscarded"] = pv.blocksDiscarded;
-      doc["prevvedropped"]   = pv.recordsDropped;
-      doc["prevvenameovf"]   = pv.nameOverflows;
-    }
+    /* What the run before this one left its parser counters at - fixed for the
+       life of this boot, like the heap figures above it, so it rides in the All
+       payload rather than the frequent one. The live counts are down there
+       instead, beside the heap marks that also move. */
+    const DiagVeCounters& pv = Diag.PrevVeCounters();
+    doc["prevvehex"]       = pv.hexMessages;
+    doc["prevvehexmid"]    = pv.hexMidFrame;
+    doc["prevvediscarded"] = pv.blocksDiscarded;
+    doc["prevvedropped"]   = pv.recordsDropped;
+    doc["prevvenameovf"]   = pv.nameOverflows;
   }
 
   doc["RealTime"] = true;
@@ -976,6 +968,22 @@ static void buildDataDoc(JsonDocument& doc, bool All)
   doc["uptime"] = Diag.UptimeSecs();
   doc["heapmin"] = Diag.HeapMin();
   doc["heapblock"] = Diag.BlockMin();
+
+  /* The VE.Direct parser counts move too, so they belong here rather than in
+     the All payload - and this is the payload that becomes the MQTT Data topic,
+     which is where the Home Assistant sensors read them from.
+
+     Sent unconditionally, including as five zeroes on a board with no shunt
+     wired. Gating them on "has anything happened yet" would make the HA
+     entities come and go, and an entity that disappears when the news is good
+     is worse than one that reads zero. The dashboard decides for itself
+     whether to show them. */
+  const DiagVeCounters& ve = Diag.VeCounters();
+  doc["vehex"]       = ve.hexMessages;
+  doc["vehexmid"]    = ve.hexMidFrame;
+  doc["vediscarded"] = ve.blocksDiscarded;
+  doc["vedropped"]   = ve.recordsDropped;
+  doc["venameovf"]   = ve.nameOverflows;
 
   /* Optional features add their own fields last, so a feature can never
      displace one of the fields above by picking the same key. No-op when none

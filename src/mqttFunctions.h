@@ -241,6 +241,20 @@ void publishBootDiagnostics() {
   snprintf(buf, sizeof(buf), "%u", (unsigned)Diag.PrevUptimeSecs()); pub("PrevUptime", buf);
   snprintf(buf, sizeof(buf), "%u", (unsigned)Diag.PrevHeapMin());    pub("PrevHeapMin", buf);
   snprintf(buf, sizeof(buf), "%u", (unsigned)Diag.PrevBlockMin());   pub("PrevHeapBlock", buf);
+
+  /* The parser's side of the same post-mortem, and retained for the same
+     reason: these are the counts the reboot would have destroyed, and a board
+     that is restarting repeatedly is exactly the one whose answer needs to be
+     waiting on the broker already. The two bound counters are summed - they
+     mean the same thing to a reader ("something got past a check that should
+     be unreachable") and one entity to alert on beats two. */
+  const DiagVeCounters& pv = Diag.PrevVeCounters();
+  snprintf(buf, sizeof(buf), "%u", (unsigned)pv.hexMidFrame);
+  pub("PrevVeHexMidFrame", buf);
+  snprintf(buf, sizeof(buf), "%u", (unsigned)pv.blocksDiscarded);
+  pub("PrevVeBlocksDiscarded", buf);
+  snprintf(buf, sizeof(buf), "%u", (unsigned)(pv.recordsDropped + pv.nameOverflows));
+  pub("PrevVeBoundHits", buf);
 }
 
 bool sendUpdateMQTTData()
@@ -646,6 +660,45 @@ static void haChunk3(HaCtx& c) {
   snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/PrevHeapMin", st);
   haSensor("Previous Run Heap Low Water", "prevheapmin", "{{ value }}",
     ",\"unit_of_measurement\":\"B\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:memory-arrow-down\"",
+    base, node, diagTopic, deviceJson);
+
+  /* VE.Direct parser health. All diagnostic-category, so they sit in HA's
+     diagnostics panel rather than on the main card.
+
+     The live three read the Data topic, like the heap figures above. The
+     previous run's read their own retained Diag topics instead, because they
+     are fixed for the life of the boot and have to already be on the broker -
+     on a board that is crash-looping, the next data update may never come.
+
+     total_increasing only on the live ones: they climb through a run and HA
+     understands a counter going back to zero as a restart. The previous run's
+     are a fixed figure about a run that has ended, and a state class would
+     invite HA to draw a trend through unrelated boots. */
+  haSensor("VE.Direct Hex Interruptions", "vehexmid", "{{ value_json.vehexmid }}",
+    ",\"state_class\":\"total_increasing\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:flash-alert\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("VE.Direct Blocks Discarded", "vediscarded", "{{ value_json.vediscarded }}",
+    ",\"state_class\":\"total_increasing\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:package-variant-remove\"",
+    base, node, dataTopic, deviceJson);
+  /* Summed in the template. Both mean the same thing to whoever reads it -
+     something got past a check that is meant to be unreachable - and one entity
+     worth alerting on beats two that should both always read zero. */
+  haSensor("VE.Direct Parser Bound Hits", "veboundhits",
+    "{{ value_json.vedropped + value_json.venameovf }}",
+    ",\"state_class\":\"total_increasing\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:alert-octagon\"",
+    base, node, dataTopic, deviceJson);
+
+  snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/PrevVeHexMidFrame", st);
+  haSensor("Previous Run VE.Direct Hex Interruptions", "prevvehexmid", "{{ value }}",
+    ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:flash-alert\"",
+    base, node, diagTopic, deviceJson);
+  snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/PrevVeBlocksDiscarded", st);
+  haSensor("Previous Run VE.Direct Blocks Discarded", "prevvediscarded", "{{ value }}",
+    ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:package-variant-remove\"",
+    base, node, diagTopic, deviceJson);
+  snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/PrevVeBoundHits", st);
+  haSensor("Previous Run VE.Direct Bound Hits", "prevveboundhits", "{{ value }}",
+    ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:alert-octagon\"",
     base, node, diagTopic, deviceJson);
 
   // Binary sensors
