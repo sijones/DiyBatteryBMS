@@ -3204,14 +3204,14 @@
       // The GetLogs() backlog - one message holding every line, oldest first
       if(Array.isArray(obj.logs)) {
         obj.logs.forEach(function(l) {
-          addLogEntry(l.log, l.level || 'info', l.age);
+          addLogEntry(l.log, l.level || 'info', l.age, l.t);
         });
         return;
       }
 
       // Handle log messages
       if(obj.hasOwnProperty('log')) {
-        addLogEntry(obj.log, obj.level || 'info', obj.age);
+        addLogEntry(obj.log, obj.level || 'info', obj.age, obj.t);
         return;
       }
       
@@ -5468,7 +5468,11 @@
     // ageMs, when present, is how long before now the device logged the line -
     // replayed backlog. Without it every replayed line took the arrival time and
     // a six-minute history collapsed onto a single second.
-    function addLogEntry(message, level, ageMs) {
+    /* epochMs is when the device logged the line, by its own NTP-synced clock,
+       and is used whenever it is present: delivery to the browser can take
+       seconds, so arrival time is only a guess. Without it (clock not synced
+       yet) a replayed line has its age, and a live one is stamped on arrival. */
+    function addLogEntry(message, level, ageMs, epochMs) {
       if(document.getElementById('logpause').checked) return;
 
       const logViewer = document.getElementById('logviewer');
@@ -5478,8 +5482,8 @@
       if (kind) entry.dataset.kind = kind;
       if (!logVisible(level, kind)) entry.classList.add('hidden');
 
-      const when = (typeof ageMs === 'number' && ageMs >= 0)
-        ? new Date(Date.now() - ageMs)
+      const when = (typeof epochMs === 'number' && epochMs > 0) ? new Date(epochMs)
+        : (typeof ageMs === 'number' && ageMs >= 0) ? new Date(Date.now() - ageMs)
         : new Date();
       const timestamp = when.toLocaleTimeString('en-GB', { hour12: false });
       entry.textContent = '[' + timestamp + '] ' + message;

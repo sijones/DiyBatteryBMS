@@ -125,9 +125,13 @@ VeDirectFrameHandler veHandle;
 static size_t diagLowWaterContext(char* out, size_t n)
 {
   const size_t clients = ws.count();
+  // Armed is not running: the first message waits out HA_START_DELAY_MS after
+  // the connect, and a dip in that minute is not discovery's doing
+  const char* discovery = haStep == 0 ? "idle"
+                        : (uint32_t)(millis() - haArmedMs) < HA_START_DELAY_MS ? "waiting to start"
+                        : "mid-sequence";
   const int len = snprintf(out, n, "%u WS client%s, discovery %s",
-                           (unsigned)clients, clients == 1 ? "" : "s",
-                           haStep ? "mid-sequence" : "idle");
+                           (unsigned)clients, clients == 1 ? "" : "s", discovery);
   return len < 0 ? 0 : (size_t)len;
 }
 

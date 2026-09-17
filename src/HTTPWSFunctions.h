@@ -302,6 +302,25 @@ String jsonEscapeLog(const char* message) {
   return msg;
 }
 
+bool clockIsValid();
+
+/* Wall-clock time of a log line, in Unix milliseconds - or 0 while the clock has
+   not synced, in which case the browser falls back to stamping it itself.
+
+   The browser used to be the only clock: a live line was stamped when it
+   arrived, a replayed one at arrival minus its age. Both are as late as the
+   delivery, and delivery is not quick - with Bluetooth running, the radio has
+   to use modem sleep, and a 4KB replay was measured taking 2.2s to arrive. The
+   replay read 3-6s later than the live copy of the same line. The device knows
+   when each line happened, so it says. */
+static uint64_t logEpochMs(uint32_t agoMs) {
+  if (!clockIsValid()) return 0;
+  struct timeval tv;
+  gettimeofday(&tv, nullptr);
+  const uint64_t now = (uint64_t)tv.tv_sec * 1000 + (uint64_t)(tv.tv_usec / 1000);
+  return now > agoMs ? now - agoMs : 0;
+}
+
 // Function to send log to WebSocket clients
 void sendLogToWS(const char* message, const char* level) {
   // Every WS_LOG_* macro funnels through here, so syslog picks up all of them
@@ -314,7 +333,13 @@ void sendLogToWS(const char* message, const char* level) {
     json += jsonEscapeLog(message);
     json += "\",\"level\":\"";
     json += level;
-    json += "\"}";
+    json += "\"";
+    if (const uint64_t t = logEpochMs(0)) {
+      char stamp[32];
+      snprintf(stamp, sizeof(stamp), ",\"t\":%llu", (unsigned long long)t);
+      json += stamp;
+    }
+    json += "}";
     wsBroadcast(json);
   }
   
@@ -1230,10 +1255,13 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         JsonObject line = lines.add<JsonObject>();
         line["log"] = (const char*)entry.message;      // copied into the document
         line["level"] = logLevelName(entry.level);
-        // How long ago the line was logged. The client has no reference for our
-        // millis(), and stamping replayed lines with their arrival time collapsed
-        // a whole backlog onto one second of the browser's clock.
-        line["age"] = (unsigned long)(nowMs - entry.timestamp);
+        // When the line was logged, by this device's clock - see logEpochMs().
+        // The age stays as the fallback for a clock that has not synced: the
+        // client has no reference for our millis(), and stamping replayed lines
+        // with their arrival time collapsed a whole backlog onto one second.
+        const uint32_t age = nowMs - entry.timestamp;
+        line["age"] = (unsigned long)age;
+        if (const uint64_t t = logEpochMs(age)) line["t"] = t;
       }
 
       const size_t size = measureJson(logs);
