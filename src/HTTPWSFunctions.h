@@ -2468,10 +2468,62 @@ void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEven
   }
 }
 
+/* Below either of these, the page is not served - a small one asking the
+   browser to come back in a few seconds goes out instead.
+
+   The page is ~75KB gzipped and leaves through TCP buffers taken from internal
+   RAM. Served at boot while MQTT was connecting, it took internal free from
+   50KB to 34KB. That was survivable on its own, but a page load has no reason to
+   happen then rather than a few seconds later, and landing on top of a
+   controller reconnecting or the discovery burst is exactly how the deeper
+   lows were reached. Gated on memory, not on time since boot: a fixed boot
+   delay would hold the page back when there is plenty of room, and release it
+   straight into discovery, which starts a minute after MQTT connects.
+
+   Starting figures, sized from the ~16KB that boot page load cost. The
+   "[page]" serial line and the "page serve" stamp in the low-water report are
+   what to tune them against. */
+#define PAGE_MIN_INTERNAL_FREE   45000
+#define PAGE_MIN_INTERNAL_BLOCK  16000
+// Retry interval, in the refresh tag and the Retry-After header alike
+#define PAGE_BUSY_RETRY_SECS     "5"
+
+static const char PAGE_BUSY_HTML[] PROGMEM =
+  "<!DOCTYPE html><html><head><meta charset=\"utf-8\">"
+  "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+  "<meta http-equiv=\"refresh\" content=\"" PAGE_BUSY_RETRY_SECS "\">"
+  "<title>Please wait</title></head>"
+  "<body style=\"font-family:sans-serif;text-align:center;padding:3em 1em\">"
+  "<h2>Device busy</h2>"
+  "<p>It is short of memory for a moment, usually just after starting up.</p>"
+  "<p>This page will retry by itself in a few seconds.</p>"
+  "</body></html>";
+
 // Helper function to send embedded HTML from PROGMEM.
 // The payload is gzip-compressed at build time by embed_html.py, so it must go out
 // with Content-Encoding: gzip for the browser to inflate it.
 void sendEmbeddedHTML(AsyncWebServerRequest *request) {
+  const uint32_t internalFree  = Diag.InternalFree();
+  const uint32_t internalBlock = Diag.InternalBlock();
+  if (internalFree < PAGE_MIN_INTERNAL_FREE || internalBlock < PAGE_MIN_INTERNAL_BLOCK) {
+    /* 503 rather than 200, so the OTA flow's reconnect check - which reloads as
+       soon as "/" answers ok - keeps waiting instead of reloading onto this.
+       Straight from flash with no copy, and serial only, for the same reason
+       as the measurement below: there may be very little to allocate from. */
+    static uint32_t lastMoan = 0;
+    if ((uint32_t)(millis() - lastMoan) > 5000) {
+      lastMoan = millis();
+      Serial.printf("[page] deferred: %u B internal free, largest block %u B\r\n",
+                    (unsigned)internalFree, (unsigned)internalBlock);
+    }
+    AsyncWebServerResponse *busy = request->beginResponse(
+        503, "text/html; charset=utf-8", (const uint8_t*)PAGE_BUSY_HTML, strlen_P(PAGE_BUSY_HTML));
+    busy->addHeader("Retry-After", PAGE_BUSY_RETRY_SECS);
+    busy->addHeader("Cache-Control", "no-store");
+    request->send(busy);
+    return;
+  }
+
   /* Bracketed with heap readings because this is the prime suspect for the
      deepest troughs measured on this board: a ~41KB dip with a browser in use
      and no MQTT activity anywhere near it, on a device where a WebSocket client
