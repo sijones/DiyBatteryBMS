@@ -2480,11 +2480,29 @@ void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEven
    delay would hold the page back when there is plenty of room, and release it
    straight into discovery, which starts a minute after MQTT connects.
 
-   Starting figures, sized from the ~16KB that boot page load cost. The
-   "[page]" serial line and the "page serve" stamp in the low-water report are
-   what to tune them against. */
-#define PAGE_MIN_INTERNAL_FREE   45000
-#define PAGE_MIN_INTERNAL_BLOCK  16000
+   Starting figures, sized from the ~16KB that boot page load cost on a PSRAM
+   S3, which idles near 70KB internal free. A board without PSRAM runs far
+   closer to the floor in normal use - a classic ESP32 has been measured idling
+   between 26KB and 51KB - so the PSRAM figure would refuse it the page most of
+   the time. It gets the floor the discovery gate uses (HA_MIN_FREE_HEAP)
+   instead: it still stops a page load walking into an exhausted heap, without
+   locking the page out of a board that is merely normal for its kind. Both are
+   untested on hardware without PSRAM. The "[page]" serial line and the "page
+   serve" stamp in the low-water report are what to tune them against. */
+#ifndef PAGE_MIN_INTERNAL_FREE
+#  ifdef BOARD_HAS_PSRAM
+#    define PAGE_MIN_INTERNAL_FREE   45000
+#  else
+#    define PAGE_MIN_INTERNAL_FREE   24000
+#  endif
+#endif
+#ifndef PAGE_MIN_INTERNAL_BLOCK
+#  ifdef BOARD_HAS_PSRAM
+#    define PAGE_MIN_INTERNAL_BLOCK  16000
+#  else
+#    define PAGE_MIN_INTERNAL_BLOCK  12000
+#  endif
+#endif
 // Retry interval, in the refresh tag and the Retry-After header alike
 #define PAGE_BUSY_RETRY_SECS     "5"
 
