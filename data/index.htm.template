@@ -2204,6 +2204,19 @@
             </div>
           </div>
         </div>
+        <!-- Fetch-and-flash. Hidden until the browser has confirmed that a
+             newer build exists for this exact env, because a button that cannot
+             do anything is worse than no button on a device that may well have
+             no route out. The board still fetches nothing itself - the browser
+             does, for the reasons set out at checkForNewFirmware(). -->
+        <div class="form-group" id="fwDirect" hidden>
+          <label id="fwDirectLabel">Install the published build</label>
+          <div class="fw-pick">
+            <button id="fwDirectBtn" class="btn-primary" onclick="installFromWeb()">Download &amp; Flash</button>
+          </div>
+          <div class="field-note" id="fwDirectNote"></div>
+        </div>
+
         <div class="form-group">
           <label for="firmwareFile">Firmware image (.bin or .bin.gz)</label>
           <div class="fw-pick">
@@ -4142,6 +4155,11 @@
        firmware built before this define existed simply never shows the row. */
     var fwLink = { env: '', from: '', slot: 0 };
 
+    /* One literal for the three things that reach the site - the download page,
+       the release index and the image itself. They have to agree, and a device
+       pointed at a site that has moved should be one edit rather than three. */
+    var FW_SITE = 'https://diy.power-pilot.uk/';
+
     /* The download page, told which build is asking. env is the only required
        part - without it the site cannot know which of the builds this board
        takes, and a link that guesses is worse than none: the wrong image
@@ -4151,7 +4169,7 @@
       var q = 'env=' + encodeURIComponent(fwLink.env);
       if (fwLink.from) q += '&from=' + encodeURIComponent(fwLink.from);
       if (fwLink.slot) q += '&slot=' + encodeURIComponent(fwLink.slot);
-      return 'https://diy.power-pilot.uk/update.html?' + q;
+      return FW_SITE + 'update.html?' + q;
     }
 
     function updateFwDownloadLink() {
@@ -4196,14 +4214,34 @@
       if (A.pre === B.pre) return false;
       if (!A.pre) return true;   // 3.0.0 is newer than 3.0.0-BETA1
       if (!B.pre) return false;
-      return A.pre > B.pre;
+
+      /* BETA10 is newer than BETA9, which a plain string comparison gets
+         backwards the moment a beta number reaches double digits: "1" < "9" at
+         the first character where they differ. build-manifests.mjs carries the
+         same comparator and was fixed when this pruned a freshly built BETA10
+         off the site; here it fails more quietly, telling a board on BETA7 that
+         BETA11 is not newer - so the amber never lights and the install button
+         below never appears at all.
+
+         Split the trailing run of digits off and compare that numerically,
+         comparing the letters in front as text first so an unrelated suffix -
+         "rc" against "beta" - still orders somehow instead of not at all. */
+      var preA = fwSplitPre(A.pre), preB = fwSplitPre(B.pre);
+      if (preA.word !== preB.word) return preA.word > preB.word;
+      if (preA.num === null || preB.num === null) return A.pre > B.pre;
+      return preA.num > preB.num;
+    }
+
+    function fwSplitPre(pre) {
+      var m = /^(.*?)(\d+)$/.exec(pre);
+      return m ? { word: m[1], num: parseInt(m[2], 10) } : { word: pre, num: null };
     }
 
     function checkForNewFirmware() {
       if (fwCheckDone || !fwLink.env || !fwLink.from) return;
       fwCheckDone = true;
 
-      fetch('https://diy.power-pilot.uk/firmware/releases.json', { cache: 'no-cache' })
+      fetch(FW_SITE + 'firmware/releases.json', { cache: 'no-cache' })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (index) { if (index) showFirmwareVerdict(index); })
         .catch(function () { /* no route out - leave the plain link alone */ });
@@ -4222,13 +4260,16 @@
       /* Only versions that actually published a build for THIS env count. A
          release that skipped this board is not an update for this board, and
          saying otherwise sends someone to a page with nothing on it. */
-      var newest = null;
+      var newest = null, newestPath = '';
       for (var c = 0; c < channels.length; c++) {
         var versions = (index.channels && index.channels[channels[c]]) || [];
         for (var i = 0; i < versions.length; i++) {
           var v = versions[i];
-          var hasEnv = (v.builds || []).some(function (b) { return b.env === fwLink.env; });
-          if (hasEnv && (!newest || fwNewer(v.version, newest))) newest = v.version;
+          var build = (v.builds || []).filter(function (b) { return b.env === fwLink.env; })[0];
+          if (build && (!newest || fwNewer(v.version, newest))) {
+            newest = v.version;
+            newestPath = build.path;
+          }
         }
       }
       if (!newest) return;
@@ -4251,6 +4292,157 @@
         : 'You are running ' + fwLink.from + ', the newest published for this board. Opens the download page.';
       box.appendChild(link);
       box.className = 'stat-value sm' + (isNew ? ' v-warn' : '');
+
+      /* Only when there is genuinely something newer. Re-flashing the version
+         already running is a legitimate recovery move, but a one-click flash
+         button sitting under "you are up to date" on a device managing a
+         battery invites a pointless reboot at best. Someone who wants that can
+         still download the image and use the picker below. */
+      if (isNew) offerDirectInstall(newest, newestPath);
+    }
+
+    /* Fetch-and-flash.
+     *
+     * The browser downloads the image and hands it to the same upload endpoint
+     * the file picker uses, so the device sees a byte-identical multipart POST
+     * and every guard on that path - the app-slot check, the refusal to write a
+     * filesystem image, closing the websockets first - applies exactly as it
+     * does to a hand-picked file. No firmware change, and it works the same on
+     * every board rather than only the ones with PSRAM to spare.
+     *
+     * It reads the manifest's `ota` entry and nothing else, which means
+     * firmware.bin and never firmware.factory.bin. The merged image carries a
+     * bootloader and a partition table, and writing those into a slot meant for
+     * an app is a failure that takes a USB cable to undo. The two differ by
+     * about 65KB and nothing in their names says which is which, so the choice
+     * is made here rather than left to whoever reads a directory listing.
+     *
+     * Silent on failure, like the version check it follows: no manifest, no
+     * `ota` entry, or no route out simply leaves the manual picker in place. */
+    var fwDirect = null;
+
+    function offerDirectInstall(version, manifestPath) {
+      var base = FW_SITE + 'firmware/';
+      fetch(base + manifestPath, { cache: 'no-cache' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (m) {
+          if (!m || !m.ota) return;
+          var dir = manifestPath.replace(/\/[^/]+$/, '');
+          fwDirect = { version: version, url: base + dir + '/' + m.ota.path, size: m.ota.size };
+          showDirectInstall();
+        })
+        .catch(function () { /* no route out - the picker below still works */ });
+    }
+
+    function showDirectInstall() {
+      var box = document.getElementById('fwDirect');
+      var btn = document.getElementById('fwDirectBtn');
+      var note = document.getElementById('fwDirectNote');
+      var label = document.getElementById('fwDirectLabel');
+      if (!box || !btn || !note || !label) return;
+
+      label.textContent = 'Install ' + fwDirect.version + ' (' + (fwDirect.size / 1048576).toFixed(2) + ' MB)';
+      box.hidden = false;
+
+      /* The device is the only thing that knows its own app slot, so this
+         refusal is aimed rather than sprayed: every 3.x image is larger than
+         the pre-3.0 1.25MB slot, and a board still on that partition table has
+         to be written over USB. Shown disabled with the reason rather than
+         hidden, because "why is there no button" is a worse question than one
+         sentence answering it. */
+      if (fwLink.slot && fwLink.slot * 1024 < fwDirect.size) {
+        btn.disabled = true;
+        note.textContent = 'This build needs ' + Math.ceil(fwDirect.size / 1024) + ' KB and this device’s app slot holds ' +
+                           fwLink.slot + ' KB, so it has to be written over USB with the browser flasher.';
+        return;
+      }
+      btn.disabled = false;
+      note.textContent = 'Downloaded by this browser, then written straight to the device - no file to save. ' +
+                         'Your settings live in NVS, which an over-the-air update never touches.';
+    }
+
+    function installFromWeb() {
+      if (!fwDirect) return;
+      askConfirm({
+        title: 'Flash Firmware',
+        body: 'Download ' + fwDirect.version + ' (' + (fwDirect.size / 1024).toFixed(0) + ' KB) and write it to the device? ' +
+              'Do not power off during the update - an interrupted flash can leave the BMS unbootable.',
+        okLabel: 'Download & Flash', danger: true
+      }).then(function (ok) { if (ok) downloadThenFlash(); });
+    }
+
+    function downloadThenFlash() {
+      fwBusy(true);
+      var progressBar = document.getElementById('fwProgressBar');
+      document.getElementById('fwProgress').hidden = false;
+      progressBar.className = 'progress-bar';
+      progressBar.style.width = '0%';
+      progressBar.textContent = 'Downloading...';
+
+      var xhr = new XMLHttpRequest();
+      xhr.open('GET', fwDirect.url, true);
+      xhr.responseType = 'blob';
+
+      xhr.onprogress = function (e) {
+        /* A byte count when the length is unknown, rather than a bar stuck at
+           zero - the site serves these with a Content-Length, but a proxy that
+           re-encodes on the way through would take it away. */
+        if (e.lengthComputable) {
+          var pct = Math.round((e.loaded / e.total) * 100);
+          progressBar.style.width = pct + '%';
+          progressBar.textContent = 'Downloading ' + pct + '%';
+        } else {
+          progressBar.textContent = 'Downloading ' + Math.round(e.loaded / 1024) + ' KB';
+        }
+      };
+
+      xhr.onload = function () {
+        if (xhr.status !== 200 || !xhr.response) {
+          fwDownloadFailed('Download failed (HTTP ' + xhr.status + ')');
+          return;
+        }
+        /* The exact size from the manifest or nothing at all. A truncated image
+           - or a captive portal's login page served with a cheerful 200 - would
+           otherwise go into the OTA slot and only be found out when the board
+           did not come back. */
+        if (xhr.response.size !== fwDirect.size) {
+          fwDownloadFailed('Downloaded ' + xhr.response.size + ' bytes, expected ' + fwDirect.size);
+          return;
+        }
+        doUploadFirmware(xhr.response);
+      };
+
+      xhr.onerror = function () { fwDownloadFailed('Could not reach diy.power-pilot.uk'); };
+      xhr.ontimeout = function () { fwDownloadFailed('Download timed out'); };
+      xhr.timeout = 180000;
+      showToast('Downloading ' + fwDirect.version + '...', 'pending', 60000);
+      xhr.send();
+    }
+
+    /* Nothing has been written at this point, so say so - the difference
+       between a download that failed and a flash that failed is the difference
+       between trying again and fetching a USB cable. */
+    function fwDownloadFailed(why) {
+      var progressBar = document.getElementById('fwProgressBar');
+      progressBar.className = 'progress-bar err';
+      progressBar.textContent = 'Failed';
+      showToast(why + ' - nothing was written to the device.', 'error', 6000);
+      fwBusy(false);
+    }
+
+    /* Both routes lead to the same OTA slot, so both close while one is in use. */
+    function fwBusy(busy) {
+      var main = document.getElementById('firmwareBtn');
+      if (main) main.disabled = busy;
+
+      var direct = document.getElementById('fwDirectBtn');
+      if (!direct) return;
+      /* Re-derived on the way back rather than simply flipped, because the
+         direct button has a second reason to be disabled - an image too big for
+         this device's app slot - and a failed upload from the picker below must
+         not quietly turn that one back on. */
+      if (busy) direct.disabled = true;
+      else if (fwDirect) showDirectInstall();
     }
 
     function uploadFirmware() {
@@ -4270,16 +4462,23 @@
       }).then(function(ok) { if (ok) doUploadFirmware(file); });
     }
 
+    /* Takes a File from the picker or a Blob the browser just downloaded - the
+       device cannot tell the two apart, which is the whole point. A Blob has no
+       name, and multipart without a filename arrives as "blob"; the update
+       server decides gzip by extension, so the fallback has to be a real one. */
     function doUploadFirmware(file) {
-      var btn = document.getElementById('firmwareBtn');
-      btn.disabled = true;
+      fwBusy(true);
       var progressDiv = document.getElementById('fwProgress');
       var progressBar = document.getElementById('fwProgressBar');
       progressDiv.hidden = false;
       progressBar.className = 'progress-bar';
+      /* Wound back explicitly - after a fetch-and-flash the bar arrives here
+         sitting at 100% from the download, and would read "0%" across a full
+         width until the first upload progress event moved it. */
+      progressBar.style.width = '0%';
 
       var formData = new FormData();
-      formData.append('firmware', file);
+      formData.append('firmware', file, file.name || 'firmware.bin');
 
       var xhr = new XMLHttpRequest();
       xhr.open('POST', 'update?name=firmware', true);
@@ -4303,7 +4502,7 @@
           progressBar.className = 'progress-bar err';
           progressBar.textContent = 'Failed';
           showToast('Update failed: ' + xhr.responseText, 'error', 5000);
-          btn.disabled = false;
+          fwBusy(false);
         }
       };
 
@@ -4311,14 +4510,14 @@
         progressBar.className = 'progress-bar err';
         progressBar.textContent = 'Error';
         showToast('Upload failed - connection error', 'error', 5000);
-        btn.disabled = false;
+        fwBusy(false);
       };
 
       xhr.ontimeout = function() {
         progressBar.className = 'progress-bar err';
         progressBar.textContent = 'Timeout';
         showToast('Upload timed out', 'error', 5000);
-        btn.disabled = false;
+        fwBusy(false);
       };
 
       xhr.timeout = 120000; // 2 minutes
@@ -4346,8 +4545,7 @@
           clearInterval(interval);
           if (progressBar) { progressBar.textContent = 'Timeout - try refreshing manually'; progressBar.className = 'progress-bar warn'; }
           showToast('Device did not reconnect within ' + maxSeconds + 's', 'error', 5000);
-          var btn = document.getElementById('firmwareBtn');
-          btn.disabled = false;
+          fwBusy(false);
         }
       }, 1000);
     }

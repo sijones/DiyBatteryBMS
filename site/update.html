@@ -184,8 +184,25 @@ function compareVersions(a, b) {
    * orders the list that KEEP_PER_CHANNEL slices, so a third beta would have
    * pruned the newest build off the site and kept the two oldest.
    *
-   * A plain release still beats its own pre-release, which is the case above. */
-  return A.pre > B.pre ? -1 : 1;
+   * A plain release still beats its own pre-release, which is the case above.
+   *
+   * It also read `A.pre > B.pre`, a plain string comparison, which goes wrong
+   * again the moment a beta number reaches double digits: "BETA10" < "BETA9"
+   * because "1" < "9" where they first differ. build-manifests.mjs hit that and
+   * was fixed; this copy is what a person sees, and it would offer BETA9 as the
+   * newest build with BETA11 sitting published beside it.
+   *
+   * Split the trailing run of digits off and compare it numerically, comparing
+   * the letters in front as text first so an unrelated suffix - "rc" against
+   * "beta" - still orders somehow rather than not at all. */
+  const splitPre = (p) => {
+    const m = /^(.*?)(\d+)$/.exec(p);
+    return m ? { word: m[1], num: parseInt(m[2], 10) } : { word: p, num: null };
+  };
+  const preA = splitPre(A.pre), preB = splitPre(B.pre);
+  if (preA.word !== preB.word) return preA.word > preB.word ? -1 : 1;
+  if (preA.num === null || preB.num === null) return A.pre > B.pre ? -1 : 1;
+  return preB.num - preA.num;
 }
 
 /**
