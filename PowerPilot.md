@@ -13,8 +13,15 @@ Add the node under **Settings → Hardware Comms Devices** in PowerPilot, by hos
 ready.
 
 The interface it uses is the web UI's own WebSocket at `ws://<device>/ws`, which is open to any
-system, not just PowerPilot. It pushes the full state as JSON on every loop and accepts JSON
+system, not just PowerPilot. It pushes live readings as JSON on every loop and accepts JSON
 set-commands using the same keys, so any external energy manager can do the same thing.
+
+**Send `GetAll()` as soon as the socket opens.** The full state — settings, configuration and
+firmware details as well as readings — is sent only to a client that asks, and only to that
+client. Nothing is pushed on connect. Firmware up to 3.0.0-BETA12 broadcast it to every connected
+client whenever a new one arrived, so a client that never asked still ended up with it. That client
+now gets live readings only, plus the full state whenever a setting changes. PowerPilot has always
+asked.
 
 > **There is no authentication on this interface.** Anything on the same network can change your
 > charge limits. Keep the device off guest and untrusted networks — that applies to PowerPilot

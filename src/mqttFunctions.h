@@ -425,6 +425,7 @@ void _haPublish(const char* type, const char* id, const char* payload,
      haDiscoveryLoop() runs from the main loop - the same call from an MQTT
      callback would deadlock against the task that does the sending. */
   mqttPublishQos(_haTopicBuf, payload, true, 0, false);
+  Diag.Note(DiagEvent::HaDiscovery);
   yield();
 
   /* That is this pass's ration. Note haResumeFrom is seq+1, not seq: unlike the

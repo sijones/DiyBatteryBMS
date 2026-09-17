@@ -51,6 +51,22 @@ struct DiagVeCounters {
   uint32_t nameOverflows;   // field names too long for the name buffer
 };
 
+/* The bursts that take internal RAM in a lump, stamped as they happen so a new
+   low-water mark can say which of them it arrived beside.
+
+   The low water is only checked once a second, and the dip that sets it is
+   usually over well within that - so "what is running now" is the wrong
+   question by the time anyone asks it. "What ran in the last few seconds" is
+   the right one, and a timestamp per burst is enough to answer it. */
+enum class DiagEvent : uint8_t {
+  HaDiscovery,   // a pass of Home Assistant discovery messages went out
+  WsConnect,     // a browser opened a web socket
+  WsFullSync,    // the full settings payload was broadcast
+  WsLogReplay,   // a Logs tab pulled the backlog
+  PageServe,     // the web page itself was queued for sending
+  Count
+};
+
 class DiagnosticsClass
 {
 public:
@@ -91,13 +107,26 @@ public:
   uint32_t BootCount() const      { return _bootCount; }
   uint32_t UptimeSecs() const;
 
-  uint32_t HeapMin() const;                  // lowest free heap this run
   /* Internal RAM, which on a PSRAM board is the only pool that can run out -
      WiFi and lwIP need DMA-capable memory and cannot use PSRAM. The warning
-     thresholds are judged on these, not on the totals. */
+     thresholds are judged on these, and so are the figures the dashboard and
+     Home Assistant show: a low water counted across PSRAM read 8.3MB on a board
+     whose internal RAM had just touched 612 bytes. */
   uint32_t InternalFree() const;
   uint32_t InternalMin() const;
-  uint32_t BlockMin() const  { return _blockMin; }   // smallest largest-free-block this run
+  uint32_t InternalBlock() const;
+  uint32_t HeapMin() const   { return InternalMin(); }  // lowest internal free this run
+  uint32_t BlockMin() const  { return _blockMin; }      // smallest internal largest-free-block this run
+
+  /* Stamp a burst - see DiagEvent. One millis() write, so safe from any task
+     and cheap enough to call on every pass of the thing being stamped. */
+  void Note(DiagEvent e) { _eventMs[(size_t)e] = millis(); }
+  /* Something outside this file that knows the live state worth adding to a
+     low-water report - web socket clients, whether discovery is mid-sequence.
+     Writes a short phrase into out and returns its length. Called from the main
+     loop only. */
+  using ContextFn = size_t (*)(char* out, size_t n);
+  void SetContextProvider(ContextFn fn) { _contextFn = fn; }
 
   /* Counted where they happen, in the parser. Kept directly in RTC memory
      rather than mirrored there once a second, so a board that panics reports
@@ -137,6 +166,10 @@ private:
   uint32_t _lastSpareTotal = 0;
   uint32_t _lastTaskCheckMs = 0;
   uint32_t _lastCurveMs = 0;      // 0 = no boot-window sample taken yet
+  uint32_t _eventMs[(size_t)DiagEvent::Count] = {};   // 0 = not seen this run
+  ContextFn _contextFn = nullptr;
+
+  void ReportLowWaterContext();
 
 #if defined(BMS_S3)
   void     SampleCpuUsage();

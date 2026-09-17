@@ -119,6 +119,18 @@ VeDirectFrameHandler veHandle;
 // Functions for handling VE Data
 #include "DataProcessing.h"
 
+/* The live half of a low-water report - see Diag's ReportLowWaterContext().
+   Here rather than in Diagnostics.cpp because the web socket server and the
+   discovery sequence both live in this translation unit. */
+static size_t diagLowWaterContext(char* out, size_t n)
+{
+  const size_t clients = ws.count();
+  const int len = snprintf(out, n, "%u WS client%s, discovery %s",
+                           (unsigned)clients, clients == 1 ? "" : "s",
+                           haStep ? "mid-sequence" : "idle");
+  return len < 0 ? 0 : (size_t)len;
+}
+
 time_t last_boot;
 time_t last_vedirect;
 time_t last_lcd_refresh;
@@ -158,6 +170,7 @@ void setup()
      first question about any restart is whether it was one we asked for, and
      the answer sits unread in the RTC registers until this runs. */
   Diag.Begin();
+  Diag.SetContextProvider(diagLowWaterContext);
 
   if (!pref.isKey("EEPROMSetup"))
   {
@@ -668,6 +681,12 @@ void loop()
   // Feeds out the Home Assistant discovery burst a group at a time - see the
   // note above HA_CHUNK_COUNT. No-op unless a sequence is armed.
   haDiscoveryLoop();
+  // Un-pauses everything if a firmware upload was cut off mid-flash
+  otaStallCheck();
+  // The one full web socket broadcast a burst of setting changes asked for
+  wsFlushFullSync();
+  // Web socket disconnects, logged here rather than from the library's destructor
+  wsReportDisconnects();
 
   // Monitor WiFi scan completion and send results via WebSocket
   UpdateWifiScanResults();

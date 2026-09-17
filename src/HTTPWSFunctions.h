@@ -23,6 +23,7 @@ extern uint8_t activeShuntLink;
 #include "Schedule.h"
 #include "RemoteOverride.h"
 #include "GPIOForbidden.h"
+#include "PsramJsonAllocator.h"
 
 /* Every GPIO role the web UI lets the user pin-assign IN THIS BUILD. Kept in
    one place so a newly assigned pin can be checked against every other role,
@@ -1004,7 +1005,7 @@ static void buildDataDoc(JsonDocument& doc, bool All)
    whole payload lands in one exact-size allocation. */
 String generateDatatoJSON(bool All)
 {
-  JsonDocument doc;
+  JsonDocument doc(PsramJsonAllocator::instance());
   buildDataDoc(doc, All);
   String outputJson;
   outputJson.reserve(measureJson(doc) + 1);
@@ -1023,15 +1024,16 @@ String generateDatatoJSON(bool All)
    a cap would reliably do is evict the OLDEST client when a new one arrives -
    and the oldest is exactly the long-lived socket an integration holds, so
    three browser tabs would have quietly dropped it. */
-void notifyWSClients(bool sendalldata = true) {
-  if(otaInProgress) return;
-  ws.cleanupClients();
-  if(ws.count() == 0) return;
-
-  JsonDocument doc;
+/* The current state, serialised into a buffer ready to send - or nullptr when
+   there is nothing to send, or not the room to send it. Shared by the broadcast
+   and the single-client reply so the heap gate below guards both. */
+static AsyncWebSocketSharedBuffer buildWSPayload(bool sendalldata) {
+  // PSRAM for the document, which is rebuilt several times a second - see
+  // PsramJsonAllocator.h
+  JsonDocument doc(PsramJsonAllocator::instance());
   buildDataDoc(doc, sendalldata);
   const size_t n = measureJson(doc);
-  if (n == 0) return;
+  if (n == 0) return nullptr;
 
   /* Refuse rather than abort. Exceptions are off, so a failed allocation is
      not a thrown bad_alloc but a call to abort() - and the allocation below is
@@ -1055,11 +1057,11 @@ void notifyWSClients(bool sendalldata = true) {
     wsSkippedLowHeap++;
     if ((uint32_t)(millis() - lastMoan) > 5000) {
       lastMoan = millis();
-      Serial.printf("[heap] skipped a %u B broadcast, largest internal block %u B (%u skipped)\r\n",
+      Serial.printf("[heap] skipped a %u B web socket send, largest internal block %u B (%u skipped)\r\n",
                     (unsigned)n, (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
                     (unsigned)wsSkippedLowHeap);
     }
-    return;
+    return nullptr;
   }
 
   /* Serialise into the send buffer itself. textAll(String) would allocate the
@@ -1069,7 +1071,92 @@ void notifyWSClients(bool sendalldata = true) {
      note above wsBroadcast(). */
   auto buf = std::make_shared<std::vector<uint8_t>>(n);
   serializeJson(doc, buf->data(), n);
-  ws.textAll(std::move(buf));
+  return buf;
+}
+
+/* A full broadcast is asked for, then sent once things go quiet.
+
+   Nearly every setting handler ends in notifyWSClients(), and a controller
+   sends its setpoints as separate messages - PowerPilot's reconnect is
+   manualallowcharge, manualallowdischarge and forcecharge back to back. That
+   was three full payloads to every client inside a second, on the web socket
+   task, straight after the GetAll() reply: the burst the low-water report
+   caught at 11KB. Each of the three carried the same settings as the last.
+
+   So asking only marks one as due, and wsFlushFullSync() in the main loop sends
+   a single broadcast once no request has arrived for WS_SYNC_QUIET_MS - or
+   WS_SYNC_MAX_WAIT_MS after the first, so a steady stream of changes cannot
+   hold it back indefinitely. A browser sees its change acknowledged a fifth of
+   a second later; it never saw the intermediate payloads as anything but
+   redundant. */
+#define WS_SYNC_QUIET_MS     200
+#define WS_SYNC_MAX_WAIT_MS 1000
+
+static bool     wsFullSyncDue = false;
+static uint32_t wsFullSyncFirstMs = 0;
+static uint32_t wsFullSyncLastMs = 0;
+static portMUX_TYPE wsFullSyncMux = portMUX_INITIALIZER_UNLOCKED;
+
+/* sendalldata = false is the live readings, which go out at once: they come
+   from the main loop on their own schedule and are never repeated in a burst.
+   true is the full state, which is deferred - see above. */
+void notifyWSClients(bool sendalldata = true) {
+  if(otaInProgress) return;
+
+  if (sendalldata) {
+    const uint32_t now = millis();
+    taskENTER_CRITICAL(&wsFullSyncMux);
+    if (!wsFullSyncDue) wsFullSyncFirstMs = now;
+    wsFullSyncDue = true;
+    wsFullSyncLastMs = now;
+    taskEXIT_CRITICAL(&wsFullSyncMux);
+    return;
+  }
+
+  ws.cleanupClients();
+  if(ws.count() == 0) return;
+  auto buf = buildWSPayload(false);
+  if (buf) ws.textAll(std::move(buf));
+}
+
+// Main loop only. Sends the full broadcast notifyWSClients(true) asked for.
+void wsFlushFullSync() {
+  if (otaInProgress) return;
+
+  const uint32_t now = millis();
+  taskENTER_CRITICAL(&wsFullSyncMux);
+  const bool send = wsFullSyncDue &&
+                    ((uint32_t)(now - wsFullSyncLastMs) >= WS_SYNC_QUIET_MS ||
+                     (uint32_t)(now - wsFullSyncFirstMs) >= WS_SYNC_MAX_WAIT_MS);
+  if (send) wsFullSyncDue = false;
+  taskEXIT_CRITICAL(&wsFullSyncMux);
+  if (!send) return;
+
+  ws.cleanupClients();
+  if(ws.count() == 0) return;
+  Diag.Note(DiagEvent::WsFullSync);
+  auto buf = buildWSPayload(true);
+  if (buf) ws.textAll(std::move(buf));
+}
+
+/* The full state to one client: the answer to its GetAll().
+
+   Not a broadcast. A client connecting used to be answered with the full
+   payload sent to every client already connected - twice when it also asked
+   with GetAll(), once off the pong to our connect ping and once off the
+   request - so each new tab or PowerPilot reconnect cost every existing reader
+   two ~4KB sends they already had the contents of. Clients that are already
+   connected learn of changes from the broadcasts that follow a setting
+   changing, which is all they ever needed.
+
+   Every client is expected to ask: the web UI sends GetAll() when its socket
+   opens, as PowerPilot always has. Nothing is pushed on connect any more. */
+void sendAllToClient(AsyncWebSocketClient* wsclient) {
+  if(otaInProgress) return;
+  Diag.Note(DiagEvent::WsFullSync);
+
+  auto buf = buildWSPayload(true);
+  if (buf && wsclient->status() == WS_CONNECTED) wsclient->text(std::move(buf));
 }
 
 String GetWSDataJson(const String& data, const String& value)
@@ -1085,11 +1172,11 @@ String GetWSDataJson(const String& data, const String& value)
 
 void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len){
 
-  JsonDocument doc;
+  JsonDocument doc(PsramJsonAllocator::instance());
   // Check if it's a GET request
   if (strncmp(data,"Get",(int)3)==0) {
     if (strncmp(data,"GetAll()",len)==0)
-      notifyWSClients();
+      sendAllToClient(wsclient);
     else if (strncmp(data,"GetLogs()",len)==0) {
       /* One entry is copied out at a time rather than the whole batch up front.
          The old version kept a static LogEntry[LOG_SEND_MAX] purely as a staging
@@ -1097,11 +1184,25 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
          happens when somebody opens the Logs tab. A single entry on the stack
          does the same job, still copies out of the critical section before any
          sending, and gives that RAM back to the heap for good. */
+      /* One message holding the whole backlog, not one message per line.
+
+         Fifty sends meant fifty small Strings and fifty send buffers, every one
+         under the 4KB line below which allocations stay in internal RAM, all
+         queued on this client before the first had left - on the web socket
+         task, in the same second as the full payload a connecting tab asks
+         for. One array of fifty lines is several kilobytes, so its send buffer
+         goes to PSRAM on a board that has it, and the document behind it does
+         too. Nor can it overrun the client's 32-message queue, which discards
+         whatever arrives once it is full - fifty lines against a slow link
+         could lose their tail that way.
+
+         Still copied out of the ring one entry at a time, so the lock is never
+         held across an allocation. */
+      Diag.Note(DiagEvent::WsLogReplay);
       LogEntry entry;
       int available = 0;
 
       // How far back the ring actually goes, so the replay can run oldest-first
-      // without holding the lock across the sends.
       taskENTER_CRITICAL(&logMutex);
       for(int i = 1; i <= LOG_BUFFER_SIZE && available < LOG_SEND_MAX; i++) {
         int idx = (logBufferIndex - i + LOG_BUFFER_SIZE) % LOG_BUFFER_SIZE;
@@ -1110,33 +1211,36 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       }
       taskEXIT_CRITICAL(&logMutex);
 
+      JsonDocument logs(PsramJsonAllocator::instance());
+      JsonArray lines = logs["logs"].to<JsonArray>();
+
       // Oldest first, so the viewer reads in chronological order.
       uint32_t nowMs = millis();
       for(int n = available; n >= 1; n--) {
-        if(wsclient->status() != WS_CONNECTED) break;   // client went away
-
         taskENTER_CRITICAL(&logMutex);
         int idx = (logBufferIndex - n + LOG_BUFFER_SIZE) % LOG_BUFFER_SIZE;
         entry = logBuffer[idx];                        // plain struct copy, no alloc
         taskEXIT_CRITICAL(&logMutex);
 
-        // Built as a String, not snprintf into a fixed buffer: message plus level
-        // and age would sit close to any fixed size, and truncation would cut the
-        // JSON off mid-string.
-        // "age" is how long ago the line was logged. The client has no reference
-        // for our millis(), and stamping replayed lines with their arrival time
-        // collapsed a whole backlog onto one second of the browser's clock.
-        String json = "{\"log\":\"";
-        json += jsonEscapeLog(entry.message);
-        json += "\",\"level\":\"";
-        json += logLevelName(entry.level);
-        json += "\",\"age\":";
-        json += (unsigned long)(nowMs - entry.timestamp);
-        json += "}";
-        wsclient->text(json);
+        // Quotes to apostrophes, as the live path's jsonEscapeLog() does, so a
+        // replayed line reads the same as it did when it arrived. The rest of
+        // the escaping is ArduinoJson's.
+        for (char* p = entry.message; *p; p++) if (*p == '"') *p = '\'';
 
-        // Yield every 10 messages to prevent WDT
-        if((available - n) % 10 == 0) yield();
+        JsonObject line = lines.add<JsonObject>();
+        line["log"] = (const char*)entry.message;      // copied into the document
+        line["level"] = logLevelName(entry.level);
+        // How long ago the line was logged. The client has no reference for our
+        // millis(), and stamping replayed lines with their arrival time collapsed
+        // a whole backlog onto one second of the browser's clock.
+        line["age"] = (unsigned long)(nowMs - entry.timestamp);
+      }
+
+      const size_t size = measureJson(logs);
+      if (size > 0 && wsclient->status() == WS_CONNECTED) {
+        auto buf = std::make_shared<std::vector<uint8_t>>(size);
+        serializeJson(logs, buf->data(), size);
+        wsclient->text(std::move(buf));
       }
     }
     else if (strncmp(data,"GetWifiScan()",len)==0) {
@@ -2235,28 +2339,92 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
 
 }
 
+/* Who connected, from where and for how long - so a client that keeps
+   reconnecting shows up as one, with its address.
+
+   A disconnect was only ever log_i, which this build discards, so a controller
+   dropping and coming back every couple of minutes looked like a string of new
+   clients and nothing else. The address separates a browser from PowerPilot;
+   the duration shows whether the drops are regular.
+
+   Disconnects are queued here and logged from the main loop, not logged where
+   they happen: the library raises that event from the client's destructor,
+   while it is removing the client from the list a log broadcast would walk. */
+#define WS_TRACK_SLOTS 8   // the library's default client limit
+
+struct WsTrack { uint32_t id; uint32_t ip; uint32_t sinceMs; };
+static WsTrack wsTrack[WS_TRACK_SLOTS] = {};
+static WsTrack wsDrops[WS_TRACK_SLOTS] = {};   // sinceMs holds how long it lasted
+static uint8_t wsDropCount = 0;
+static portMUX_TYPE wsTrackMux = portMUX_INITIALIZER_UNLOCKED;
+
+static void wsTrackConnect(uint32_t id, uint32_t ip) {
+  const uint32_t now = millis();
+  taskENTER_CRITICAL(&wsTrackMux);
+  // A free slot, or failing that the longest-standing one
+  uint8_t slot = 0;
+  for (uint8_t i = 0; i < WS_TRACK_SLOTS; i++) {
+    if (wsTrack[i].id == 0) { slot = i; break; }
+    if (wsTrack[i].sinceMs < wsTrack[slot].sinceMs) slot = i;
+  }
+  wsTrack[slot] = { id, ip, now };
+  taskEXIT_CRITICAL(&wsTrackMux);
+}
+
+static void wsTrackDisconnect(uint32_t id) {
+  const uint32_t now = millis();
+  taskENTER_CRITICAL(&wsTrackMux);
+  for (uint8_t i = 0; i < WS_TRACK_SLOTS; i++) {
+    if (wsTrack[i].id != id) continue;
+    if (wsDropCount < WS_TRACK_SLOTS)
+      wsDrops[wsDropCount++] = { id, wsTrack[i].ip, now - wsTrack[i].sinceMs };
+    wsTrack[i].id = 0;
+    break;
+  }
+  taskEXIT_CRITICAL(&wsTrackMux);
+}
+
+// Main loop only.
+void wsReportDisconnects() {
+  WsTrack drops[WS_TRACK_SLOTS];
+  taskENTER_CRITICAL(&wsTrackMux);
+  const uint8_t n = wsDropCount;
+  memcpy(drops, wsDrops, n * sizeof(WsTrack));
+  wsDropCount = 0;
+  taskEXIT_CRITICAL(&wsTrackMux);
+
+  for (uint8_t i = 0; i < n; i++) {
+    const uint32_t secs = drops[i].sinceMs / 1000;
+    WS_LOG_I("WebSocket Client %u (%s) disconnected after %um %us",
+             (unsigned)drops[i].id, IPAddress(drops[i].ip).toString().c_str(),
+             (unsigned)(secs / 60), (unsigned)(secs % 60));
+  }
+}
+
 // Web Socket Handler
 void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEventType type, void * arg, uint8_t *data, size_t len){
   if(type == WS_EVT_CONNECT){
     //client connected
     log_i("ws[%s][%u] connected", wsserver->url(), wsclient->id());
-    WS_LOG_I("WebSocket Client %u connected", wsclient->id());
-    //wsclient->printf("Your Client %u :)", wsclient->id());
-    wsclient->ping();
+    const IPAddress ip = wsclient->remoteIP();
+    wsTrackConnect(wsclient->id(), (uint32_t)ip);
+    WS_LOG_I("WebSocket Client %u connected from %s", wsclient->id(), ip.toString().c_str());
+    // No ping and no push: the client asks for the state with GetAll() - see
+    // sendAllToClient()
+    Diag.Note(DiagEvent::WsConnect);
     // What a tab costs, which is the measurement that matters here - four of
     // them took this board from 167KB free to a 4.6KB largest block
     Diag.Milestone("WS client connected");
   } else if(type == WS_EVT_DISCONNECT){
     //client disconnected
-    log_i("ws[%s][%u] disconnect: %u", wsserver->url(), wsclient->id());
+    log_i("ws[%s][%u] disconnect", wsserver->url(), wsclient->id());
+    wsTrackDisconnect(wsclient->id());
   } else if(type == WS_EVT_ERROR){
     //error was received from the other end
     log_d("ws[%s][%u] error(%u): %s", wsserver->url(), wsclient->id(), *((uint16_t*)arg), (char*)data);
   } else if(type == WS_EVT_PONG){
     //pong message was received (in response to a ping request maybe)
     log_i("ws[%s][%u] pong[%u]: %s", wsserver->url(), wsclient->id(), len, (len)?(char*)data:"");
-    log_i("Sending All Data to All WS Clients");
-    notifyWSClients();
   } else if(type == WS_EVT_DATA){
     //data packet
     AwsFrameInfo * info = (AwsFrameInfo*)arg;
@@ -2285,8 +2453,10 @@ void sendEmbeddedHTML(AsyncWebServerRequest *request) {
 
      Serial only and no allocation of its own, since the point is to observe a
      moment when there may be very little left to allocate from. */
+  Diag.Note(DiagEvent::PageServe);
+  // Internal for both, as ESP.getFreeHeap() already is - see Diag.InternalBlock()
   const uint32_t freeBefore  = ESP.getFreeHeap();
-  const uint32_t blockBefore = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  const uint32_t blockBefore = Diag.InternalBlock();
 
   AsyncWebServerResponse *response =
       request->beginResponse(200, "text/html; charset=utf-8", EMBEDDED_HTML, EMBEDDED_HTML_LEN);
@@ -2304,11 +2474,43 @@ void sendEmbeddedHTML(AsyncWebServerRequest *request) {
      line from Diag will report deeper than this does, and the gap between the
      two is the answer. */
   const uint32_t freeAfter  = ESP.getFreeHeap();
-  const uint32_t blockAfter = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  const uint32_t blockAfter = Diag.InternalBlock();
   Serial.printf("[page] %u B page queued: free %u -> %u (%+d), largest %u -> %u\r\n",
                 (unsigned)EMBEDDED_HTML_LEN, (unsigned)freeBefore, (unsigned)freeAfter,
                 (int)((int32_t)freeAfter - (int32_t)freeBefore),
                 (unsigned)blockBefore, (unsigned)blockAfter);
+}
+
+/* Hands the device back when a firmware upload stops arriving.
+
+   otaInProgress is cleared by onUpdateEnd, and an upload that is cut off never
+   gets there - so the web socket, MQTT publishing and Home Assistant discovery
+   all stayed paused for the rest of the run, on a device that was otherwise
+   fine. A minute with no new bytes is far past any pause a working upload
+   makes (a flash sector write is tens of milliseconds, the final image check a
+   second or two).
+
+   Only the flag is cleared here. The half-written image is left for the next
+   upload's onUpdateBegin to discard, because that runs on the task doing the
+   writing and this does not. Called every pass of the main loop. */
+void otaStallCheck()
+{
+  static uint32_t lastMoveMs = 0;
+  static size_t   lastProgress = 0;
+
+  if (!otaInProgress) { lastMoveMs = 0; return; }
+
+  const size_t progress = Update.progress();
+  if (lastMoveMs == 0 || progress != lastProgress) {
+    lastProgress = progress;
+    lastMoveMs = millis();
+    return;
+  }
+  if ((uint32_t)(millis() - lastMoveMs) < 60000) return;
+
+  lastMoveMs = 0;
+  otaInProgress = false;
+  WS_LOG_W("Firmware upload stalled at %u B for 60s - resuming normal operation", (unsigned)progress);
 }
 
 void StartWebServices()
@@ -2351,6 +2553,18 @@ void StartWebServices()
     if (type == UpdateType::FILE_SYSTEM) {
       log_w("Filesystem OTA disabled - embedded HTML only");
       result = UpdateResult::UPDATE_ABORT;
+    }
+    /* An upload that was cut off - the browser's timeout, a WiFi drop, a tab
+       closed mid-flash - never reaches Update.end(), so Update still counts
+       itself as running. Update.begin() then refuses every later attempt with
+       "already running" and no error code, which the update server can only
+       report as "Update aborted by server.", and it kept doing so until the
+       board restarted. Throw the partial image away here instead: this runs on
+       the same task as the writes, so nothing is mid-write when it goes. */
+    else if (Update.isRunning()) {
+      WS_LOG_W("Discarding an interrupted firmware upload (%u B written) before starting again",
+               (unsigned)Update.progress());
+      Update.abort();
     }
     //you can force abort the update like this if you need to:
     //result = UpdateResult::UPDATE_ABORT;        

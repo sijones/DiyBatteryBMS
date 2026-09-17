@@ -3132,6 +3132,11 @@
       setConnStatus(true);
       if (wasDown) showToast('Reconnected', 'success');
 
+      // Settings and configuration only arrive when asked for - the device no
+      // longer pushes them to everyone when a client connects, so a page that
+      // did not ask would show live readings over empty settings.
+      websocket.send('GetAll()');
+
       /* The backlog is not pulled here, deliberately.
 
          A reconnect used to re-request it whenever the Logs tab happened to be
@@ -3196,6 +3201,14 @@
       }
       let configDirty = false;   // re-validate once settings land, not only on typing
       
+      // The GetLogs() backlog - one message holding every line, oldest first
+      if(Array.isArray(obj.logs)) {
+        obj.logs.forEach(function(l) {
+          addLogEntry(l.log, l.level || 'info', l.age);
+        });
+        return;
+      }
+
       // Handle log messages
       if(obj.hasOwnProperty('log')) {
         addLogEntry(obj.log, obj.level || 'info', obj.age);

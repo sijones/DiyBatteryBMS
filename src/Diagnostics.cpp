@@ -28,7 +28,7 @@ DiagnosticsClass Diag;
    that would match the magic word and read the new fields out of whatever the
    old layout had in those bytes. Changing the word costs one boot reported as
    having no history, which is the correct answer. */
-#define DIAG_RTC_MAGIC 0x424D5345u   // 'BMSE'
+#define DIAG_RTC_MAGIC 0x424D5346u   // 'BMSF' - blockMin became internal-only
 
 struct DiagRtcState {
   uint32_t magic;
@@ -91,12 +91,6 @@ uint32_t DiagnosticsClass::UptimeSecs() const
   return (uint32_t)(esp_timer_get_time() / 1000000LL);
 }
 
-uint32_t DiagnosticsClass::HeapMin() const
-{
-  // The IDF already tracks this one for us, across every heap it manages.
-  return (uint32_t)esp_get_minimum_free_heap_size();
-}
-
 /* Internal RAM only - the pool that actually runs out.
 
    On a board with PSRAM the totals above are worse than useless for judging
@@ -116,6 +110,14 @@ uint32_t DiagnosticsClass::InternalFree() const
 uint32_t DiagnosticsClass::InternalMin() const
 {
   return (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
+}
+
+/* Internal too. MALLOC_CAP_8BIT answers with PSRAM's largest block on a board
+   that has it - a constant 8,257,524 in the field logs - which says nothing
+   about whether the next internal allocation will fit. */
+uint32_t DiagnosticsClass::InternalBlock() const
+{
+  return (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL);
 }
 
 /* Straight into RTC memory. Called from the byte-at-a-time parser, so they stay
@@ -154,7 +156,7 @@ void DiagnosticsClass::Begin()
   memset(&_rtc.ve, 0, sizeof(_rtc.ve));
 
   const uint32_t freeNow  = (uint32_t)esp_get_free_heap_size();
-  const uint32_t blockNow = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  const uint32_t blockNow = InternalBlock();
   _blockMin = blockNow;
 
   _rtc.magic      = DIAG_RTC_MAGIC;
@@ -165,7 +167,7 @@ void DiagnosticsClass::Begin()
   _rtc.heapMin    = InternalFree();
   _rtc.blockMin   = blockNow;
   _lastTickMs     = millis();
-  _lastMilestoneFree = freeNow;   // first milestone is measured from boot
+  _lastMilestoneFree = InternalFree();   // first milestone is measured from boot
 
   /* Straight to the serial line as well as through the log macros, for the same
      reason SerialSetup.h does it: this build runs at CORE_DEBUG_LEVEL=1, where
@@ -178,7 +180,7 @@ void DiagnosticsClass::Begin()
      wrong number to read: 8.5MB free means nothing when WiFi and lwIP can only
      allocate from the 156KB of internal RAM behind it. On a board without
      PSRAM the two are equal and the line simply says so twice. */
-  Serial.printf("[boot] heap %u B free (%u B internal), largest block %u B\r\n",
+  Serial.printf("[boot] heap %u B free (%u B internal), largest internal block %u B\r\n",
                 (unsigned)freeNow, (unsigned)InternalFree(), (unsigned)blockNow);
 
   /* Say plainly whether PSRAM was found, because the failure is silent.
@@ -242,8 +244,10 @@ void DiagnosticsClass::Begin()
                (unsigned)_prevVe.blocksDiscarded);
   }
 
-  WS_LOG_I("Heap at boot: %u B free of %u B, largest block %u B",
-           (unsigned)freeNow, (unsigned)ESP.getHeapSize(), (unsigned)blockNow);
+  // All three internal: ESP.getHeapSize() only ever counted internal RAM, so a
+  // total-free figure beside it read as 8.6MB free "of" 297KB.
+  WS_LOG_I("Heap at boot: %u B internal free of %u B, largest block %u B",
+           (unsigned)InternalFree(), (unsigned)ESP.getHeapSize(), (unsigned)blockNow);
 }
 
 void DiagnosticsClass::Loop()
@@ -265,7 +269,7 @@ void DiagnosticsClass::Loop()
   _lastTickMs = now;
 
   const uint32_t freeNow  = (uint32_t)esp_get_free_heap_size();
-  const uint32_t blockNow = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  const uint32_t blockNow = InternalBlock();
   // Warnings are judged on internal RAM, not the total - see InternalFree()
   const uint32_t heapMin  = InternalMin();
   if (blockNow < _blockMin) _blockMin = blockNow;
@@ -344,7 +348,54 @@ void DiagnosticsClass::Loop()
                   (unsigned)heapMin, (unsigned)InternalFree(), (unsigned)freeNow);
     WS_LOG_W("Internal RAM low water down to %u B (now %u internal free)",
              (unsigned)heapMin, (unsigned)InternalFree());
+    ReportLowWaterContext();
   }
+}
+
+/* What the low water arrived beside.
+
+   A new low says the pool nearly ran out, never why. On this board the answer
+   has been a coincidence of bursts each of which fits on its own - discovery
+   starting a minute after MQTT, as a browser connects and pulls its payload -
+   and the heap figures alone cannot separate them. The stamps can.
+
+   Its own line rather than appended to the one above, because a web log entry
+   holds 143 characters and the two together do not fit. */
+void DiagnosticsClass::ReportLowWaterContext()
+{
+  // Anything older than this is not plausibly the same dip: the check runs
+  // once a second, so a real culprit is at most a couple of seconds stale.
+  static const uint32_t WINDOW_MS = 10000;
+  static const char* const NAMES[(size_t)DiagEvent::Count] = {
+    "HA discovery", "WS connect", "full sync", "log replay", "page serve"
+  };
+
+  const uint32_t now = millis();
+  char line[160];
+  size_t len = 0;
+  for (size_t i = 0; i < (size_t)DiagEvent::Count; i++) {
+    if (_eventMs[i] == 0) continue;
+    const uint32_t ago = now - _eventMs[i];
+    if (ago > WINDOW_MS) continue;
+    const int n = snprintf(line + len, sizeof(line) - len, "%s%s %u.%us ago",
+                           len ? ", " : "", NAMES[i],
+                           (unsigned)(ago / 1000), (unsigned)((ago % 1000) / 100));
+    if (n < 0 || (size_t)n >= sizeof(line) - len) { len = sizeof(line) - 1; break; }
+    len += n;
+  }
+  if (len == 0)
+    len = snprintf(line, sizeof(line), "no stamped burst in the last %us", (unsigned)(WINDOW_MS / 1000));
+
+  if (_contextFn && len < sizeof(line) - 3) {
+    memcpy(line + len, "; ", 2);
+    len += 2;
+    len += _contextFn(line + len, sizeof(line) - len);
+    if (len >= sizeof(line)) len = sizeof(line) - 1;
+  }
+  line[len] = '\0';
+
+  Serial.printf("[heap] low water beside: %s\r\n", line);
+  WS_LOG_W("Low water beside: %s", line);
 }
 
 /* Where the heap actually went.
@@ -356,13 +407,16 @@ void DiagnosticsClass::Loop()
    difference between two of them is that stage's bill. */
 void DiagnosticsClass::Milestone(const char* what)
 {
-  const uint32_t freeNow  = (uint32_t)esp_get_free_heap_size();
-  const uint32_t blockNow = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  /* Internal, like everything else here that judges the heap. Measured across
+     PSRAM, a stage's bill was mostly allocations that had landed in PSRAM and
+     cost nothing that matters, and the largest block never moved off 8MB. */
+  const uint32_t freeNow  = InternalFree();
+  const uint32_t blockNow = InternalBlock();
   const int32_t  delta    = (int32_t)freeNow - (int32_t)_lastMilestoneFree;
 
-  Serial.printf("[heap] %-22s %7u B free, largest block %6u B  (%+d)\r\n",
+  Serial.printf("[heap] %-22s %7u B internal free, largest block %6u B  (%+d)\r\n",
                 what, (unsigned)freeNow, (unsigned)blockNow, (int)delta);
-  WS_LOG_I("Heap after %s: %u B free, largest block %u B (%+d)",
+  WS_LOG_I("Heap after %s: %u B internal free, largest block %u B (%+d)",
            what, (unsigned)freeNow, (unsigned)blockNow, (int)delta);
 
   _lastMilestoneFree = freeNow;
