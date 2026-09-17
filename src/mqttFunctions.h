@@ -976,6 +976,12 @@ void mqttResubscribeTemp() {
 void onMqttConnect(bool sessionPresent) {
   log_d("Connected to MQTT.");
   WS_LOG_I("MQTT connected to %s", wifiManager.GetMQTTServerIP().c_str());
+  /* A session reaching this point is proof the IP stack works end to end -
+     DNS or a literal address, a TCP connect, and a CONNACK back. That is what
+     the station watchdog needs and cannot get from WiFi.isConnected(), which
+     only ever answered about the radio. It also arms the watchdog: a board that
+     never gets here has no broker to lose and is never cycled for lacking one. */
+  wifiManager.NoteServiceOk();
   Lcd.Data.MQTTConnected.setValue(true);
   mqttClient.setWill((sTopic + "/status").c_str(), 2, true, "offline");
   yield();

@@ -7,6 +7,7 @@
    that spent the night dropping and re-associating looked, in every log anyone
    can actually collect, exactly like a board that had been up all night. */
 #include "WebLog.h"
+#include <esp_heap_caps.h>   // internal-RAM free, for the station watchdog below
 
 bool WifiMQTTManagerClass::begin()
 {
@@ -187,6 +188,81 @@ bool WifiMQTTManagerClass::MQTTConnect()
     return false;
 }
 
+/* How long a fault has to persist before the station is cycled.
+
+   Not associating is unambiguous, so it escalates soonest: reconnect() has been
+   asked every ten seconds throughout and has plainly not worked.
+
+   "Associated but serving nothing" needs more care, because a broker that is
+   simply away looks identical from here. Internal RAM decides which reading is
+   more likely: the failure this watchdog exists for is caused by that pool
+   running out, so when it is low the short threshold applies, and when it is
+   healthy the stall is much more likely to be the broker's own outage and the
+   long one does. Either way the ladder below keeps it from thrashing. */
+#define WIFI_ASSOC_FAIL_MS    180000UL   // 3 min not associating
+#define WIFI_STALL_STARVED_MS 300000UL   // 5 min stalled with internal RAM low
+#define WIFI_STALL_HEALTHY_MS 1800000UL  // 30 min stalled with plenty of it
+// Below this much internal RAM, a stall is taken to be the stack and not the broker
+#define WIFI_STALL_HEAP_FLOOR  40000UL
+// The ladder: each re-init that does not fix it waits twice as long as the last
+#define WIFI_REINIT_WAIT_MS   300000UL   // 5 min
+#define WIFI_REINIT_WAIT_MAX  1800000UL  // ...doubling to 30
+
+void WifiMQTTManagerClass::NoteServiceOk()
+{
+    unsigned long now = millis();
+    _lastServiceOkMs = now ? now : 1;    // 0 is the "never" marker
+    /* A working session clears the ladder. The next fault starts from the short
+       wait again rather than inheriting a backoff earned by a problem that has
+       since been fixed. */
+    _lastReinitMs    = 0;
+    _reinitBackoffMs = 0;
+}
+
+bool WifiMQTTManagerClass::ReinitDue(unsigned long now) const
+{
+    if (!_lastReinitMs) return true;     // none done yet
+    return (unsigned long)(now - _lastReinitMs) >= _reinitBackoffMs;
+}
+
+/* Take the station down and bring it back up.
+
+   Deliberately more than WiFi.reconnect(), which re-associates using the driver
+   state already in place - no use when that state is the problem. Going through
+   WIFI_OFF releases the driver's buffers and the netif with them, which is the
+   point on a board that got here by running out of the internal RAM they came
+   from.
+
+   Touches nothing but the station: CAN, the charge logic and the shunt all keep
+   running through it, so the cost of being wrong is a few seconds of network
+   and never a charging interruption. Credentials are left alone - disconnect()
+   is asked to power the radio down, not to erase the stored AP. */
+void WifiMQTTManagerClass::ReinitWiFi(const char* why)
+{
+    unsigned long now = millis();
+    _lastReinitMs = now ? now : 1;
+    _reinitBackoffMs = _reinitBackoffMs ? (_reinitBackoffMs * 2) : WIFI_REINIT_WAIT_MS;
+    if (_reinitBackoffMs > WIFI_REINIT_WAIT_MAX) _reinitBackoffMs = WIFI_REINIT_WAIT_MAX;
+    _reinitCount++;
+
+    WS_LOG_E("WiFi re-init #%lu: %s (internal RAM %u B free) - cycling the station",
+             (unsigned long)_reinitCount, why,
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+
+    WiFi.disconnect(true);      // true = power the radio down; AP config is kept
+    delay(100);                 // rare enough to afford, and the mode change wants it
+    WiFi.mode(WIFI_STA);
+    if (_wifiHostName.length()) WiFi.setHostname(_wifiHostName.c_str());
+    WiFi.begin(_wifiSSID.c_str(), _wifiPass.c_str());
+
+    /* Restart both clocks. Without this the caller's next pass sees the same
+       expired timers and fires again immediately, and the station never gets
+       the seconds it needs to associate. */
+    _lastWifiCheckTime = now;
+    _wifiDownSince     = now ? now : 1;
+    _lastServiceOkMs   = _lastServiceOkMs ? (now ? now : 1) : 0;
+}
+
 void WifiMQTTManagerClass::loop()
 {
     if (_dnsStarted)         
@@ -220,16 +296,42 @@ void WifiMQTTManagerClass::loop()
             _wifiDownSince = 0;
         }
 
-        // Attempt reconnect with backoff timing
-        if (!isConnected && (now - _lastWifiCheckTime) >= _wifiReconnectDelay) {
-            /* Every attempt, with how long this outage has run. A reconnect
-               that is being asked for and refused every ten seconds is a very
-               different fault from one that was never attempted, and the two
-               were previously indistinguishable - both were silent. */
-            WS_LOG_W("WiFi reconnect attempt, down %lus",
-                     (unsigned long)((now - _wifiDownSince) / 1000UL));
-            WiFi.reconnect();
-            _lastWifiCheckTime = now;
+        if (!isConnected) {
+            /* Escalate once reconnect() has had long enough to prove it is not
+               going to work. It re-associates from driver state that is already
+               in place, so when that state is what is broken it can be asked
+               forever without effect - which is the shape of the reports. */
+            if (_wifiDownSince &&
+                (unsigned long)(now - _wifiDownSince) >= WIFI_ASSOC_FAIL_MS &&
+                ReinitDue(now)) {
+                ReinitWiFi("not associating");
+            }
+            // Attempt reconnect with backoff timing
+            else if ((now - _lastWifiCheckTime) >= _wifiReconnectDelay) {
+                /* Every attempt, with how long this outage has run. A reconnect
+                   that is being asked for and refused every ten seconds is a very
+                   different fault from one that was never attempted, and the two
+                   were previously indistinguishable - both were silent. */
+                WS_LOG_W("WiFi reconnect attempt, down %lus",
+                         (unsigned long)((now - _wifiDownSince) / 1000UL));
+                WiFi.reconnect();
+                _lastWifiCheckTime = now;
+            }
+        }
+        /* Associated - and this is the case nothing used to examine at all. The
+           board holds its address and answers nobody, which no amount of
+           isConnected() polling will ever reveal. Only armed once service has
+           worked at least once; see NoteServiceOk(). */
+        else if (_lastServiceOkMs) {
+            const uint32_t internalFree =
+                (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+            const unsigned long stallLimit =
+                (internalFree < WIFI_STALL_HEAP_FLOOR) ? WIFI_STALL_STARVED_MS
+                                                       : WIFI_STALL_HEALTHY_MS;
+            if ((unsigned long)(now - _lastServiceOkMs) >= stallLimit && ReinitDue(now))
+                ReinitWiFi(internalFree < WIFI_STALL_HEAP_FLOOR
+                           ? "associated but serving nothing, internal RAM low"
+                           : "associated but serving nothing");
         }
     }
 }

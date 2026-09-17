@@ -26,6 +26,23 @@ class WifiMQTTManagerClass {
         // millis() when the current outage started, 0 while connected
         unsigned long _wifiDownSince = 0;
         unsigned long _wifiDropCount = 0;   // drops since boot, for the rate
+
+        /* The station watchdog. WiFi.isConnected() answers about the radio
+           association and nothing above it, so a board whose IP stack has been
+           starved of internal RAM stays "connected" with an address and serves
+           nothing at all, indefinitely, and the reconnect path above never
+           fires. That is the fault this catches.
+
+           _lastServiceOkMs is the last time something proved the stack works -
+           see NoteServiceOk(). Zero means it never has, which is also how a
+           board with no broker configured stays exempt: nothing is expected of
+           it, so nothing is diagnosed. */
+        unsigned long _lastServiceOkMs = 0;
+        unsigned long _lastReinitMs    = 0;
+        unsigned long _reinitBackoffMs = 0;   // 0 = no re-init done yet
+        unsigned long _reinitCount     = 0;
+        bool ReinitDue(unsigned long now) const;
+        void ReinitWiFi(const char* why);
         String _wifiSSID = "";
         String _wifiPass = "";
         String _mqttServer = "";
@@ -61,6 +78,16 @@ class WifiMQTTManagerClass {
         }
         bool begin();
         void loop();
+        /* Something just proved the IP stack actually works end to end. An MQTT
+           session coming up is the signal that matters: it is persistent,
+           unattended, and it fails when the stack is starved, which a browser
+           nobody has open cannot tell us.
+
+           Calling this also arms the watchdog. Until it has been called once,
+           the board is not expected to be serving anything and is never
+           re-initialised for failing to - which is what keeps a device with no
+           broker configured out of this entirely. */
+        void NoteServiceOk();
         bool isWiFiConnected();
         bool isMqttConnected();
         bool isWifiSetup();
