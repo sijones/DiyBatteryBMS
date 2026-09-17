@@ -284,13 +284,23 @@ void WifiMQTTManagerClass::loop()
 
         // Track successful connections
         if (isConnected && !_wifiWasConnected) {
-            /* How long it was away, and how many times it has happened since
-               boot. A single drop is weather; the same minute repeating all
+            /* Only a drop that actually happened is called a reconnect.
+               _wifiWasConnected starts false, so the first association after
+               boot arrives here too, and reporting that as "reconnected after
+               3s (drop #0)" invented an outage in the one log someone would
+               read to find out whether there had been any. _wifiDownSince is
+               set when the link drops and by a re-init, and is zero otherwise,
+               which is exactly the distinction wanted. The ordinary first
+               connection is already announced with its address elsewhere.
+
+               How long it was away and how many times it has happened since
+               boot: a single drop is weather, the same minute repeating all
                night is a fault, and only the count tells them apart after the
                event. */
-            WS_LOG_I("WiFi reconnected after %lus (drop #%lu since boot)",
-                     (unsigned long)((now - _wifiDownSince) / 1000UL),
-                     (unsigned long)_wifiDropCount);
+            if (_wifiDownSince)
+                WS_LOG_I("WiFi reconnected after %lus (drop #%lu since boot)",
+                         (unsigned long)((now - _wifiDownSince) / 1000UL),
+                         (unsigned long)_wifiDropCount);
             _wifiWasConnected = true;
             _lastWifiCheckTime = now;
             _wifiDownSince = 0;
