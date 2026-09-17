@@ -983,7 +983,7 @@ void onMqttConnect(bool sessionPresent) {
      never gets here has no broker to lose and is never cycled for lacking one. */
   wifiManager.NoteServiceOk();
   Lcd.Data.MQTTConnected.setValue(true);
-  mqttClient.setWill((sTopic + "/status").c_str(), 2, true, "offline");
+  // The will is set in mqttsetup(), before the first connect - see mqttWillTopic
   yield();
   mqttClient.subscribe((sTopic + "/set/#").c_str(), 2);
   yield();
@@ -1483,6 +1483,20 @@ void mqttsetup() {
     log_d("Setting MQTT Server to: %s", sServer.c_str());
    
     mqttClient.setCredentials(sUser.c_str(),sPass.c_str());
+
+    /* The will has to outlive this call. PsychicMqttClient keeps the pointer,
+       not the text, and esp-mqtt reads it again on every reconnect. It used to
+       be set in onMqttConnect from (sTopic + "/status").c_str() - a temporary
+       freed at the end of that line - so the first connection went out with no
+       will at all, and every reconnect after it sent whatever had since been
+       written into the freed block. Mosquitto refuses that with "Malformed
+       UTF-8", the client retries every ten seconds with the same garbage, and
+       MQTT stayed down until the board restarted. Static, and set here before
+       the first connect, so the will is registered from the start and the
+       pointer stays good until the next mqttsetup() replaces both together. */
+    static String mqttWillTopic;
+    mqttWillTopic = sTopic + "/status";
+    mqttClient.setWill(mqttWillTopic.c_str(), 2, true, "offline");
     mqttEnabled = true;
 
     if (sClientid.length() < 2) {
