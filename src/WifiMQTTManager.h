@@ -89,17 +89,13 @@ class WifiMQTTManagerClass {
            broker configured out of this entirely. */
         void NoteServiceOk();
         bool isWiFiConnected();
-        bool isMqttConnected();
         bool isWifiSetup();
         bool WifiConnect();
         bool WifiConfig();
         bool MQTTConnect();
         bool WifiDisconnect();
-        bool MQTTDisconnect();
         void setClock();
         bool mqttEnabled = false;
-        bool mqttConnected = false;
-        bool mqttInit = false;
         String GetIPAddr();
         wifi_mode_t GetMode();
         WiFiClient wifiClient;
