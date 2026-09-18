@@ -373,6 +373,15 @@ static bool haFits(int written, size_t cap, const char* id) {
 // Internal RAM - the pool this burst costs, and the one WiFi and lwIP need.
 #define HA_MIN_FREE_HEAP     24000
 
+/* How long after boot a reboot command is refused outright - see the Reboot
+   handler. Long enough that a replayed message always lands inside it, short
+   enough that someone watching a board they have just power-cycled does not
+   conclude the command is broken. */
+#define MQTT_REBOOT_GRACE_MS  60000UL
+/* millis() when a reboot was accepted, 0 when none is pending. Acted on by the
+   main loop rather than the MQTT task that set it. */
+static uint32_t rebootRequestMs = 0;
+
 /* Says outright which pool it means, rather than inheriting it.
 
    This is what ESP.getFreeHeap() already does - arduino-esp32's EspClass has
@@ -505,6 +514,22 @@ void haNumber(const char* name, const char* id, const char* valueTpl, const char
     name, nodeId, id, stateTopic, valueTpl, sTopic, cmdSuffix, extra, deviceJson);
   if (!haFits(n, sizeof(_haBuf), id)) return;
   _haPublish("number", id, _haBuf, baseTopic, nodeId);
+}
+
+/* A button has no state topic - it is a command and nothing else, so Home
+   Assistant shows it without ever asking the device how it is. press is the
+   exact payload sent, which matters where the receiving end insists on a
+   particular word rather than accepting anything that arrives. */
+void haButton(const char* name, const char* id, const char* cmdSuffix, const char* press,
+              const char* extra, const char* baseTopic, const char* nodeId,
+              const char* sTopic, const char* deviceJson) {
+  const int n = snprintf(_haBuf, sizeof(_haBuf),
+    "{\"name\":\"%s\",\"unique_id\":\"%s_%s\","
+    "\"command_topic\":\"%s/set/%s\","
+    "\"payload_press\":\"%s\"%s%s}",
+    name, nodeId, id, sTopic, cmdSuffix, press, extra, deviceJson);
+  if (!haFits(n, sizeof(_haBuf), id)) return;
+  _haPublish("button", id, _haBuf, baseTopic, nodeId);
 }
 
 /* Discovery is ~50 config messages. Published in one go they overran the
@@ -736,6 +761,13 @@ static void haChunk3(HaCtx& c) {
   haSensor("Previous Run VE.Direct Bound Hits", "prevveboundhits", "{{ value }}",
     ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:alert-octagon\"",
     base, node, diagTopic, deviceJson);
+
+  /* The payload is the exact word the handler insists on, so the button works
+     and a stray "ON" from anywhere else still does not. config rather than
+     diagnostic: this one acts on the device instead of describing it. */
+  haButton("Reboot", "reboot", "Reboot", "REBOOT",
+    ",\"entity_category\":\"config\",\"device_class\":\"restart\",\"icon\":\"mdi:restart\"",
+    base, node, st, deviceJson);
 
   // Binary sensors
   haBinary("Charge Enabled Status", "chargeenabled", "chargeenabled", "", base, node, dataTopic, deviceJson);
@@ -1195,6 +1227,63 @@ if (_Topic.endsWith("/set/CopyTest")) {
   const bool intact = (message == "COPYTEST-abcdefghijklmnop");
   WS_LOG_I("Copy test RESULT: received '%s' -> client %s copy the payload",
            message.c_str(), intact ? "DOES" : "does NOT");
+  return;
+}
+
+/* Remote reboot, for the failure that has no other way back: a board whose web
+   UI has locked itself out - the page-defer gate latching on an internal heap
+   that stays fragmented for the boot - while MQTT carries on working perfectly.
+   Recovery otherwise means USB or the power lead, and this device is usually
+   bolted in beside a battery.
+
+   Three guards, because an unattended thing that reboots when told to is one
+   stray message away from being a thing that never finishes booting.
+
+   Retained is refused outright and the slot cleared. A retained command is
+   replayed on every connect, so a reboot published that way is a boot loop
+   that outlives power cycles and cannot be called off from the device end -
+   clearing it on sight is the only exit from one already set.
+
+   The payload must be exactly REBOOT. ON, 1 and true are what a mis-aimed
+   automation or a mistyped dashboard sends, and none of them mean this.
+
+   Nothing at all is accepted in the first minute, so even a retained message
+   that somehow arrived without its flag cannot close the loop: the device is
+   always still inside the window when the replay lands. */
+if (_Topic == (Conn.GetMQTTTopic() + "/set/Reboot")) {
+  if (retain) {
+    mqttPublish(_Topic.c_str(), "", true);   // clear it before it can repeat
+    WS_LOG_W("Reboot ignored: arrived retained, which would be a boot loop - slot cleared");
+    return;
+  }
+  if (millis() < MQTT_REBOOT_GRACE_MS) {
+    WS_LOG_W("Reboot ignored: %lus since boot, needs %lus",
+             (unsigned long)(millis() / 1000UL),
+             (unsigned long)(MQTT_REBOOT_GRACE_MS / 1000UL));
+    return;
+  }
+  if (message != "REBOOT") {
+    WS_LOG_W("Reboot ignored: payload must be exactly REBOOT, got '%s'", message.c_str());
+    return;
+  }
+  /* Never mid-update. A restart part way through writing the other flash slot
+     leaves a half-image the bootloader may or may not reject, and the update
+     ends with a reboot of its own anyway - so the request is refused rather
+     than queued behind it. */
+  if (otaInProgress) {
+    WS_LOG_W("Reboot ignored: a firmware update is in progress");
+    return;
+  }
+  /* Asked for here, done in the main loop. This runs on the MQTT client's own
+     task, and restarting from inside its event handler tears down the stack
+     that is mid-callback. Deferring also buys the line below time to reach the
+     broker and the web log before the radio goes, which is the difference
+     between a restart someone can account for and an unexplained one.
+
+     No offline publish: the restart drops TCP without a DISCONNECT, so the
+     broker sends the will that onMqttConnect already registered. */
+  rebootRequestMs = millis() ? millis() : 1;
+  WS_LOG_E("Reboot requested over MQTT - restarting in a moment");
   return;
 }
 

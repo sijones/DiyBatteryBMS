@@ -674,6 +674,16 @@ void loop()
     connectToMqtt();
     FirstRun = false; }
   
+  /* A reboot asked for over MQTT - see the Reboot handler for the guards it
+     had to pass to get here. Done on this task rather than the MQTT one that
+     accepted it, and late enough that the log line explaining the restart has
+     left the device before the radio does. */
+  if (rebootRequestMs && (uint32_t)(millis() - rebootRequestMs) > 750) {
+    Serial.println("[boot] restarting on an MQTT request");
+    Serial.flush();
+    ESP.restart();
+  }
+
   /* Before Conn.loop(), so the station watchdog in there judges a clock that
      was stamped this pass rather than one pass stale. */
   mqttNoteServiceAlive();

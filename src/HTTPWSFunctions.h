@@ -1265,10 +1265,31 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       }
 
       const size_t size = measureJson(logs);
-      if (size > 0 && wsclient->status() == WS_CONNECTED) {
+      /* Same gate as buildWSPayload(), and for the same reason: with exceptions
+         off a failed allocation is a call to abort(), not something that can be
+         caught, so the board reboots rather than skipping a reply. This one had
+         gone without it while the smaller payload above was guarded - and a full
+         backlog is the larger of the two by some way. Sixty entries of 143
+         characters is 8,580 bytes of text before JSON puts keys and quotes
+         around it, against the couple of kilobytes a state update measures, and
+         the deepest internal-RAM trough recorded on a live board was 12,460 B
+         free. Those two numbers overlap, and an already-open tab can ask for
+         this at any moment - it holds a socket, so the page-defer gate never
+         sees the request.
+
+         Refusing costs the user a Logs tab that stays empty until they ask
+         again, which is the right price. */
+      if (size > 0 && wsclient->status() == WS_CONNECTED
+          && heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) >= size + 1024) {
         auto buf = std::make_shared<std::vector<uint8_t>>(size);
         serializeJson(logs, buf->data(), size);
         wsclient->text(std::move(buf));
+      }
+      else if (size > 0) {
+        // Serial only, for the reason the gate exists - see buildWSPayload().
+        Serial.printf("[heap] skipped a %u B log replay, largest internal block %u B\r\n",
+                      (unsigned)size,
+                      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
       }
     }
     else if (strncmp(data,"GetWifiScan()",len)==0) {
