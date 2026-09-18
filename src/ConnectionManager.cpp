@@ -79,6 +79,12 @@ bool ConnectionManagerClass::begin()
         _needConfig = false;
         _wifiWasConnected = false;
         _lastWifiCheckTime = millis();
+        /* The station is not connected yet, so the outage clock starts here.
+           Left at zero it only ever started at the first drop, which meant a
+           board that never associated at all - the exact case WIFI_ASSOC_FAIL_MS
+           exists for - could never reach the escalation, and every reconnect
+           attempt logged the uptime as the outage length. */
+        _wifiDownSince = _lastWifiCheckTime ? _lastWifiCheckTime : 1;
     }
     else {
         log_d("Wifi needs configuring, Starting AP Mode");
@@ -288,16 +294,19 @@ void ConnectionManagerClass::loop()
                _wifiWasConnected starts false, so the first association after
                boot arrives here too, and reporting that as "reconnected after
                3s (drop #0)" invented an outage in the one log someone would
-               read to find out whether there had been any. _wifiDownSince is
-               set when the link drops and by a re-init, and is zero otherwise,
-               which is exactly the distinction wanted. The ordinary first
-               connection is already announced with its address elsewhere.
+               read to find out whether there had been any.
+
+               The count, not _wifiDownSince, is what separates them: the clock
+               now starts at boot so the escalation below can measure a station
+               that never associates at all, which leaves it non-zero on a first
+               connection too. Only a real drop moves the count. The ordinary
+               first connection is already announced with its address elsewhere.
 
                How long it was away and how many times it has happened since
                boot: a single drop is weather, the same minute repeating all
                night is a fault, and only the count tells them apart after the
                event. */
-            if (_wifiDownSince)
+            if (_wifiDropCount)
                 WS_LOG_I("WiFi reconnected after %lus (drop #%lu since boot)",
                          (unsigned long)((now - _wifiDownSince) / 1000UL),
                          (unsigned long)_wifiDropCount);

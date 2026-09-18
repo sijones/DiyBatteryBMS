@@ -258,6 +258,22 @@ void publishBootDiagnostics() {
   pub("PrevVeBoundHits", buf);
 }
 
+/* Keeps the station watchdog's clock fresh while the session is up.
+
+   NoteServiceOk() on its own fires once, in onMqttConnect, so _lastServiceOkMs
+   stopped advancing the moment a session settled. A board with nothing wrong
+   therefore crossed the stall threshold on a timer and had its station cycled -
+   every thirty minutes, or every five with internal RAM low - which is the
+   opposite of what the watchdog is for. The connection being up right now is
+   the evidence, so it has to be re-stated while it is true, not once when it
+   became true.
+
+   Called every pass. Two stores when connected and a predicate when not. */
+void mqttNoteServiceAlive()
+{
+  if (mqttEnabled && mqttClient.connected()) Conn.NoteServiceOk();
+}
+
 bool sendUpdateMQTTData()
 {
   if (otaInProgress) return false;
@@ -354,16 +370,22 @@ static bool haFits(int written, size_t cap, const char* id) {
    Resuming a paused group by re-running it is cheap on purpose: haSensor() and
    the rest build their payloads into static buffers, so a message already sent
    costs one snprintf on the way past and nothing at all from the heap. */
-/* Internal free, not total free - see haHeapFree() below. 24KB of internal RAM
-   is a meaningful floor; 24KB measured against a PSRAM board's 8.4MB total was
-   a gate that could never close. */
+// Internal RAM - the pool this burst costs, and the one WiFi and lwIP need.
 #define HA_MIN_FREE_HEAP     24000
 
-/* The pool the discovery burst actually costs, and the pool WiFi and lwIP have
-   to share with it. ESP.getFreeHeap() reports every pool added together, which
-   on a PSRAM board is dominated by 8MB this burst cannot use and WiFi cannot
-   touch - it answered ~8.4M in the field logs while internal RAM was dipping to
-   26KB. Identical to ESP.getFreeHeap() on a board without PSRAM. */
+/* Says outright which pool it means, rather than inheriting it.
+
+   This is what ESP.getFreeHeap() already does - arduino-esp32's EspClass has
+   returned heap_caps_get_free_size(MALLOC_CAP_INTERNAL) since core 3.x - so
+   swapping to it changed no behaviour, and an earlier claim here that the old
+   gate was reading an 8MB total and could never close was simply wrong. The
+   8.4MB figures in the field logs came from esp_get_free_heap_size() in
+   Diagnostics, which really does add every pool together; ESP.getFreeHeap() is
+   a different function that happens to read similarly.
+
+   Kept because the guarantee is worth stating where the threshold is judged:
+   the value that matters here is internal RAM whatever the core decides
+   ESP.getFreeHeap() should mean next. */
 static inline uint32_t haHeapFree() {
   return (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 }

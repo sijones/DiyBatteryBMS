@@ -674,6 +674,9 @@ void loop()
     connectToMqtt();
     FirstRun = false; }
   
+  /* Before Conn.loop(), so the station watchdog in there judges a clock that
+     was stamped this pass rather than one pass stale. */
+  mqttNoteServiceAlive();
   Conn.loop();
   // Heap low-water marks, and the trail they leave on the way down. Ticks once
   // a second; returns immediately the rest of the time.
