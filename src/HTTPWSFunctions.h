@@ -284,7 +284,7 @@ void applySyslogConfig() {
   Syslog.configure(g_syslogServerCached.c_str(),
                    pref.getUInt16(ccSyslogPort, 514),
                    pref.getBool(ccSyslogEnabled, false),
-                   wifiManager.GetWifiHostName().c_str());
+                   Conn.GetWifiHostName().c_str());
 }
 
 // Make a log message safe to sit inside a JSON string. Quotes become apostrophes
@@ -575,9 +575,9 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["canbusinterfaceup"] = Inverter.CanBusAvailable;
     doc["canbusdata"] = Inverter.CanBusDataOK;
     doc["mqttconnected"] = Lcd.Data.MQTTConnected.getValue();
-    doc["mqttclientid"] = wifiManager.GetMQTTClientID();
-    doc["mqttserverip"] = wifiManager.GetMQTTServerIP();
-    doc["mqttport"] = wifiManager.GetMQTTPort();
+    doc["mqttclientid"] = Conn.GetMQTTClientID();
+    doc["mqttserverip"] = Conn.GetMQTTServerIP();
+    doc["mqttport"] = Conn.GetMQTTPort();
     doc["victronrxpin"] = pref.getUInt8(ccVictronRX, 0);
     doc["victrontxpin"] = pref.getUInt8(ccVictronTX, 0);
     doc["canbusenabled"] = Inverter.CANBusEnabled();
@@ -593,16 +593,16 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["pylonversion"] = (uint8_t)Inverter.GetCANProtocol(); // backward compat for cached pages
     // Display copy plus exact bytes - see the SSID transport note above. The
     // sanitised one must never be what gets saved back.
-    doc["wifissid"] = toDisplayUTF8(wifiManager.GetWifiSSID());
-    doc["wifissidhex"] = bytesToHex(wifiManager.GetWifiSSID());
-    doc["wifipass"] = toDisplayUTF8(wifiManager.GetWifiPass());
-    doc["wifihostname"] = wifiManager.GetWifiHostName();
-    doc["mqttuser"] = wifiManager.GetMQTTUser();
-    doc["mqttpass"] = wifiManager.GetMQTTPass();
-    doc["mqttclientid"] = wifiManager.GetMQTTClientID();
-    doc["mqttport"] = wifiManager.GetMQTTPort();
-    doc["mqtttopic"] = wifiManager.GetMQTTTopic();
-    doc["mqttserverip"] = wifiManager.GetMQTTServerIP();
+    doc["wifissid"] = toDisplayUTF8(Conn.GetWifiSSID());
+    doc["wifissidhex"] = bytesToHex(Conn.GetWifiSSID());
+    doc["wifipass"] = toDisplayUTF8(Conn.GetWifiPass());
+    doc["wifihostname"] = Conn.GetWifiHostName();
+    doc["mqttuser"] = Conn.GetMQTTUser();
+    doc["mqttpass"] = Conn.GetMQTTPass();
+    doc["mqttclientid"] = Conn.GetMQTTClientID();
+    doc["mqttport"] = Conn.GetMQTTPort();
+    doc["mqtttopic"] = Conn.GetMQTTTopic();
+    doc["mqttserverip"] = Conn.GetMQTTServerIP();
     doc["velooptime"] = VE_LOOP_TIME;
     doc["slowchargesoc1"] = Inverter.GetSlowChargeSOCLimit(1);
     doc["slowchargesoc2"] = Inverter.GetSlowChargeSOCLimit(2);
@@ -1633,7 +1633,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
           WS_LOG_E("WiFi network name arrived malformed, not saved");
         } else {
           handled = true;
-          wifiManager.SetWifiSSID(value);
+          Conn.SetWifiSSID(value);
           WS_LOG_I("WiFi SSID set to '%s' (%u bytes)",
                    toDisplayUTF8(value).c_str(), (unsigned)value.length());
           notifyWSClients();
@@ -1642,53 +1642,53 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       else if (!doc["wifissid"].isNull()) {
         String value = doc["wifissid"];
         handled = true;
-        wifiManager.SetWifiSSID(value);
+        Conn.SetWifiSSID(value);
         notifyWSClients();}
 
       if (!doc["wifipass"].isNull()) {
         String value = doc["wifipass"];
         handled = true;
-        wifiManager.SetWifiPass(value);}
+        Conn.SetWifiPass(value);}
 
       if (!doc["mqttserverip"].isNull()) {
         String value = doc["mqttserverip"];
         handled = true;
-        wifiManager.SetMQTTServerIP(value);
+        Conn.SetMQTTServerIP(value);
         notifyWSClients();}
 
       if (!doc["mqttuser"].isNull()) {
         String value = doc["mqttuser"];
         handled = true;
-        wifiManager.SetMQTTUser(value);
+        Conn.SetMQTTUser(value);
         notifyWSClients();}
 
       if (!doc["mqttpass"].isNull()) {
         String value = doc["mqttpass"];
         handled = true;
-        wifiManager.SetMQTTPass(value);}
+        Conn.SetMQTTPass(value);}
 
       if (!doc["mqtttopic"].isNull()) {
         String value = doc["mqtttopic"];
         handled = true;
-        wifiManager.SetMQTTTopic(value);
+        Conn.SetMQTTTopic(value);
         notifyWSClients();}
 
       if (!doc["mqttclientid"].isNull()) {
         String value = doc["mqttclientid"];
         handled = true;
-        wifiManager.SetMQTTClientID(value);
+        Conn.SetMQTTClientID(value);
         notifyWSClients();}
 
       if (!doc["mqttport"].isNull()) {
         uint16_t value = doc["mqttport"];
         handled = true;
-        wifiManager.SetMQTTPort(value);
+        Conn.SetMQTTPort(value);
         notifyWSClients();}
 
       if (!doc["wifihostname"].isNull()) {
         String value = doc["wifihostname"];
         handled = true;
-        wifiManager.SetWifiHostName(value);
+        Conn.SetWifiHostName(value);
         notifyWSClients();}
 
       if (!doc["slowchargesoc1"].isNull()) {
@@ -2218,7 +2218,7 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
          leaving it set would let a source read as fresh on data that can never
          be refreshed. */
       {
-        const String baseTopic = wifiManager.GetMQTTTopic();
+        const String baseTopic = Conn.GetMQTTTopic();
         auto shuntTopicOK = [&](const String& v) -> bool {
           if (v.length() == 0) return true;             // clearing is always allowed
           if (baseTopic.length() == 0) return true;     // nothing to collide with

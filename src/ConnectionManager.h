@@ -11,7 +11,7 @@
 #include <ESPmDNS.h>
 #include <esp_wifi.h>
 
-class WifiMQTTManagerClass {
+class ConnectionManagerClass {
     private:
         DNSServer _dnsserver;
         mEEPROM m_pref;
@@ -73,7 +73,7 @@ class WifiMQTTManagerClass {
         String _mqttParameter = "/Param";
 
     public:
-        WifiMQTTManagerClass() {
+        ConnectionManagerClass() {
             _provEnable = false;
         }
         bool begin();

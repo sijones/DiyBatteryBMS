@@ -39,7 +39,7 @@ bool mEEPROM::clear(bool all)
 {
   // Preferences::clear() only empties the namespace the handle is open on, and
   // WiFi/MQTT settings live in their own "network" namespace (see
-  // WifiMQTTManager), so clearing PREF_NAME is not a factory reset. Erase the
+  // ConnectionManager), so clearing PREF_NAME is not a factory reset. Erase the
   // whole NVS partition instead and put back only what the caller asked to keep.
   String _wifissid, _wifipass, _wifihost;
 

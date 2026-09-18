@@ -1,6 +1,6 @@
 
 //#ifdef WIFIMANAGER
-#include "WifiMQTTManager.h"
+#include "ConnectionManager.h"
 /* WiFi coming and going is the one class of event this file used to keep to
    itself. log_w and log_i reach neither the web log nor syslog, and at
    CORE_DEBUG_LEVEL=1 they do not reach the serial cable either - so a board
@@ -9,7 +9,7 @@
 #include "WebLog.h"
 #include <esp_heap_caps.h>   // internal-RAM free, for the station watchdog below
 
-bool WifiMQTTManagerClass::begin()
+bool ConnectionManagerClass::begin()
 {
     m_pref.begin("network");
     log_d("Attempting to get WiFi/MQTT details from NVS");
@@ -155,12 +155,12 @@ bool WifiMQTTManagerClass::begin()
     return true;
 }
 
-bool WifiMQTTManagerClass::WifiConfig()
+bool ConnectionManagerClass::WifiConfig()
 {
     return _needConfig;
 }
 
-bool WifiMQTTManagerClass::isWiFiConnected()
+bool ConnectionManagerClass::isWiFiConnected()
 {
     
     if (WiFi.getMode() == WIFI_MODE_STA)
@@ -170,20 +170,20 @@ bool WifiMQTTManagerClass::isWiFiConnected()
 }
 
 
-bool WifiMQTTManagerClass::WifiConnect()
+bool ConnectionManagerClass::WifiConnect()
 {
     return true;
    // WifiDisconnect();
    // WiFi.begin();
 }
 
-bool WifiMQTTManagerClass::WifiDisconnect()
+bool ConnectionManagerClass::WifiDisconnect()
 {
     return true;
     //WiFi.disconnect();
 }
 
-bool WifiMQTTManagerClass::MQTTConnect()
+bool ConnectionManagerClass::MQTTConnect()
 {
     return false;
 }
@@ -208,7 +208,7 @@ bool WifiMQTTManagerClass::MQTTConnect()
 #define WIFI_REINIT_WAIT_MS   300000UL   // 5 min
 #define WIFI_REINIT_WAIT_MAX  1800000UL  // ...doubling to 30
 
-void WifiMQTTManagerClass::NoteServiceOk()
+void ConnectionManagerClass::NoteServiceOk()
 {
     unsigned long now = millis();
     _lastServiceOkMs = now ? now : 1;    // 0 is the "never" marker
@@ -219,7 +219,7 @@ void WifiMQTTManagerClass::NoteServiceOk()
     _reinitBackoffMs = 0;
 }
 
-bool WifiMQTTManagerClass::ReinitDue(unsigned long now) const
+bool ConnectionManagerClass::ReinitDue(unsigned long now) const
 {
     if (!_lastReinitMs) return true;     // none done yet
     return (unsigned long)(now - _lastReinitMs) >= _reinitBackoffMs;
@@ -237,7 +237,7 @@ bool WifiMQTTManagerClass::ReinitDue(unsigned long now) const
    running through it, so the cost of being wrong is a few seconds of network
    and never a charging interruption. Credentials are left alone - disconnect()
    is asked to power the radio down, not to erase the stored AP. */
-void WifiMQTTManagerClass::ReinitWiFi(const char* why)
+void ConnectionManagerClass::ReinitWiFi(const char* why)
 {
     unsigned long now = millis();
     _lastReinitMs = now ? now : 1;
@@ -263,7 +263,7 @@ void WifiMQTTManagerClass::ReinitWiFi(const char* why)
     _lastServiceOkMs   = _lastServiceOkMs ? (now ? now : 1) : 0;
 }
 
-void WifiMQTTManagerClass::loop()
+void ConnectionManagerClass::loop()
 {
     if (_dnsStarted)         
       _dnsserver.processNextRequest();
@@ -346,7 +346,7 @@ void WifiMQTTManagerClass::loop()
     }
 }
 
-String WifiMQTTManagerClass::GetIPAddr()
+String ConnectionManagerClass::GetIPAddr()
 {
 
     if (WiFi.getMode() == WIFI_MODE_AP)
@@ -357,71 +357,71 @@ String WifiMQTTManagerClass::GetIPAddr()
         return "?";
 }
 
-wifi_mode_t WifiMQTTManagerClass::GetMode()
+wifi_mode_t ConnectionManagerClass::GetMode()
 {
     return WiFi.getMode();
 }
 
-String WifiMQTTManagerClass::GetWifiSSID(){ return _wifiSSID; }
-String WifiMQTTManagerClass::GetWifiPass(){ return _wifiPass; }
-String WifiMQTTManagerClass::GetWifiHostName(){ return _wifiHostName; }
-String WifiMQTTManagerClass::GetMQTTUser() { return _mqttUser; }
-String WifiMQTTManagerClass::GetMQTTPass() { return _mqttPass; }
-String WifiMQTTManagerClass::GetMQTTServerIP(){ return _mqttServer; }
-String WifiMQTTManagerClass::GetMQTTClientID(){ return _mqttClientID; }
-String WifiMQTTManagerClass::GetMQTTTopic(){ return _mqttTopic; }
-String WifiMQTTManagerClass::GetMQTTParameter(){ return _mqttParameter; }
-uint16_t WifiMQTTManagerClass::GetMQTTPort(){ return _mqttPort; }
+String ConnectionManagerClass::GetWifiSSID(){ return _wifiSSID; }
+String ConnectionManagerClass::GetWifiPass(){ return _wifiPass; }
+String ConnectionManagerClass::GetWifiHostName(){ return _wifiHostName; }
+String ConnectionManagerClass::GetMQTTUser() { return _mqttUser; }
+String ConnectionManagerClass::GetMQTTPass() { return _mqttPass; }
+String ConnectionManagerClass::GetMQTTServerIP(){ return _mqttServer; }
+String ConnectionManagerClass::GetMQTTClientID(){ return _mqttClientID; }
+String ConnectionManagerClass::GetMQTTTopic(){ return _mqttTopic; }
+String ConnectionManagerClass::GetMQTTParameter(){ return _mqttParameter; }
+uint16_t ConnectionManagerClass::GetMQTTPort(){ return _mqttPort; }
 
-void WifiMQTTManagerClass::SetWifiSSID(String SSID){
+void ConnectionManagerClass::SetWifiSSID(String SSID){
     _wifiSSID = SSID;
     //m_pref.begin(PREF_NAME);
     m_pref.putString(ccWifiSSID, _wifiSSID);
     //m_pref.end();
 }
-void WifiMQTTManagerClass::SetWifiPass(String Pass){
+void ConnectionManagerClass::SetWifiPass(String Pass){
     _wifiPass = Pass;
     //m_pref.begin(PREF_NAME);
     m_pref.putString(ccWifiPass, _wifiPass);
     //m_pref.end();
 }
-void WifiMQTTManagerClass::SetWifiHostName(String HostName){
+void ConnectionManagerClass::SetWifiHostName(String HostName){
     _wifiHostName = HostName;
     //m_pref.begin(PREF_NAME);
      m_pref.putString(ccWifiHostName,_wifiHostName); 
      //m_pref.end();
 }
-void WifiMQTTManagerClass::SetMQTTUser(String User){
+void ConnectionManagerClass::SetMQTTUser(String User){
     _mqttUser = User;
     //m_pref.begin(PREF_NAME);
     m_pref.putString(ccMQTTUser, _mqttUser);
     //m_pref.end();
 }
-void WifiMQTTManagerClass::SetMQTTPass(String Pass){
+void ConnectionManagerClass::SetMQTTPass(String Pass){
     _mqttPass = Pass;
     //m_pref.begin(PREF_NAME);
     m_pref.putString(ccMQTTPass, _mqttPass);
     //m_pref.end();
 }
-void WifiMQTTManagerClass::SetMQTTServerIP(String ServerIP){
+void ConnectionManagerClass::SetMQTTServerIP(String ServerIP){
     _mqttServer = ServerIP;
     //m_pref.begin(PREF_NAME);
     m_pref.putString(ccMQTTServerIP,_mqttServer);
     //m_pref.end();
 }
-void WifiMQTTManagerClass::SetMQTTClientID(String ClientID){
+void ConnectionManagerClass::SetMQTTClientID(String ClientID){
     _mqttClientID = ClientID;
     //m_pref.begin(PREF_NAME);
     m_pref.putString(ccMQTTClientID,_mqttClientID);
     //m_pref.end();
 }
-void WifiMQTTManagerClass::SetMQTTTopic(String Topic){
+void ConnectionManagerClass::SetMQTTTopic(String Topic){
     _mqttTopic = Topic;
     //m_pref.begin(PREF_NAME);
     m_pref.putString(ccMQTTTopic,_mqttTopic);
     //m_pref.end();
 }
-void WifiMQTTManagerClass::SetMQTTParameter(String Parameter){
+void ConnectionManagerClass::SetMQTTParameter(String Parameter){
     _mqttParameter = Parameter;
     while (_mqttParameter.endsWith("/"))
     {
@@ -432,7 +432,7 @@ void WifiMQTTManagerClass::SetMQTTParameter(String Parameter){
     }
     m_pref.putString(ccMQTTParam,_mqttParameter);
 }
-void WifiMQTTManagerClass::SetMQTTPort(uint16_t Port){
+void ConnectionManagerClass::SetMQTTPort(uint16_t Port){
         _mqttPort = Port;
         if (_mqttPort >= 20 && _mqttPort <= 65535) {
             m_pref.putUInt16(ccMQTTPort,_mqttPort);

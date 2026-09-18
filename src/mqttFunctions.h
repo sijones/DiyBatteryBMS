@@ -874,7 +874,7 @@ void mqttReconnectTimerCallback(TimerHandle_t xTimer) {
     if (!mqttEnabled) return;
     
     // Only attempt reconnect if WiFi is connected
-    if (!wifiManager.isWiFiConnected()) {
+    if (!Conn.isWiFiConnected()) {
         log_w("Cannot reconnect to MQTT: WiFi not connected");
         WS_LOG_W("Cannot reconnect to MQTT: WiFi not connected");
         return;
@@ -976,13 +976,13 @@ void mqttResubscribeTemp() {
 
 void onMqttConnect(bool sessionPresent) {
   log_d("Connected to MQTT.");
-  WS_LOG_I("MQTT connected to %s", wifiManager.GetMQTTServerIP().c_str());
+  WS_LOG_I("MQTT connected to %s", Conn.GetMQTTServerIP().c_str());
   /* A session reaching this point is proof the IP stack works end to end -
      DNS or a literal address, a TCP connect, and a CONNACK back. That is what
      the station watchdog needs and cannot get from WiFi.isConnected(), which
      only ever answered about the radio. It also arms the watchdog: a board that
      never gets here has no broker to lose and is never cycled for lacking one. */
-  wifiManager.NoteServiceOk();
+  Conn.NoteServiceOk();
   Lcd.Data.MQTTConnected.setValue(true);
   // The will is set in mqttsetup(), before the first connect - see mqttWillTopic
   yield();
@@ -1178,7 +1178,7 @@ if (_Topic.endsWith("/set/CopyTest")) {
 
 if (false) { }
 #ifndef DISABLE_SCHEDULER
-  else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/Schedule")) {
+  else if (_Topic == (Conn.GetMQTTTopic() + "/set/Schedule")) {
     // Retained by the publisher, so the broker replays it on reconnect and the
     // device recovers its plan after a reboot without any flash write.
     String err;
@@ -1191,13 +1191,13 @@ if (false) { }
     publishScheduleStatus();
   }
 #endif
-  else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/DischargeCurrent")) {
+  else if (_Topic == (Conn.GetMQTTTopic() + "/set/DischargeCurrent")) {
 
     Inverter.SetDischargeCurrent(message.toInt());
     log_d("Discharge current set to: %d", message.toInt());
     WS_LOG_I("Discharge current set to: %d", message.toInt());
   }
-  else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/MaxDischargeCurrent")) {
+  else if (_Topic == (Conn.GetMQTTTopic() + "/set/MaxDischargeCurrent")) {
     float currentA = message.toFloat();
     int currentmA = (int)round(currentA * 1000.0);  // Convert A to mA
     if (currentmA > 0) {
@@ -1206,7 +1206,7 @@ if (false) { }
       WS_LOG_I("Max discharge current set (runtime) to: %.1f A (%d mA)", currentA, currentmA);
     }
   }
-  else if (_Topic == (wifiManager.GetMQTTTopic() + "/set/ChargeVoltage")) {
+  else if (_Topic == (Conn.GetMQTTTopic() + "/set/ChargeVoltage")) {
     float voltageV = message.toFloat();
     int voltagemV = (int)round(voltageV * 1000.0);  // Convert V to mV with proper rounding
     if (voltagemV > 0) {
@@ -1215,7 +1215,7 @@ if (false) { }
       WS_LOG_I("Charge voltage set to: %.1f V (%d mV)", voltageV, voltagemV);
     }
   }
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ChargeCurrent") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/ChargeCurrent") {
    float currentA = message.toFloat();
    int currentmA = (int)round(currentA * 1000.0);  // Convert A to mA with proper rounding
    Inverter.SetChargeCurrent(currentmA);
@@ -1225,7 +1225,7 @@ if (false) { }
   // The next three latch their lever so the scheduler does not undo them on its
   // next pass. MQTT/Home Assistant is a one-off toggle, so the latch holds
   // indefinitely rather than timing out - see RemoteOverride.h.
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ForceCharge") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/ForceCharge") {
     bool forcecharge = (message == "ON") ? true : false;
     Inverter.ForceCharge((message == "ON") ? true : false);
     RemoteOverride.Arm(OV_FORCE);
@@ -1234,49 +1234,49 @@ if (false) { }
   }
   // Not a scheduler lever - it changes how a charge finishes, not whether one
   // starts - so no override latch here.
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/RequestFullCharge") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/RequestFullCharge") {
     Inverter.RequestFullCharge((message == "ON") ? true : false);
     log_d("Request full charge set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("Request full charge set to: %s", (message == "ON") ? "ON" : "OFF");
   }
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/DischargeEnable") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/DischargeEnable") {
     Inverter.ManualAllowDischarge((message == "ON") ? true : false);
     RemoteOverride.Arm(OV_DISCHARGE);
     log_d("Discharge enable set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("Discharge enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ChargeEnable") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/ChargeEnable") {
     Inverter.ManualAllowCharge((message == "ON") ? true : false);
     RemoteOverride.Arm(OV_CHARGE);
     log_d("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("Charge enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
 #ifndef DISABLE_SCHEDULER
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/ClearOverride") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/ClearOverride") {
     // Give the schedule control back now instead of waiting out the latch
     RemoteOverride.Clear();
     WS_LOG_I("Remote override cleared, schedule back in control");
     publishScheduleStatus();
   }
 #endif
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/SOCTrickEnable") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/SOCTrickEnable") {
     Inverter.EnableSOCTrick((message == "ON") ? true : false);
     log_d("SOC Trick Enable set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("SOC Trick Enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/RequestFlagsEnable") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/RequestFlagsEnable") {
     Inverter.EnableRequestFlags((message == "ON") ? true : false);
     log_d("Request Flags Enable set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("Request Flags Enable set to: %s", (message == "ON") ? "ON" : "OFF");
   }
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/SmartCharge") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/SmartCharge") {
     Inverter.AutoCharge((message == "ON") ? true : false);
     log_d("Smart Charge set to: %s", (message == "ON") ? "ON" : "OFF");
     WS_LOG_I("Smart Charge set to: %s", (message == "ON") ? "ON" : "OFF");
     // Publish updated state immediately
-    mqttPublish((wifiManager.GetMQTTTopic() + "/Param/SmartCharge").c_str(), (Inverter.AutoCharge() == true) ? "ON" : "OFF" , true);
+    mqttPublish((Conn.GetMQTTTopic() + "/Param/SmartCharge").c_str(), (Inverter.AutoCharge() == true) ? "ON" : "OFF" , true);
   }
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/TailCurrent") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/TailCurrent") {
     float currentA = message.toFloat();
     uint32_t currentmA = (uint32_t)round(currentA * 1000.0);
     Inverter.SetTailCurrentmA(currentmA);
@@ -1284,7 +1284,7 @@ if (false) { }
     log_d("Tail current set to: %.1f A (%u mA)", currentA, currentmA);
     WS_LOG_I("Tail current set to: %.1f A (%u mA)", currentA, currentmA);
   }
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/RechargeSOC") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/RechargeSOC") {
     uint8_t soc = (uint8_t)message.toInt();
     Inverter.SetRechargeSOC(soc);
     pref.putUInt8(ccRechargeSOC, soc);
@@ -1293,7 +1293,7 @@ if (false) { }
   }
   // 0 V turns the float stage off, so unlike the other voltages this one accepts
   // zero rather than rejecting it as an unset value.
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/FloatVoltage") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/FloatVoltage") {
     float voltageV = message.toFloat();
     uint32_t voltagemV = (uint32_t)round(voltageV * 1000.0);
     Inverter.SetFloatVoltage((uint16_t) voltagemV);
@@ -1304,7 +1304,7 @@ if (false) { }
              !Inverter.FloatEnabled()           ? " (float stage off)"
              : Inverter.FloatUsingAutoVoltage() ? " (automatic)" : "");
   }
-  else if (_Topic == wifiManager.GetMQTTTopic() + "/set/FloatCurrent") {
+  else if (_Topic == Conn.GetMQTTTopic() + "/set/FloatCurrent") {
     float currentA = message.toFloat();
     uint32_t currentmA = (uint32_t)round(currentA * 1000.0);
     Inverter.SetFloatCurrent(currentmA);
@@ -1400,12 +1400,12 @@ void mqttsetup() {
   String shVolt    = pref.getString(ccMQShuntVolt, "");
   String shCurr    = pref.getString(ccMQShuntCurr, "");
   String shTemp    = pref.getString(ccMQShuntTemp, "");
-  String server    = String(wifiManager.GetMQTTServerIP().c_str());
-  String user      = String(wifiManager.GetMQTTUser().c_str());
-  String pass      = String(wifiManager.GetMQTTPass().c_str());
-  String topic     = String(wifiManager.GetMQTTTopic().c_str());
-  String clientid  = String(wifiManager.GetMQTTClientID().c_str());
-  uint16_t port    = wifiManager.GetMQTTPort();
+  String server    = String(Conn.GetMQTTServerIP().c_str());
+  String user      = String(Conn.GetMQTTUser().c_str());
+  String pass      = String(Conn.GetMQTTPass().c_str());
+  String topic     = String(Conn.GetMQTTTopic().c_str());
+  String clientid  = String(Conn.GetMQTTClientID().c_str());
+  uint16_t port    = Conn.GetMQTTPort();
 
   /* Second gate, after mEEPROM::getString's. These values reach us through the
      WiFi manager's cached copies rather than a fresh NVS read, so a bad one read

@@ -32,7 +32,7 @@
 #include <ESPAsyncWebServer.h> // Include WebServer Library for ESP32
 #include <ESPAsyncHTTPUpdateServer.h>
 
-#include "WifiMQTTManager.h"
+#include "ConnectionManager.h"
 #include <ArduinoJson.h> // Include ArduinoJson Library
 // #include <AsyncElegantOTA.h>
 #include <Wire.h>
@@ -100,7 +100,7 @@ ESPAsyncHTTPUpdateServer updateServer;
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
-WifiMQTTManagerClass wifiManager;
+ConnectionManagerClass Conn;
 Display Lcd;
 
 static portMUX_TYPE MainMutex = portMUX_INITIALIZER_UNLOCKED;
@@ -108,7 +108,7 @@ VeDirectFrameHandler veHandle;
 
 #include "HTTPWSFunctions.h"
 #include "mqttFunctions.h"
-// After HTTPWSFunctions.h: uses hexToBytes() and the wifiManager instance
+// After HTTPWSFunctions.h: uses hexToBytes() and the Conn instance
 #include "SerialSetup.h"
 
 #ifdef USE_ONEWIRE
@@ -281,7 +281,7 @@ void setup()
   log_d("Using embedded HTML (no filesystem).");
 
   /* Has to be set BEFORE the DHCP lease is taken, which happens a second or two
-     into wifiManager.begin() below: lwIP hands the offered NTP servers to
+     into Conn.begin() below: lwIP hands the offered NTP servers to
      dhcp_set_ntp_servers() as the lease is processed, and that drops them
      unless this flag is already on. Enabling it later, when TaskSetClock
      configures SNTP, is far too late and the clock silently never syncs.
@@ -304,7 +304,7 @@ void setup()
      the difference between tuning WiFi and looking somewhere else entirely. */
   Diag.Milestone("settings loaded");
 
-  if (!wifiManager.begin())
+  if (!Conn.begin())
   {
     // Failed to configure, start the basics to enable web configuration
     // on an Access Point
@@ -674,7 +674,7 @@ void loop()
     connectToMqtt();
     FirstRun = false; }
   
-  wifiManager.loop();
+  Conn.loop();
   // Heap low-water marks, and the trail they leave on the way down. Ticks once
   // a second; returns immediately the rest of the time.
   Diag.Loop();
@@ -852,7 +852,7 @@ void loop()
       && Lcd.Data.VEData.getValue() == true)
   {
     SendCanBusMQTTUpdates = millis();
-    if (wifiManager.isWiFiConnected())
+    if (Conn.isWiFiConnected())
     {
       sendVE2MQTT();
       sendUpdateMQTTData();
@@ -885,7 +885,7 @@ void loop()
     
     Lcd.Data.WifiConnected.setValue(WiFi.isConnected());
     Lcd.Data.MQTTConnected.setValue(mqttClient.connected());
-    Lcd.Data.IPAddr.setValue(wifiManager.GetIPAddr());
+    Lcd.Data.IPAddr.setValue(Conn.GetIPAddr());
     CheckAndChangeLCD();
     Lcd.UpdateScreenValues();
     if(FAN_INIT) {

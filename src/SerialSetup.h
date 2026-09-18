@@ -63,7 +63,7 @@ static void serialAnnounceNetwork() {
   if (!staUp) {
     if (apUp) {
       Serial.printf("[net] no WiFi configured - access point '%s' at %s\r\n",
-                    wifiManager.GetWifiHostName().c_str(),
+                    Conn.GetWifiHostName().c_str(),
                     WiFi.softAPIP().toString().c_str());
     }
     else {
@@ -73,12 +73,12 @@ static void serialAnnounceNetwork() {
     return;
   }
 
-  Serial.printf("[net] connected to '%s'\r\n", wifiManager.GetWifiSSID().c_str());
+  Serial.printf("[net] connected to '%s'\r\n", Conn.GetWifiSSID().c_str());
   Serial.printf("[net] IP %s   http://%s/\r\n",
                 WiFi.localIP().toString().c_str(),
                 WiFi.localIP().toString().c_str());
   Serial.printf("[net] hostname '%s'   RSSI %d dBm\r\n",
-                wifiManager.GetWifiHostName().c_str(), (int)WiFi.RSSI());
+                Conn.GetWifiHostName().c_str(), (int)WiFi.RSSI());
 }
 
 static void serialHelp() {
@@ -103,12 +103,12 @@ static void serialHelp() {
 static void serialStatus() {
   Serial.println();
   Serial.printf("  firmware   %s\r\n", FW_VERSION);
-  Serial.printf("  ssid       '%s'\r\n", wifiManager.GetWifiSSID().c_str());
+  Serial.printf("  ssid       '%s'\r\n", Conn.GetWifiSSID().c_str());
   // Never the passphrase itself: this is a console, and it gets logged, pasted
   // into issues and photographed. Whether one is stored is all anyone needs.
   Serial.printf("  passphrase %s\r\n",
-                wifiManager.GetWifiPass().length() ? "set" : "(not set)");
-  Serial.printf("  hostname   '%s'\r\n", wifiManager.GetWifiHostName().c_str());
+                Conn.GetWifiPass().length() ? "set" : "(not set)");
+  Serial.printf("  hostname   '%s'\r\n", Conn.GetWifiHostName().c_str());
   if (WiFi.getMode() == WIFI_MODE_STA) {
     Serial.printf("  wifi       %s\r\n", WiFi.isConnected() ? "connected" : "joining");
     if (WiFi.isConnected()) Serial.printf("  ip         %s\r\n", WiFi.localIP().toString().c_str());
@@ -181,24 +181,24 @@ static void serialHandle(char* line) {
   }
   else if (!strcasecmp(line, "ssid")) {
     if (!arg) { Serial.println("usage: ssid <name>"); return; }
-    wifiManager.SetWifiSSID(String(arg));
+    Conn.SetWifiSSID(String(arg));
     Serial.printf("[ok] ssid '%s'\r\n", arg);
   }
   else if (!strcasecmp(line, "ssidhex")) {
     if (!arg) { Serial.println("usage: ssidhex <hex>"); return; }
     String bytes = hexToBytes(String(arg));
     if (bytes.length() == 0) { Serial.println("[err] not valid hex"); return; }
-    wifiManager.SetWifiSSID(bytes);
+    Conn.SetWifiSSID(bytes);
     Serial.printf("[ok] ssid set from %u hex byte(s)\r\n", (unsigned)bytes.length());
   }
   else if (!strcasecmp(line, "pass")) {
     if (!arg) { Serial.println("usage: pass <secret>"); return; }
-    wifiManager.SetWifiPass(String(arg));
+    Conn.SetWifiPass(String(arg));
     Serial.printf("[ok] passphrase set (%u characters)\r\n", (unsigned)strlen(arg));
   }
   else if (!strcasecmp(line, "host")) {
     if (!arg) { Serial.println("usage: host <name>"); return; }
-    wifiManager.SetWifiHostName(String(arg));
+    Conn.SetWifiHostName(String(arg));
     Serial.printf("[ok] hostname '%s'\r\n", arg);
   }
   else if (!strcasecmp(line, "save")) {
@@ -206,7 +206,7 @@ static void serialHandle(char* line) {
     Serial.println("[ok] stored - 'connect' to restart and join");
   }
   else if (!strcasecmp(line, "connect") || !strcasecmp(line, "reboot")) {
-    if (!strcasecmp(line, "connect") && wifiManager.GetWifiSSID().length() < 2) {
+    if (!strcasecmp(line, "connect") && Conn.GetWifiSSID().length() < 2) {
       Serial.println("[err] no ssid set");
       return;
     }
