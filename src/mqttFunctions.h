@@ -676,7 +676,57 @@ static void haChunk2(HaCtx& c) {
     "{{ (n - h) if n > 0 and n > h else 0 }}",
     ",\"unit_of_measurement\":\"s\",\"device_class\":\"duration\",\"state_class\":\"measurement\",\"icon\":\"mdi:timer-outline\"",
     base, node, dataTopic, deviceJson);
+  // What float is actually holding at - the setting reads 0 when it is automatic
+  haSensor("Float Voltage Active", "floatvoltageactive", "{{ (value_json.floatvoltageactive * 0.001) | round(2) }}",
+    ",\"unit_of_measurement\":\"V\",\"device_class\":\"voltage\",\"state_class\":\"measurement\",\"suggested_display_precision\":2",
+    base, node, dataTopic, deviceJson);
 
+  /* Requested against in force. Charge Current Limit above is what goes to the
+     inverter after the charge phase has had its say; these are the two things
+     it was worked out from - what a controller asked for, and the ceiling that
+     left once the configured maximum had capped it. -1 is "no request live",
+     which is not the same as a request of 0, so it reads as no value. */
+  haSensor("Requested Charge Current", "reqchargecurrent",
+    "{% set r = value_json.reqchargecurrent | int(-1) %}{{ (r * 0.001) | round(1) if r >= 0 else None }}",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"entity_category\":\"diagnostic\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Requested Discharge Current", "reqdischargecurrent",
+    "{% set r = value_json.reqdischargecurrent | int(-1) %}{{ (r * 0.001) | round(1) if r >= 0 else None }}",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"entity_category\":\"diagnostic\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Charge Current Ceiling", "effchargecurrent", "{{ (value_json.effchargecurrent * 0.001) | round(1) }}",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"entity_category\":\"diagnostic\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Discharge Current Ceiling", "effdischargecurrent", "{{ (value_json.effdischargecurrent * 0.001) | round(1) }}",
+    ",\"unit_of_measurement\":\"A\",\"device_class\":\"current\",\"state_class\":\"measurement\",\"entity_category\":\"diagnostic\"",
+    base, node, dataTopic, deviceJson);
+
+#ifndef DISABLE_SCHEDULER
+  /* The scheduler. Active and Source come from the data JSON; Target SOC only
+     exists on its retained Schedule/ topic. Next Start is rebuilt in HA from
+     schednextin rather than taken from schednext, which only knows about MQTT
+     windows - schednextin covers the UI's repeating ones too. Seconds are
+     zeroed so the timestamp holds still between updates instead of creeping. */
+  haBinary("Schedule Active", "schedactive", "schedactive",
+    ",\"icon\":\"mdi:calendar-clock\"", base, node, dataTopic, deviceJson);
+  haSensor("Schedule Source", "schedsource", "{{ value_json.schedsource }}",
+    ",\"icon\":\"mdi:calendar-import\"", base, node, dataTopic, deviceJson);
+  haSensor("Schedule Next Start", "schednextstart",
+    "{% set s = value_json.schednextin | int(-1) %}"
+    "{{ (now() + timedelta(seconds=s)).replace(second=0, microsecond=0).isoformat() if s >= 0 else None }}",
+    ",\"device_class\":\"timestamp\",\"icon\":\"mdi:calendar-arrow-right\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Schedule Override Remaining", "ovrsecs", "{{ value_json.ovrsecs }}",
+    ",\"unit_of_measurement\":\"s\",\"device_class\":\"duration\",\"icon\":\"mdi:hand-back-right-outline\"",
+    base, node, dataTopic, deviceJson);
+  {
+    char schedTopic[96];
+    snprintf(schedTopic, sizeof(schedTopic), "%s/Schedule/TargetSOC", c.st);
+    haSensor("Schedule Target SOC", "schedtargetsoc", "{{ value }}",
+      ",\"unit_of_measurement\":\"%\",\"icon\":\"mdi:battery-arrow-up\"",
+      base, node, schedTopic, deviceJson);
+  }
+#endif
 }
 
 static void haChunk3(HaCtx& c) {
@@ -734,6 +784,32 @@ static void haChunk3(HaCtx& c) {
   haSensor("Shunt Role", "shuntrole", "{{ value_json.shuntrole }}",
     ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:swap-horizontal\"",
     base, node, dataTopic, deviceJson);
+  /* Only where the link is in play, so an install without that radio or cable
+     is not handed an entity that can only ever read unknown. Both are settled
+     at boot - changing either source takes a restart anyway. blerssi is absent
+     from the JSON until a BLE advertisement has been heard, hence default(none). */
+  if (shuntSource == SHUNT_SRC_BLE || fallbackSource == SHUNT_SRC_BLE)
+    haSensor("BLE Shunt Signal", "blerssi", "{{ value_json.blerssi | default(none) }}",
+      ",\"unit_of_measurement\":\"dBm\",\"device_class\":\"signal_strength\",\"state_class\":\"measurement\",\"entity_category\":\"diagnostic\"",
+      base, node, dataTopic, deviceJson);
+  if (shuntSource == SHUNT_SRC_VEDIRECT || fallbackSource == SHUNT_SRC_VEDIRECT)
+    haBinary("VE.Direct Link Trusted", "velinkok", "velinkok",
+      ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:serial-port\"",
+      base, node, dataTopic, deviceJson);
+  haSensor("CAN Failures", "cantotalfails", "{{ value_json.cantotalfails }}",
+    ",\"state_class\":\"total_increasing\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:alert-circle-outline\"",
+    base, node, dataTopic, deviceJson);
+#if defined(BMS_S3)
+  // -1 until Diag has two samples, about five seconds after boot
+  haSensor("CPU Headroom Core 0", "cpuheadroom0",
+    "{% set v = value_json.cpuheadroom0 | float(-1) %}{{ v | round(0) if v >= 0 else None }}",
+    ",\"unit_of_measurement\":\"%\",\"state_class\":\"measurement\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:cpu-64-bit\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("CPU Headroom Core 1", "cpuheadroom1",
+    "{% set v = value_json.cpuheadroom1 | float(-1) %}{{ v | round(0) if v >= 0 else None }}",
+    ",\"unit_of_measurement\":\"%\",\"state_class\":\"measurement\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:cpu-64-bit\"",
+    base, node, dataTopic, deviceJson);
+#endif
 
   /* VE.Direct parser health. All diagnostic-category, so they sit in HA's
      diagnostics panel rather than on the main card.
@@ -789,6 +865,9 @@ static void haChunk3(HaCtx& c) {
   haBinary("VE.Direct Alarm", "vealarm", "alarmactive", ",\"entity_category\":\"diagnostic\"", base, node, dataTopic, deviceJson);
   haBinary("SOC Override Active", "socoverride", "socoverride", ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:battery-sync\"", base, node, dataTopic, deviceJson);
   haBinary("Tail Current Active", "tailactive", "tailactive", ",\"icon\":\"mdi:current-dc\"", base, node, dataTopic, deviceJson);
+  // The other half of the tail test - off means the voltage, not the current, is the blocker
+  haBinary("Tail Voltage OK", "tailvoltok", "tailvoltok", ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:flash-triangle-outline\"", base, node, dataTopic, deviceJson);
+  haBinary("Inverter Present", "inverterpresent", "inverterpresent", ",\"device_class\":\"connectivity\",\"entity_category\":\"diagnostic\"", base, node, dataTopic, deviceJson);
 
 }
 
