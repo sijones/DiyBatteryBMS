@@ -881,6 +881,8 @@ static void buildDataDoc(JsonDocument& doc, bool All)
                      : (activeShuntLink == SHUNT_SRC_BLE)      ? "ble"
                      : (activeShuntLink == SHUNT_SRC_MQTT)     ? "mqtt"
                      : "none";
+    // Whether that link is the configured one or the fallback - see shuntRole
+    doc["shuntrole"] = shuntRole;
 
     if (bleSeen) {
       char pid[8];

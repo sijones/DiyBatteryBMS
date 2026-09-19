@@ -107,6 +107,14 @@ bool     lastMqttFresh = false;
    is configured. 255 = nothing has yet. Drives the shuntlink status field, which
    tells the UI which identity fields it can expect to be empty. */
 uint8_t  activeShuntLink = 255;
+/* The role of the source chosen on this pass: "primary", "fallback", or "none"
+   while nothing is fresh. The companion to activeShuntLink for anything reading
+   /Data - "ble" alone cannot say whether BLE is the configured source or the
+   fallback covering for a dead cable, and shuntsource/fallbacksource never
+   leave the web UI. Separate rather than folded into shuntlink, whose last-link
+   meaning the dashboard's identity panel and link badge are built on. Always a
+   string literal, so the pointer is all that is ever written. */
+const char* shuntRole = "none";
 
 //create an object from the UpdateServer
 ESPAsyncHTTPUpdateServer updateServer;
@@ -794,6 +802,9 @@ void loop()
                        : (fallbackSource != SHUNT_FALLBACK_NONE &&
                           SourceFresh(fallbackSource)) ? fallbackSource
                        : 255;
+  shuntRole = (chosen == 255)         ? "none"
+            : (chosen == shuntSource) ? "primary"
+            :                           "fallback";
 
   /* A source going quiet or coming back is said once, at the change, and only
      about a source that is configured in one role or the other - a board with

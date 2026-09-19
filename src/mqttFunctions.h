@@ -723,6 +723,18 @@ static void haChunk3(HaCtx& c) {
     ",\"unit_of_measurement\":\"B\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:memory-arrow-down\"",
     base, node, diagTopic, deviceJson);
 
+  /* Which link the shunt readings - SOC included - are coming over, and whether
+     that is the configured source or the fallback covering for it. Plain text
+     sensors, so HA's history shows every handover as a change of value: a
+     failover reads as "vedirect"/"primary" turning to "ble"/"fallback". Role
+     goes to "none" when no source is fresh; link keeps the last one that was. */
+  haSensor("Shunt Link", "shuntlink", "{{ value_json.shuntlink }}",
+    ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:transit-connection-variant\"",
+    base, node, dataTopic, deviceJson);
+  haSensor("Shunt Role", "shuntrole", "{{ value_json.shuntrole }}",
+    ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:swap-horizontal\"",
+    base, node, dataTopic, deviceJson);
+
   /* VE.Direct parser health. All diagnostic-category, so they sit in HA's
      diagnostics panel rather than on the main card.
 
