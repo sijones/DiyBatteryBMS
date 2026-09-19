@@ -25,8 +25,9 @@ address and port are set.
 | Reconnect | every 10 s while WiFi is up |
 | Payload buffer | 2048 bytes in either direction — the `/Data` JSON is the largest message and runs close to it |
 
-On connect the device publishes its status, the full Home Assistant discovery set, and one round of
-`/Param/*` values.
+On connect the device publishes its status, the [`/Diag/*`](#topicdiag--which-firmware-and-how-the-last-run-ended)
+topics, and one round of `/Param/*` values. The Home Assistant discovery set follows a minute later,
+once per boot rather than on every reconnect.
 
 ---
 
@@ -132,7 +133,11 @@ accepted" from "my request was capped":
 |---|---|
 | `pidstring`, `fwversion`, `serialnumber`, `modelstring` | Identity of the **Victron shunt**, not this device |
 | `inverterpresent` | CAN traffic seen from the inverter recently |
-| `victrondata` | VE.Direct data is arriving |
+| `victrondata` | Shunt data is arriving, from whichever source |
+| `shuntlink` | `vedirect`, `ble`, `mqtt` or `none` — the link that last supplied the shunt readings (SOC included). Keeps its last value through an outage |
+| `shuntrole` | `primary`, `fallback` or `none` — whether that link is the configured source or the fallback covering for it. `none` while no source is fresh |
+| `velinkok` | VE.Direct serial is trusted to feed the charge logic. Goes `false` at 2 failed checksums in the last 32 blocks, and back after 32 clean ones in a row |
+| `velineerr` / `veoverrun` | VE.Direct UART error events this run: framing/break errors (the wiring) and overruns (the port not read in time) |
 | `mqttconnected` | Self-evidently true if you are reading it |
 | `cantotalfails` | Cumulative CAN send failures |
 | `mqttinvertertemp` / `mqttbatttemp` | Temperatures taken from external MQTT topics; `-127` means not set |
@@ -202,12 +207,40 @@ state half of a switch whose command half is the matching `<topic>/set/*` topic.
 The first seven say what the schedule *wants*. The last two say whether it is actually in charge —
 a window can be active while a controller holds the levers.
 
+### `<topic>/Diag/*` — which firmware, and how the last run ended
+
+**Retained**, published once on each MQTT connect. None of it changes while the device is up, and a
+board that keeps restarting is exactly the one whose answer needs to be on the broker already.
+
+| Topic | Payload |
+|---|---|
+| `<topic>/Diag/Product` | Which product this firmware is — `DIY Battery BMS`, or another name on a build that defines its own. Read this before deciding which `/Data` fields to expect |
+| `<topic>/Diag/Firmware` | Version and commit, e.g. `3.0.0-BETA12 (d54c6b4)`. `-dirty` marks a build with uncommitted changes |
+| `<topic>/Diag/BuildEnv` | The PlatformIO env it was built from, e.g. `esp32s3-ESPCAN-waveshare` |
+| `<topic>/Diag/ResetReason` | Why this boot happened, e.g. `Power on`, `Software restart`, `Panic / exception` |
+| `<topic>/Diag/Crashed` | `ON` when that reason was a panic, watchdog or brownout |
+| `<topic>/Diag/BootCount` | Restarts since the last power-on |
+| `<topic>/Diag/PrevUptime` | Seconds the previous run lasted |
+| `<topic>/Diag/PrevHeapMin` | Lowest free internal RAM the previous run reached, bytes |
+| `<topic>/Diag/PrevHeapBlock` | Smallest largest-free-block of internal RAM in the previous run, bytes |
+| `<topic>/Diag/PrevVeHexMidFrame` | VE.Direct hex messages that interrupted a text block, previous run |
+| `<topic>/Diag/PrevVeBlocksDiscarded` | VE.Direct blocks dropped on a failed checksum, previous run |
+| `<topic>/Diag/PrevVeBoundHits` | VE.Direct parser bounds reached, previous run — damaged bytes on the wire, or a finding |
+
+All the `Prev*` values are `0` when there is no history: after a power cut, or on the first boot of
+a build whose diagnostics layout changed.
+
 ### Home Assistant discovery
 
-Published retained under `homeassistant/<component>/diybatterybms_<MAC>_<id>/config` on every
-connect, grouping everything under one **DIY Battery BMS** device. It covers 23 sensors, 7 binary
-sensors, 7 switches and 5 number controls; the switches and numbers wire themselves to the
-`<topic>/set/*` commands below, so anything you can do from Home Assistant you can also do by hand.
+Published retained under `homeassistant/<component>/diybatterybms_<MAC>_<id>/config` once per
+boot, a minute after MQTT first connects, grouping everything under one **DIY Battery BMS** device.
+The device page shows the product as its model and the version as its software version. The
+switches and numbers wire themselves to the `<topic>/set/*` commands below, so anything you can do
+from Home Assistant you can also do by hand.
+
+A few entities are only announced where they can mean something: BLE Shunt Signal where BLE is the
+shunt source or fallback, VE.Direct Link Trusted where serial is, and the CPU headroom pair on S3
+builds. Optional features compiled into a build announce their own.
 
 ---
 

@@ -33,7 +33,7 @@ static bool     _serAnnounced = false;
 
 static void serialBanner() {
   Serial.println();
-  Serial.printf("DIY Battery BMS %s (%s) %s\r\n", FW_VERSION, FW_COMMIT, FW_ENV_NAME);
+  Serial.printf("%s %s (%s) %s\r\n", FW_PRODUCT, FW_VERSION, FW_COMMIT, FW_ENV_NAME);
   Serial.println("Type 'help' for WiFi setup over this cable.");
 }
 

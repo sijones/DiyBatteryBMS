@@ -31,6 +31,15 @@
 
 #define FW_VERSION "3.0.0-BETA12"
 
+/* What this firmware calls itself on MQTT, in Home Assistant's device entry and
+   in the boot banner. A build that is a different product on the same code
+   defines its own from its platformio.ini, and everything reading the device -
+   a dashboard, a controller deciding which fields to expect - can tell the two
+   apart without guessing from which keys happen to be present. */
+#ifndef FW_PRODUCT
+  #define FW_PRODUCT "DIY Battery BMS"
+#endif
+
 #if defined(ESPCAN_S3)
   #define FW_BUILD "ESP32-S3 TWAI"
 #elif defined(ESPCAN)

@@ -190,7 +190,7 @@ void setup()
 
   /* The build first, because every other line in a field log is read against
      it: which fixes are on the board decides what the rest of the log means. */
-  WS_LOG_I("=== DIY Battery BMS %s (%s) %s starting ===", FW_VERSION, FW_COMMIT, FW_ENV_NAME);
+  WS_LOG_I("=== %s %s (%s) %s starting ===", FW_PRODUCT, FW_VERSION, FW_COMMIT, FW_ENV_NAME);
   // Straight to the serial line, not through a log macro - see SerialSetup.h
   serialSetupBegin();
   /* Straight after the banner, and before anything that could itself fail: the

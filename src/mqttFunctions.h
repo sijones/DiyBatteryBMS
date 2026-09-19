@@ -236,6 +236,18 @@ void publishBootDiagnostics() {
     snprintf(_mqTopicBuf, sizeof(_mqTopicBuf), "%s/Diag/%s", t, suffix);
     mqttPublish(_mqTopicBuf, val, true);
   };
+  /* Which firmware this is, before anything about how it is doing. A reader
+     deciding which /Data fields to expect - a dashboard, a controller, a
+     product that adds its own - needs the product and build, and a report
+     read afterwards needs the exact commit; the version string alone covers a
+     dozen commits between betas. */
+  pub("Product", FW_PRODUCT);
+  {
+    char fw[48];
+    snprintf(fw, sizeof(fw), "%s (%s)", FW_VERSION, FW_COMMIT);
+    pub("Firmware", fw);
+  }
+  pub("BuildEnv", FW_ENV_NAME);
   pub("ResetReason", Diag.ResetReason());
   pub("Crashed", Diag.Crashed() ? "ON" : "OFF");
   snprintf(buf, sizeof(buf), "%u", (unsigned)Diag.BootCount());      pub("BootCount", buf);
@@ -563,7 +575,7 @@ static uint32_t haArmedMs = 0;    // when the sequence was armed, for the delay
 struct HaCtx {
   String nodeIdStr;
   String dataTopicStr;
-  char deviceJson[192];
+  char deviceJson[288];   // ~230 with model and sw_version - see haBuildCtx()
   const char* base;
   const char* node;
   const char* dataTopic;
@@ -579,10 +591,16 @@ static void haBuildCtx(HaCtx& c) {
   c.node = c.nodeIdStr.c_str();
   c.dataTopic = c.dataTopicStr.c_str();
   c.st = sTopic.c_str();
+  /* model is the product and sw_version the exact build, both on the device
+     page. name stays fixed whatever the product: Home Assistant derives entity
+     IDs from it when an entity is first created, so a product-specific name
+     would give every entity added later a different prefix from the ones
+     already there. */
   snprintf(c.deviceJson, sizeof(c.deviceJson),
     ",\"device\":{\"identifiers\":[\"%s\"],\"name\":\"DIY Battery BMS\","
-    "\"model\":\"ESP32 BMS\",\"manufacturer\":\"https://github.com/sijones/DiyBatteryBMS\"}",
-    c.node);
+    "\"model\":\"%s\",\"sw_version\":\"%s (%s)\","
+    "\"manufacturer\":\"https://github.com/sijones/DiyBatteryBMS\"}",
+    c.node, FW_PRODUCT, FW_VERSION, FW_COMMIT);
 }
 
 static void haChunk1(HaCtx& c) {
@@ -756,6 +774,11 @@ static void haChunk3(HaCtx& c) {
     base, node, dataTopic, deviceJson);
 
   char diagTopic[96];
+  // Also on the device page as sw_version; as an entity its history dates every flash
+  snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/Firmware", st);
+  haSensor("Firmware", "firmware", "{{ value }}",
+    ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:chip\"",
+    base, node, diagTopic, deviceJson);
   snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/BootCount", st);
   haSensor("Boot Count", "bootcount", "{{ value }}",
     ",\"state_class\":\"total_increasing\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:restart\"",
