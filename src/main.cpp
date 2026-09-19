@@ -24,6 +24,19 @@
 #include <Arduino.h>
 #include <nvs_flash.h>
 #include "config.h"
+// Written by scripts/build_env.py - see there for why it is a header
+#if __has_include("build_info.h")
+  #include "build_info.h"
+#endif
+#ifndef FW_COMMIT
+  #define FW_COMMIT "unknown"
+#endif
+// Not a fallback PIO_ENV - HTTPWSFunctions.h only sends that when it is real
+#ifdef PIO_ENV
+  #define FW_ENV_NAME PIO_ENV
+#else
+  #define FW_ENV_NAME FW_BUILD
+#endif
 #include "FS.h"
 #include <WiFi.h>
 #include <WiFiClient.h>
@@ -167,7 +180,9 @@ void setup()
   delay(100);
 #endif
 
-  WS_LOG_I("=== DIY Battery BMS Starting ===");
+  /* The build first, because every other line in a field log is read against
+     it: which fixes are on the board decides what the rest of the log means. */
+  WS_LOG_I("=== DIY Battery BMS %s (%s) %s starting ===", FW_VERSION, FW_COMMIT, FW_ENV_NAME);
   // Straight to the serial line, not through a log macro - see SerialSetup.h
   serialSetupBegin();
   /* Straight after the banner, and before anything that could itself fail: the

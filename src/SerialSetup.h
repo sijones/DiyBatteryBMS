@@ -33,7 +33,7 @@ static bool     _serAnnounced = false;
 
 static void serialBanner() {
   Serial.println();
-  Serial.printf("DIY Battery BMS %s\r\n", FW_VERSION);
+  Serial.printf("DIY Battery BMS %s (%s) %s\r\n", FW_VERSION, FW_COMMIT, FW_ENV_NAME);
   Serial.println("Type 'help' for WiFi setup over this cable.");
 }
 
@@ -102,7 +102,7 @@ static void serialHelp() {
 
 static void serialStatus() {
   Serial.println();
-  Serial.printf("  firmware   %s\r\n", FW_VERSION);
+  Serial.printf("  firmware   %s (%s) %s\r\n", FW_VERSION, FW_COMMIT, FW_ENV_NAME);
   Serial.printf("  ssid       '%s'\r\n", Conn.GetWifiSSID().c_str());
   // Never the passphrase itself: this is a console, and it gets logged, pasted
   // into issues and photographed. Whether one is stored is all anyone needs.
