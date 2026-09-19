@@ -28,7 +28,7 @@ DiagnosticsClass Diag;
    that would match the magic word and read the new fields out of whatever the
    old layout had in those bytes. Changing the word costs one boot reported as
    having no history, which is the correct answer. */
-#define DIAG_RTC_MAGIC 0x424D5346u   // 'BMSF' - blockMin became internal-only
+#define DIAG_RTC_MAGIC 0x424D5347u   // 'BMSG' - UART error counts joined DiagVeCounters
 
 struct DiagRtcState {
   uint32_t magic;
@@ -131,6 +131,8 @@ void DiagnosticsClass::VeHexMessage(bool midFrame)
 void DiagnosticsClass::VeBlockDiscarded() { _rtc.ve.blocksDiscarded++; }
 void DiagnosticsClass::VeRecordDropped()  { _rtc.ve.recordsDropped++; }
 void DiagnosticsClass::VeNameOverflow()   { _rtc.ve.nameOverflows++; }
+void DiagnosticsClass::VeUartLineError()  { _rtc.ve.uartLineErrors++; }
+void DiagnosticsClass::VeUartOverrun()    { _rtc.ve.uartOverruns++; }
 
 const DiagVeCounters& DiagnosticsClass::VeCounters() const { return _rtc.ve; }
 
@@ -227,10 +229,12 @@ void DiagnosticsClass::Begin()
        boot lines above give - a board that keeps rebooting loses its
        WebSocket every time, and this is exactly the board that will. */
     Serial.printf("[boot] previous run VE.Direct: %u hex msgs (%u mid-frame), "
-                  "%u blocks discarded, %u records dropped, %u name overflows\r\n",
+                  "%u blocks discarded, %u records dropped, %u name overflows, "
+                  "%u UART line errors, %u UART overruns\r\n",
                   (unsigned)_prevVe.hexMessages,  (unsigned)_prevVe.hexMidFrame,
                   (unsigned)_prevVe.blocksDiscarded, (unsigned)_prevVe.recordsDropped,
-                  (unsigned)_prevVe.nameOverflows);
+                  (unsigned)_prevVe.nameOverflows,
+                  (unsigned)_prevVe.uartLineErrors, (unsigned)_prevVe.uartOverruns);
     /* Warn rather than inform only when a bound was actually hit. Those two are
        meant to be unreachable now, so a count is a finding and not a statistic
        - see the note above DiagVeCounters. */
@@ -242,6 +246,10 @@ void DiagnosticsClass::Begin()
       WS_LOG_W("Previous run VE.Direct: %u hex msgs (%u mid-frame), %u blocks discarded",
                (unsigned)_prevVe.hexMessages, (unsigned)_prevVe.hexMidFrame,
                (unsigned)_prevVe.blocksDiscarded);
+    // Its own line - the web log's 143 characters will not take it on the above
+    if (_prevVe.uartLineErrors || _prevVe.uartOverruns)
+      WS_LOG_W("Previous run VE.Direct UART: %u line errors (wiring), %u overruns (not read in time)",
+               (unsigned)_prevVe.uartLineErrors, (unsigned)_prevVe.uartOverruns);
   }
 
   // All three internal: ESP.getHeapSize() only ever counted internal RAM, so a

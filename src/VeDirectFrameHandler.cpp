@@ -63,6 +63,24 @@ void VETaskHandler(void * pointer)
 // The name of the record that contains the checksum.
 static constexpr char checksumTagName[] = "CHECKSUM";
 
+// On the UART driver's event task, not loop() - it only bumps a counter
+static void onUartError(hardwareSerial_error_t err)
+{
+	switch (err) {
+	case UART_FIFO_OVF_ERROR:
+	case UART_BUFFER_FULL_ERROR:
+		Diag.VeUartOverrun();
+		break;
+	case UART_FRAME_ERROR:
+	case UART_BREAK_ERROR:
+	case UART_PARITY_ERROR:
+		Diag.VeUartLineError();
+		break;
+	default:
+		break;
+	}
+}
+
 bool VeDirectFrameHandler::OpenSerial(uint8_t _rxPin,uint8_t _txPin)
 {
     Serial1.end();
@@ -106,6 +124,13 @@ bool VeDirectFrameHandler::OpenSerial(uint8_t _rxPin,uint8_t _txPin)
 
     Serial1.begin(19200, SERIAL_8N1, _rxPin, txArg);
     Serial1.flush();
+    /* A failed checksum says a byte went wrong, never where. The UART driver
+       knows: a framing or break error is the wire (noise, a missing ground, a
+       level problem), an overflow is this end not draining the port in time.
+       Those need opposite fixes, so they are counted apart. After begin(),
+       because end() clears the callback, and this starts the driver's event
+       task (2KB of stack) to deliver it. */
+    Serial1.onReceiveError(onUartError);
 
 #ifdef BOARD_HAS_PSRAM
     // One-off confirmation that the 8KB buffer actually came from PSRAM
@@ -327,6 +352,14 @@ void VeDirectFrameHandler::textRxEvent(char * mName, char * mValue) {
  *  is created in the public buffer.
  */
 void VeDirectFrameHandler::frameEndEvent(bool valid) {
+	// Every block that reached a checksum, good or bad - see LinkTrusted()
+	_recentFails = (_recentFails << 1) | (valid ? 0u : 1u);
+	const uint8_t fails = RecentFailures();
+	if (_trusted && fails >= LINK_DISTRUST_FAILS)
+		_trusted = false;
+	else if (!_trusted && fails == 0)
+		_trusted = true;
+
 	if ( valid ) {
         taskENTER_CRITICAL(&_VEmutex);
 		for ( int i = 0; i < frameIndex; i++ ) {				// read each name already in the temp buffer

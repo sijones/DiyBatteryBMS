@@ -3673,37 +3673,48 @@
          happened. Dropped records and name overflows are different - they sit
          on parser bounds that nothing should reach, so any count at all is
          flagged and worth reporting upstream. */
-      var veFmt = function(h, mid, disc, drop, ovf) {
+      /* The UART counts say which end damaged the bytes: line errors are the
+         wire, overruns are the board not reading in time. Absent from firmware
+         before they existed, hence the || 0. */
+      var veFmt = function(h, mid, disc, drop, ovf, line, ovr) {
         var s = h + ' hex';
         if (mid)  s += ' (' + mid + ' mid-frame)';
         s += ', ' + disc + ' discarded';
         if (drop || ovf) s += ', ' + (drop + ovf) + ' BOUND HIT';
+        if (line) s += ', ' + line + ' line err';
+        if (ovr)  s += ', ' + ovr + ' overrun';
         return s;
       };
       if(obj.hasOwnProperty('vehex') &&
-         (obj.vehex || obj.vediscarded || obj.vedropped || obj.venameovf)) {
+         (obj.vehex || obj.vediscarded || obj.vedropped || obj.venameovf ||
+          obj.velineerr || obj.veoverrun)) {
         var b=document.getElementById('veParserBox');
         var e=document.getElementById('veParserInfo');
         if(b) b.hidden = false;
         if(e) {
-          e.textContent = veFmt(obj.vehex, obj.vehexmid, obj.vediscarded,
-                                obj.vedropped, obj.venameovf);
+          // Untrusted leads, because it is the part that changes what the board does
+          var untrusted = (obj.velinkok === false);
+          e.textContent = (untrusted ? 'NOT USED (failing checksums): ' : '') +
+            veFmt(obj.vehex, obj.vehexmid, obj.vediscarded, obj.vedropped,
+                  obj.venameovf, obj.velineerr || 0, obj.veoverrun || 0);
           e.className = 'stat-value sm ' +
-            ((obj.vedropped || obj.venameovf) ? 'v-err'
-             : (obj.vehexmid ? 'v-warn' : 'v-ok'));
+            ((untrusted || obj.vedropped || obj.venameovf) ? 'v-err'
+             : ((obj.vehexmid || obj.velineerr || obj.veoverrun) ? 'v-warn' : 'v-ok'));
         }
       }
       /* Only worth a box when the previous run actually saw something. A clean
          run before a deliberate reboot has nothing to report, and history is
          absent entirely after a power cycle. */
       if(obj.hasOwnProperty('prevvehex') &&
-         (obj.prevvehex || obj.prevvediscarded || obj.prevvedropped || obj.prevvenameovf)) {
+         (obj.prevvehex || obj.prevvediscarded || obj.prevvedropped || obj.prevvenameovf ||
+          obj.prevvelineerr || obj.prevveoverrun)) {
         var b=document.getElementById('veParserPrevBox');
         var e=document.getElementById('veParserPrevInfo');
         if(b) b.hidden = false;
         if(e) {
           e.textContent = veFmt(obj.prevvehex, obj.prevvehexmid, obj.prevvediscarded,
-                                obj.prevvedropped, obj.prevvenameovf);
+                                obj.prevvedropped, obj.prevvenameovf,
+                                obj.prevvelineerr || 0, obj.prevveoverrun || 0);
           e.className = 'stat-value sm ' +
             ((obj.prevvedropped || obj.prevvenameovf) ? 'v-err' : 'v-warn');
         }

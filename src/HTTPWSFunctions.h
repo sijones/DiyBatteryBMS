@@ -816,6 +816,8 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["prevvediscarded"] = pv.blocksDiscarded;
     doc["prevvedropped"]   = pv.recordsDropped;
     doc["prevvenameovf"]   = pv.nameOverflows;
+    doc["prevvelineerr"]   = pv.uartLineErrors;
+    doc["prevveoverrun"]   = pv.uartOverruns;
   }
 
   doc["RealTime"] = true;
@@ -1010,6 +1012,10 @@ static void buildDataDoc(JsonDocument& doc, bool All)
   doc["vediscarded"] = ve.blocksDiscarded;
   doc["vedropped"]   = ve.recordsDropped;
   doc["venameovf"]   = ve.nameOverflows;
+  doc["velineerr"]   = ve.uartLineErrors;
+  doc["veoverrun"]   = ve.uartOverruns;
+  // Whether serial is allowed to feed the charge logic - see LinkTrusted()
+  doc["velinkok"]    = veHandle.LinkTrusted();
 
   /* Optional features add their own fields last, so a feature can never
      displace one of the fields above by picking the same key. No-op when none

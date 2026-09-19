@@ -772,7 +772,11 @@ void loop()
   /* Serial's equivalent of the other two: a frame is an instant, this is the
      state. Zero means no frame has ever been read, which is not fresh - the
      same answer BLE and MQTT give before their first reading. */
-  const bool serialFresh = lastSerialFrameMs &&
+  /* And only while the link is trusted. A frame that passed its checksum on a
+     link failing most of them is as likely to be one of the 1 in 256 that got
+     through damaged as a good reading - see LinkTrusted(). */
+  const bool serialTrusted = veHandle.LinkTrusted();
+  const bool serialFresh = serialTrusted && lastSerialFrameMs &&
                            (millis() - lastSerialFrameMs) < SHUNT_SERIAL_STALE_MS;
 
   auto SourceFresh = [&](uint8_t src) -> bool {
@@ -799,14 +803,14 @@ void loop()
      either way round: a primary going quiet is a handover, a fallback going
      quiet is the safety net disappearing while nothing is wrong yet. Both are
      worth knowing and they are not the same event. */
-  auto LogStale = [&](uint8_t src) {
+  auto LogStale = [&](uint8_t src, const char* why) {
     if (shuntSource != src)
-      WS_LOG_W("Shunt source: %s data stale, no fallback available", ShuntSrcName(src));
+      WS_LOG_W("Shunt source: %s %s, no fallback available", ShuntSrcName(src), why);
     else if (fallbackSource == SHUNT_FALLBACK_NONE)
-      WS_LOG_W("Shunt source: %s data stale, no fallback configured", ShuntSrcName(src));
+      WS_LOG_W("Shunt source: %s %s, no fallback configured", ShuntSrcName(src), why);
     else
-      WS_LOG_W("Shunt source: %s data stale, falling back to %s",
-               ShuntSrcName(src), ShuntSrcName(fallbackSource));
+      WS_LOG_W("Shunt source: %s %s, falling back to %s",
+               ShuntSrcName(src), why, ShuntSrcName(fallbackSource));
   };
 
   const bool bleInPlay    = (shuntSource == SHUNT_SRC_BLE  || fallbackSource == SHUNT_SRC_BLE);
@@ -817,13 +821,13 @@ void loop()
   if (bleInPlay && bleFresh != lastBleFresh) {
     lastBleFresh = bleFresh;
     if (bleFresh) WS_LOG_I("Shunt source: %s data returned", ShuntSrcName(SHUNT_SRC_BLE));
-    else          LogStale(SHUNT_SRC_BLE);
+    else          LogStale(SHUNT_SRC_BLE, "data stale");
   }
 
   if (mqttInPlay && mqttFresh != lastMqttFresh) {
     lastMqttFresh = mqttFresh;
     if (mqttFresh) WS_LOG_I("Shunt source: %s data returned", ShuntSrcName(SHUNT_SRC_MQTT));
-    else           LogStale(SHUNT_SRC_MQTT);
+    else           LogStale(SHUNT_SRC_MQTT, "data stale");
   }
 
   /* Serial says the same, now that it can be the one being fallen back FROM.
@@ -831,8 +835,20 @@ void loop()
      report a link it has never had as having just gone stale. */
   if (serialInPlay && lastSerialFrameMs && serialFresh != lastSerialFresh) {
     lastSerialFresh = serialFresh;
-    if (serialFresh) WS_LOG_I("Shunt source: %s data returned", ShuntSrcName(SHUNT_SRC_VEDIRECT));
-    else             LogStale(SHUNT_SRC_VEDIRECT);
+    if (serialFresh)
+      WS_LOG_I("Shunt source: %s data returned", ShuntSrcName(SHUNT_SRC_VEDIRECT));
+    else if (serialTrusted)
+      LogStale(SHUNT_SRC_VEDIRECT, "data stale");
+    /* Said differently because it needs a different fix - frames are arriving,
+       they are arriving damaged, and the place to look is the cable and its
+       ground rather than whether the shunt is powered. "Data returned" then
+       waits for LINK_WINDOW clean blocks in a row, not the next good frame. */
+    else {
+      char why[64];
+      snprintf(why, sizeof(why), "failing checksums (%u of last %u)",
+               (unsigned)veHandle.RecentFailures(), (unsigned)VeDirectFrameHandler::LINK_WINDOW);
+      LogStale(SHUNT_SRC_VEDIRECT, why);
+    }
   }
 
   if (chosen == SHUNT_SRC_BLE && VictronBle.LastUpdateMs != lastBleApplied)

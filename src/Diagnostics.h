@@ -36,10 +36,12 @@
    document that they can interrupt a text frame, which is the event that used
    to strand a half-built block for the next one to be appended to.
 
-   recordsDropped and nameOverflows should both stay at zero. They sit on the
-   bounds checks in VeDirectFrameHandler, so a non-zero count means something
-   reached them by a route that is not yet understood - which is worth far more
-   than the reboot it would otherwise have caused.
+   recordsDropped and nameOverflows should both stay at zero on a clean link.
+   They sit on the bounds checks in VeDirectFrameHandler, which a well-formed
+   stream cannot reach - but a damaged one can: a lost tab runs a name into its
+   value, a lost Checksum line runs one block into the next. A field board with
+   three blocks in four failing hit them about once a second. So a count beside
+   a high discard rate is the wire; a count without one is still a finding.
 
    Small and fixed on purpose: this rides in RTC slow memory beside the heap
    figures, and a copy is kept as the previous run's. */
@@ -49,6 +51,12 @@ struct DiagVeCounters {
   uint32_t blocksDiscarded; // blocks dropped on a failed checksum
   uint32_t recordsDropped;  // records refused because the block was already full
   uint32_t nameOverflows;   // field names too long for the name buffer
+  /* From the UART driver rather than the parser - what a failed checksum
+     cannot say. Line errors (framing, break) are the wire damaging bytes;
+     overruns are bytes lost because the port was not drained in time. Counted
+     per driver event, which can cover more than one byte. */
+  uint32_t uartLineErrors;
+  uint32_t uartOverruns;
 };
 
 /* The bursts that take internal RAM in a lump, stamped as they happen so a new
@@ -136,6 +144,9 @@ public:
   void VeBlockDiscarded();
   void VeRecordDropped();
   void VeNameOverflow();
+  // Called on the UART driver's event task, the only writer of these two
+  void VeUartLineError();
+  void VeUartOverrun();
 
   // This run so far.
   const DiagVeCounters& VeCounters() const;
