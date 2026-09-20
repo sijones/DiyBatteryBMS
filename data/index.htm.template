@@ -3090,6 +3090,9 @@
     /* ---------- Connection ---------- */
     let reconnectAttempt = 0;
     let reconnectTimer = null;
+    // True only while a firmware image is being uploaded to this device, which
+    // is the one time the socket should stay down - see onClose().
+    let fwUploading = false;
     let lastDataAt = 0;
     let everConnected = false;
     let logsRequested = false;   // backlog already pulled on this connection
@@ -3158,6 +3161,12 @@
     function onClose(event) {
       console.log('WebSocket closed. Code:', event.code, 'Reason:', event.reason);
       setConnStatus(false);
+      /* Not while we are uploading firmware to this device. The upload closes
+         every socket at its start, and reconnecting into the middle of it made
+         the board build a full state payload - and a log backlog, with the Logs
+         tab open - for us, out of the memory the flash writer was using. The
+         upload's own completion handler brings the socket back. */
+      if (fwUploading) return;
       // Exponential backoff capped at 15s, so a device that is off for a while
       // doesn't get hammered once per 2s indefinitely.
       const delay = Math.min(1000 * Math.pow(1.6, reconnectAttempt), 15000);
@@ -4528,6 +4537,15 @@
       var main = document.getElementById('firmwareBtn');
       if (main) main.disabled = busy;
 
+      /* Every way an upload ends - failed, errored, timed out, or given up on
+         while waiting for the reboot - comes through here with false, so this
+         is where the socket is allowed back. A successful one reloads the page
+         instead and never needs it. */
+      if (!busy && fwUploading) {
+        fwUploading = false;
+        if (!websocket || websocket.readyState > 1) initWebSocket();
+      }
+
       var direct = document.getElementById('fwDirectBtn');
       if (!direct) return;
       /* Re-derived on the way back rather than simply flipped, because the
@@ -4561,6 +4579,10 @@
        server decides gzip by extension, so the fallback has to be a real one. */
     function doUploadFirmware(file) {
       fwBusy(true);
+      // Stops onClose() reconnecting into the upload - see there. Cleared by
+      // waitForReconnect(), and on a failure below, so a failed upload does
+      // not leave the page permanently disconnected.
+      fwUploading = true;
       var progressDiv = document.getElementById('fwProgress');
       var progressBar = document.getElementById('fwProgressBar');
       progressDiv.hidden = false;

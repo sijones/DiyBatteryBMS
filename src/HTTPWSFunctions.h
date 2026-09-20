@@ -1268,7 +1268,9 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
   if (strncmp(data,"Get",(int)3)==0) {
     if (strncmp(data,"GetAll()",len)==0)
       sendAllToClient(wsclient);
-    else if (strncmp(data,"GetLogs()",len)==0) {
+    // Not during an upload: this is the largest allocation the socket makes,
+    // and the flash writer needs that memory more than a Logs tab does.
+    else if (strncmp(data,"GetLogs()",len)==0 && !otaInProgress) {
       /* One entry is copied out at a time rather than the whole batch up front.
          The old version kept a static LogEntry[LOG_SEND_MAX] purely as a staging
          area - 10,800 bytes of RAM permanently reserved to serve a request that
@@ -2523,6 +2525,16 @@ void wsReportDisconnects() {
 // Web Socket Handler
 void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEventType type, void * arg, uint8_t *data, size_t len){
   if(type == WS_EVT_CONNECT){
+    /* Not while a firmware upload is running. onUpdateBegin closes every
+       client, and the page reconnects on its own a second later - so the
+       upload spent its flash writes racing a socket that kept coming back,
+       each time asking for the full state and, with the Logs tab open, a
+       backlog of several kilobytes. Refused outright until the upload ends,
+       which is seconds away and ends in a restart regardless. */
+    if (otaInProgress) {
+      wsclient->close();
+      return;
+    }
     //client connected
     log_i("ws[%s][%u] connected", wsserver->url(), wsclient->id());
     const IPAddress ip = wsclient->remoteIP();
