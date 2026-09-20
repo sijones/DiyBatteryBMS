@@ -3757,7 +3757,13 @@
       }
       if(obj.hasOwnProperty('fwversion_bms')) {
         var e=document.getElementById('fwVersionBms');
-        if(e) e.textContent=obj.fwversion_bms;
+        /* With the commit, since a beta number covers a dozen of them and the
+           version alone cannot say which fixes are on this board. Absent from
+           firmware built before it was sent, hence the guard. The header below
+           and the download link keep the plain version: one is for telling two
+           devices apart at a glance, the other has to match a release name. */
+        if(e) e.textContent = obj.fwcommit ? obj.fwversion_bms + ' (' + obj.fwcommit + ')'
+                                           : obj.fwversion_bms;
         // Mirror into the header so you can tell two devices apart at a glance
         var h=document.getElementById('fwHeader');
         if(h) { h.textContent=obj.fwversion_bms; document.getElementById('fwMeta').hidden = false; }

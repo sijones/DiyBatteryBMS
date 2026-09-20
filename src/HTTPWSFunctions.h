@@ -773,6 +773,12 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["fanofftemp"] = Inverter.GetFanOffTemp();
     doc["fanfulltemp"] = Inverter.GetFanFullTemp();
     doc["fwversion_bms"] = FW_VERSION;
+    /* The exact build behind that version. A dozen commits go out under one
+       beta number, so "3.0.0-BETA12" cannot say whether a board has a given
+       fix - which is the first question asked of every field report. On the
+       boot line and in Home Assistant already; here it reaches the page, and
+       anything reading the socket, without a reboot to catch the banner. */
+    doc["fwcommit"] = FW_COMMIT;
     doc["fwbuild"] = FW_BUILD;
     /* Which of the builds this is, exactly - scripts/build_env.py puts the env
        name in at compile time. FW_BUILD above is the wiring only ("ESP32
