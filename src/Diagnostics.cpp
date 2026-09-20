@@ -125,14 +125,16 @@ uint32_t DiagnosticsClass::InternalBlock() const
    most, and anything that made them expensive would be paid per byte. */
 void DiagnosticsClass::VeHexMessage(bool midFrame)
 {
+  if (_vePaused) return;
   _rtc.ve.hexMessages++;
   if (midFrame) _rtc.ve.hexMidFrame++;
 }
-void DiagnosticsClass::VeBlockDiscarded() { _rtc.ve.blocksDiscarded++; }
-void DiagnosticsClass::VeRecordDropped()  { _rtc.ve.recordsDropped++; }
-void DiagnosticsClass::VeNameOverflow()   { _rtc.ve.nameOverflows++; }
-void DiagnosticsClass::VeUartLineError()  { _rtc.ve.uartLineErrors++; }
-void DiagnosticsClass::VeUartOverrun()    { _rtc.ve.uartOverruns++; }
+// All no-ops during a firmware upload - see PauseVeCounting()
+void DiagnosticsClass::VeBlockDiscarded() { if (!_vePaused) _rtc.ve.blocksDiscarded++; }
+void DiagnosticsClass::VeRecordDropped()  { if (!_vePaused) _rtc.ve.recordsDropped++; }
+void DiagnosticsClass::VeNameOverflow()   { if (!_vePaused) _rtc.ve.nameOverflows++; }
+void DiagnosticsClass::VeUartLineError()  { if (!_vePaused) _rtc.ve.uartLineErrors++; }
+void DiagnosticsClass::VeUartOverrun()    { if (!_vePaused) _rtc.ve.uartOverruns++; }
 
 const DiagVeCounters& DiagnosticsClass::VeCounters() const { return _rtc.ve; }
 

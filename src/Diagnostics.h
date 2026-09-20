@@ -148,6 +148,19 @@ public:
   void VeUartLineError();
   void VeUartOverrun();
 
+  /* Stop counting VE.Direct faults while a firmware upload runs. Each flash
+     write disables the cache, and the UART interrupt handler is not in IRAM on
+     this platform, so it cannot run: the 128-byte hardware FIFO overflows in
+     66ms at 19200 baud, and an upload does hundreds of those writes. The bytes
+     lost that way show up as discarded blocks, bound hits and overruns on a
+     cable with nothing wrong - and since the upload is the last thing a run
+     does before restarting, they landed in the previous-run figures that are
+     meant to be read as the cable's health. The parser keeps running, so good
+     frames are still used; only the fault counts, and the checksum trust
+     window that reads them, stand still. */
+  void PauseVeCounting(bool paused) { _vePaused = paused; }
+  bool VeCountingPaused() const     { return _vePaused; }
+
   // This run so far.
   const DiagVeCounters& VeCounters() const;
   // And as the previous run left them. All zero when there is no history.
@@ -179,6 +192,7 @@ private:
   uint32_t _lastCurveMs = 0;      // 0 = no boot-window sample taken yet
   uint32_t _eventMs[(size_t)DiagEvent::Count] = {};   // 0 = not seen this run
   ContextFn _contextFn = nullptr;
+  volatile bool _vePaused = false;   // see PauseVeCounting()
 
   void ReportLowWaterContext();
 

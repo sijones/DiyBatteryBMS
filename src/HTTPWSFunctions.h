@@ -2637,6 +2637,7 @@ void otaStallCheck()
 
   lastMoveMs = 0;
   otaInProgress = false;
+  Diag.PauseVeCounting(false);
   WS_LOG_W("Firmware upload stalled at %u B for 60s - resuming normal operation", (unsigned)progress);
 }
 
@@ -2696,12 +2697,16 @@ void StartWebServices()
     //you can force abort the update like this if you need to:
     //result = UpdateResult::UPDATE_ABORT;        
     otaInProgress = true;
+    // Before the first flash write - see Diag.PauseVeCounting()
+    Diag.PauseVeCounting(true);
     ws.closeAll();
     Serial.println("Update started : " + String(type));
   };
   updateServer.onUpdateEnd = [](const UpdateType type, int &result)
   {
     otaInProgress = false;
+    // Matters only for a failed upload: a good one restarts the board
+    Diag.PauseVeCounting(false);
     Serial.println("Update finished : " + String(type) + " result: " + String(result));
   };
 

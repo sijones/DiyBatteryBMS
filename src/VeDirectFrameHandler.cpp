@@ -352,13 +352,18 @@ void VeDirectFrameHandler::textRxEvent(char * mName, char * mValue) {
  *  is created in the public buffer.
  */
 void VeDirectFrameHandler::frameEndEvent(bool valid) {
-	// Every block that reached a checksum, good or bad - see LinkTrusted()
-	_recentFails = (_recentFails << 1) | (valid ? 0u : 1u);
-	const uint8_t fails = RecentFailures();
-	if (_trusted && fails >= LINK_DISTRUST_FAILS)
-		_trusted = false;
-	else if (!_trusted && fails == 0)
-		_trusted = true;
+	/* Every block that reached a checksum, good or bad - see LinkTrusted().
+	   Not during a firmware upload: the flash writes cost this end bytes, and
+	   that says nothing about the cable - see Diag.PauseVeCounting(). The link
+	   keeps the trust it had going in. */
+	if (!Diag.VeCountingPaused()) {
+		_recentFails = (_recentFails << 1) | (valid ? 0u : 1u);
+		const uint8_t fails = RecentFailures();
+		if (_trusted && fails >= LINK_DISTRUST_FAILS)
+			_trusted = false;
+		else if (!_trusted && fails == 0)
+			_trusted = true;
+	}
 
 	if ( valid ) {
         taskENTER_CRITICAL(&_VEmutex);
