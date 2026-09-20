@@ -89,13 +89,22 @@ volatile bool otaInProgress = false;
 volatile uint32_t restartRequestMs = 0;
 const char* restartRequestWhy = "";
 
+/* Whether the flash is in a state a restart would ruin.
+
+   Two questions, because otaStallCheck() clears the flag on a transfer that
+   has gone quiet while Update stays open - and a transfer that then resumes is
+   still writing the other slot. The flag says "an upload is being waited on";
+   isRunning() says "the flash is part-written", which is the one that makes a
+   restart destructive. */
+inline bool otaBusy() { return otaInProgress || Update.isRunning(); }
+
 inline void requestRestart(const char* why)
 {
   /* Never mid-update: a restart part way through writing the other flash slot
      leaves a half-image, and the update ends with a restart of its own anyway.
      The caller is told, because a button that silently does nothing is worse
      than one that says why it will not. */
-  if (otaInProgress) {
+  if (otaBusy()) {
     WS_LOG_W("Restart refused: a firmware update is in progress");
     return;
   }
@@ -2695,13 +2704,25 @@ void sendEmbeddedHTML(AsyncWebServerRequest *request) {
    otaInProgress is cleared by onUpdateEnd, and an upload that is cut off never
    gets there - so the web socket, MQTT publishing and Home Assistant discovery
    all stayed paused for the rest of the run, on a device that was otherwise
-   fine. A minute with no new bytes is far past any pause a working upload
-   makes (a flash sector write is tens of milliseconds, the final image check a
-   second or two).
+   fine.
+
+   Longer than the page's own two-minute upload timeout, and for that reason.
+   At the minute it used to be, the board could call a transfer dead while the
+   browser was still trying: everything paused resumed, and the rest of the
+   image was then written with WiFi, MQTT and discovery running again - which
+   is the opposite of what this pause is for. Whatever the browser has not
+   delivered by its own deadline is not coming, so waiting past that costs a
+   cut-off upload thirty seconds more of a quiet dashboard and nothing else.
+
+   Flashing itself cannot trip it: progress() moves with every chunk written,
+   the final image check is a read-back of seconds, and while a sector is being
+   erased this loop is not running to time anything anyway. The gaps this
+   catches are network gaps.
 
    Only the flag is cleared here. The half-written image is left for the next
    upload's onUpdateBegin to discard, because that runs on the task doing the
    writing and this does not. Called every pass of the main loop. */
+#define OTA_STALL_MS  150000UL
 void otaStallCheck()
 {
   static uint32_t lastMoveMs = 0;
@@ -2715,12 +2736,13 @@ void otaStallCheck()
     lastMoveMs = millis();
     return;
   }
-  if ((uint32_t)(millis() - lastMoveMs) < 60000) return;
+  if ((uint32_t)(millis() - lastMoveMs) < OTA_STALL_MS) return;
 
   lastMoveMs = 0;
   otaInProgress = false;
   Diag.PauseVeCounting(false);
-  WS_LOG_W("Firmware upload stalled at %u B for 60s - resuming normal operation", (unsigned)progress);
+  WS_LOG_W("Firmware upload stalled at %u B for %lus - resuming normal operation",
+           (unsigned)progress, (unsigned long)(OTA_STALL_MS / 1000UL));
 }
 
 void StartWebServices()

@@ -210,8 +210,8 @@ static void serialHandle(char* line) {
       Serial.println("[err] no ssid set");
       return;
     }
-    // Never mid-upload: that leaves a half-written flash slot - see requestRestart()
-    if (otaInProgress) {
+    // Never mid-upload: that leaves a half-written flash slot - see otaBusy()
+    if (otaBusy()) {
       Serial.println("[err] a firmware update is in progress - not restarting");
       return;
     }
