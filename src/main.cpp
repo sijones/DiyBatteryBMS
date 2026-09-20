@@ -909,10 +909,28 @@ void loop()
     SendCanBusMQTTUpdates = millis();
     if (Conn.isWiFiConnected())
     {
+      /* Measured in two halves, because the two are indistinguishable from the
+         outside and the field board's dips are the size of this whole block.
+         The MQTT round hands ~15 messages to esp-mqtt, which copies each into
+         an outbox in internal RAM and sends them from its own task; the web
+         socket broadcast serialises one payload and hands it to lwIP per
+         client. Either could be what a low-water mark lands beside, and they
+         happen in the same tenth of a second.
+
+         What is left held at each point, not the peak within it - the peak is
+         sub-millisecond and nothing samples fast enough to see it. That is the
+         useful half anyway: memory still out at the end of the round is memory
+         a backlog is holding, which is the fault being looked for. */
+      const uint32_t beforeMqtt = Diag.InternalFree();
       sendVE2MQTT();
       sendUpdateMQTTData();
+      const uint32_t afterMqtt = Diag.InternalFree();
       ws.cleanupClients();
       notifyWSClients(false);
+      const uint32_t afterWs = Diag.InternalFree();
+      // Saturating: either half can end with more free than it started with
+      Diag.NotePublishCost(beforeMqtt > afterMqtt ? beforeMqtt - afterMqtt : 0,
+                           afterMqtt > afterWs   ? afterMqtt - afterWs   : 0);
     }
   }
 

@@ -147,6 +147,24 @@ public:
   /* Stamp a burst - see DiagEvent. One millis() write, so safe from any task
      and cheap enough to call on every pass of the thing being stamped. */
   void Note(DiagEvent e) { _eventMs[(size_t)e] = millis(); }
+
+  /* What a round of updates was still holding when it finished: the MQTT half
+     and the web socket half, in bytes of internal RAM, worst since boot.
+
+     The low-water report can say a dip landed beside a publish, but the whole
+     round - fifteen MQTT messages into esp-mqtt's outbox, then one web socket
+     payload to each client - happens inside a tenth of a second, and one
+     number for the pair cannot say which of them to fix. Two numbers can:
+     MQTT holding 30KB at the end of a round is a broker not keeping up, while
+     the web socket holding it is a client not reading. Both reading a couple
+     of KB means neither is the fault and the dip is somewhere else entirely. */
+  void NotePublishCost(uint32_t mqttBytes, uint32_t wsBytes)
+  {
+    if (mqttBytes > _mqttCostWorst) _mqttCostWorst = mqttBytes;
+    if (wsBytes > _wsCostWorst)     _wsCostWorst   = wsBytes;
+  }
+  uint32_t MqttCostWorst() const { return _mqttCostWorst; }
+  uint32_t WsCostWorst() const   { return _wsCostWorst; }
   /* Something outside this file that knows the live state worth adding to a
      low-water report - web socket clients, whether discovery is mid-sequence.
      Writes a short phrase into out and returns its length. Called from the main
@@ -219,6 +237,8 @@ private:
   uint32_t _eventMs[(size_t)DiagEvent::Count] = {};   // 0 = not seen this run
   ContextFn _contextFn = nullptr;
   volatile bool _vePaused = false;   // see PauseVeCounting()
+  uint32_t _mqttCostWorst = 0;       // see NotePublishCost()
+  uint32_t _wsCostWorst   = 0;
 
   void ReportLowWaterContext();
 

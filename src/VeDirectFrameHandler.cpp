@@ -133,11 +133,13 @@ bool VeDirectFrameHandler::OpenSerial(uint8_t _rxPin,uint8_t _txPin)
     Serial1.onReceiveError(onUartError);
 
 #ifdef BOARD_HAS_PSRAM
-    // One-off confirmation that the 8KB buffer actually came from PSRAM
-    // rather than the internal heap it was sized specifically to avoid -
-    // remove alongside the frame-size logging in rxData() once confirmed.
+    /* One-off confirmation that the 8KB buffer actually came from PSRAM rather
+       than the internal heap it was sized specifically to avoid. Around 2.8KB
+       is the expected answer, not zero: the error callback above starts the
+       UART driver's event task, whose 2KB stack and TCB have to be internal
+       whatever the buffer did. */
     long delta = (long) heapBefore - (long) ESP.getFreeHeap();
-    WS_LOG_I("VE.Direct RX buffer: internal heap dropped by %ld bytes opening it (expect near 0 if it landed in PSRAM)", delta);
+    WS_LOG_I("VE.Direct RX buffer: internal heap dropped by %ld bytes opening it (~2.8KB expected - the event task, not the buffer)", delta);
 #endif
 
     return true;

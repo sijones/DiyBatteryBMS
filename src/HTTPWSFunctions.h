@@ -1025,6 +1025,9 @@ static void buildDataDoc(JsonDocument& doc, bool All)
   doc["venameovf"]   = ve.nameOverflows;
   // Telemetry rounds dropped rather than risk the heap - see sendVE2MQTT()
   doc["mqttskipped"] = mqttSkippedLowHeap;
+  // What a round of updates still held when it finished - see NotePublishCost()
+  doc["mqttcost"]    = Diag.MqttCostWorst();
+  doc["wscost"]      = Diag.WsCostWorst();
   doc["velineerr"]   = ve.uartLineErrors;
   doc["veoverrun"]   = ve.uartOverruns;
   // Whether serial is allowed to feed the charge logic - see LinkTrusted()
