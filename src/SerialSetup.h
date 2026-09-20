@@ -210,11 +210,19 @@ static void serialHandle(char* line) {
       Serial.println("[err] no ssid set");
       return;
     }
+    // Never mid-upload: that leaves a half-written flash slot - see requestRestart()
+    if (otaInProgress) {
+      Serial.println("[err] a firmware update is in progress - not restarting");
+      return;
+    }
     /* Restarting rather than switching mode in place. Bringing the station up
        while the access point, its DNS responder and the web server are already
        running has too many half-states to be worth it for a one-off, and the
        boot path already does exactly the right thing with stored credentials.
-       The address is printed on the way back up. */
+       The address is printed on the way back up.
+
+       Done here rather than through requestRestart(): this console already runs
+       on the main loop, so there is no callback to get out of first. */
     Serial.println("[ok] restarting - the IP will be printed when it joins");
     Serial.flush();
     delay(150);

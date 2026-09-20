@@ -697,12 +697,12 @@ void loop()
     connectToMqtt();
     FirstRun = false; }
   
-  /* A reboot asked for over MQTT - see the Reboot handler for the guards it
-     had to pass to get here. Done on this task rather than the MQTT one that
-     accepted it, and late enough that the log line explaining the restart has
-     left the device before the radio does. */
-  if (rebootRequestMs && (uint32_t)(millis() - rebootRequestMs) > 750) {
-    Serial.println("[boot] restarting on an MQTT request");
+  /* A restart asked for from a web socket, an MQTT command or a factory reset -
+     see requestRestart() for why none of them does it where it was asked. Late
+     enough that the line explaining it has left the device before the radio
+     does. */
+  if (restartRequestMs && (uint32_t)(millis() - restartRequestMs) > 750) {
+    Serial.printf("[boot] restarting on %s\r\n", restartRequestWhy);
     Serial.flush();
     ESP.restart();
   }

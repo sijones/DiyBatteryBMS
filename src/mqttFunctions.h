@@ -442,9 +442,9 @@ static bool haFits(int written, size_t cap, const char* id) {
    enough that someone watching a board they have just power-cycled does not
    conclude the command is broken. */
 #define MQTT_REBOOT_GRACE_MS  60000UL
-/* millis() when a reboot was accepted, 0 when none is pending. Acted on by the
-   main loop rather than the MQTT task that set it. */
-static uint32_t rebootRequestMs = 0;
+/* The request itself is requestRestart() in HTTPWSFunctions.h, shared with the
+   web socket's reboot and the two factory resets - all of them arrive on a task
+   that must not restart the board from inside its own callback. */
 
 /* Says outright which pool it means, rather than inheriting it.
 
@@ -1457,7 +1457,7 @@ if (_Topic == (Conn.GetMQTTTopic() + "/set/Reboot")) {
 
      No offline publish: the restart drops TCP without a DISCONNECT, so the
      broker sends the will that onMqttConnect already registered. */
-  rebootRequestMs = millis() ? millis() : 1;
+  requestRestart("an MQTT request");
   WS_LOG_E("Reboot requested over MQTT - restarting in a moment");
   return;
 }

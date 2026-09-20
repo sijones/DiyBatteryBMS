@@ -74,6 +74,36 @@ static inline const char* FindPinConflict(uint8_t pin, const char* excludeField)
 
 volatile bool otaInProgress = false;
 
+/* A restart that has been asked for, carried out by the main loop.
+
+   Every way in arrives on somebody else's task: the web socket's reboot and
+   both factory resets on AsyncTCP's, the MQTT command on the MQTT client's.
+   Restarting from inside those callbacks tears down the stack that is
+   mid-callback, and the delay() that used to sit in front of the web socket's
+   ESP.restart() blocked the network task while it waited. So they all leave a
+   note here instead, and loop() acts on it a moment later - which also gives
+   the line explaining the restart time to reach the log, the broker and
+   syslog before the radio goes.
+
+   why is a string literal, so there is nothing to free or outlive. */
+volatile uint32_t restartRequestMs = 0;
+const char* restartRequestWhy = "";
+
+inline void requestRestart(const char* why)
+{
+  /* Never mid-update: a restart part way through writing the other flash slot
+     leaves a half-image, and the update ends with a restart of its own anyway.
+     The caller is told, because a button that silently does nothing is worse
+     than one that says why it will not. */
+  if (otaInProgress) {
+    WS_LOG_W("Restart refused: a firmware update is in progress");
+    return;
+  }
+  if (restartRequestMs) return;   // already pending; the first reason stands
+  restartRequestWhy = why;
+  restartRequestMs = millis() ? millis() : 1;
+}
+
 // Broadcasts skipped for want of a big enough contiguous block. Non-zero means
 // the board is running too close to the edge - see notifyWSClients().
 static uint32_t wsSkippedLowHeap = 0;
@@ -2350,23 +2380,24 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         notifyWSClients(); }
 
       if (!doc["reboot"].isNull()) {
+        handled = true;
         if(doc["reboot"])
         {
-        //  ws.textAll("{ \"Message\" : \"Rebooting now\" }");
-        //  delay(25);
           WS_LOG_I("Rebooting as requested via WebSocket");
-          ws.closeAll();
-          delay(25);
-          handled = true;
           Lcd.ClearScreen();
-          ESP.restart();
+          /* Asked for, not done here: this runs on the web socket's task - see
+             requestRestart(). The clients are left connected so the page sees
+             the socket drop when the board actually goes, which is what it
+             waits for before reconnecting. */
+          requestRestart("a web socket request");
         }
-        else 
+        else
         {
-          handled = true;
-          wsclient->printf("{ \"Message\" : \"To reboot send value true. i.e. {\"reboot\":true } \"}");
+          // Was invalid JSON: the inner quotes were not escaped, so the client
+          // was told how to use this by a message it could not parse.
+          wsclient->printf("{ \"Message\" : \"To reboot send value true, i.e. {'reboot':true}\" }");
         }
-      }    
+      }
       if (!doc["saveall"].isNull()){
         if(doc["saveall"]){
 
@@ -2393,18 +2424,21 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
 
       if (!doc["eraseall"].isNull()){
         if(doc["eraseall"]){
+          // Said before it happens, like its sibling below: a device that comes
+          // back with nothing configured should say who asked for that.
+          WS_LOG_I("Erasing all preferences including WiFi as requested via WebSocket");
           pref.clear(true);
           handled = true;
-          ESP.restart();
+          requestRestart("a factory reset");
         }
       }
-      
+
       if (!doc["erasekeepwifi"].isNull()){
         if(doc["erasekeepwifi"]){
           WS_LOG_I("Erasing all preferences except WiFi settings as requested via WebSocket");
           pref.clear(false);
           handled = true;
-          ESP.restart();
+          requestRestart("a factory reset keeping WiFi");
         }
       }
 

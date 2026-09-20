@@ -270,7 +270,10 @@ uint8_t _slowchargeSOCdiv[2];
 volatile unsigned long _lastInverterSeen = 0;  // millis() of last 0x305 received
 static const unsigned long INVERTER_TIMEOUT_MS = 5000;  // 5 seconds without 0x305 = offline
 
-// Track how many failed CAN BUS sends and reboot ESP if more than limit
+/* Consecutive failed CAN sends, and the count past which the bus is reported
+   as failed - CanBusFailed(), which drives the dashboard's CAN indicator and
+   the Home Assistant sensor. It restarts nothing: the comment here said it
+   rebooted the board past the limit, and no such code has ever existed. */
 uint8_t _maxFailedCanSendCount = 20;
 uint16_t _failedCanSendCount = 0;
 uint32_t _failedCanSendTotal = -1;
