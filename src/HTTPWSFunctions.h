@@ -830,6 +830,14 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     /* What the previous run could not allocate, if that is what ended it.
        Size 0 means it did not - see DiagAllocFail. */
     const DiagAllocFail& af = Diag.PrevAllocFail();
+    /* The deepest dip of each run and what it landed beside - the sentence
+       that used to exist only as a log line nobody was watching for. */
+    doc["lowctxfree"]      = Diag.LowCtxFree();
+    doc["lowctxsecs"]      = Diag.LowCtxSecs();
+    doc["lowctx"]          = Diag.LowCtx();
+    doc["prevlowctxfree"]  = Diag.PrevLowCtxFree();
+    doc["prevlowctxsecs"]  = Diag.PrevLowCtxSecs();
+    doc["prevlowctx"]      = Diag.PrevLowCtx();
     doc["prevallocsize"]   = af.size;
     doc["prevalloccaps"]   = af.caps;
     doc["prevalloctask"]   = af.task;

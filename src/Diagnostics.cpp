@@ -31,7 +31,7 @@ DiagnosticsClass Diag;
    that would match the magic word and read the new fields out of whatever the
    old layout had in those bytes. Changing the word costs one boot reported as
    having no history, which is the correct answer. */
-#define DIAG_RTC_MAGIC 0x424D5348u   // 'BMSH' - the failed allocation joined the state
+#define DIAG_RTC_MAGIC 0x424D5349u   // 'BMSI' - the worst dip's context joined the state
 
 struct DiagRtcState {
   uint32_t magic;
@@ -41,6 +41,11 @@ struct DiagRtcState {
   uint32_t blockMin;     // and its smallest largest-free-block
   DiagVeCounters ve;     // and what its VE.Direct parser had been coping with
   DiagAllocFail  allocFail;  // and the allocation it could not satisfy
+  /* ...and what the deepest dip of the run arrived beside. 0 free means no dip
+     went low enough to be reported - see ReportLowWaterContext(). */
+  uint32_t lowCtxFree;
+  uint32_t lowCtxSecs;   // uptime when it happened
+  char     lowCtx[144];  // the same sentence the log line carries
 };
 
 static RTC_NOINIT_ATTR DiagRtcState _rtc;
@@ -141,6 +146,10 @@ void DiagnosticsClass::VeUartLineError()  { if (!_vePaused) _rtc.ve.uartLineErro
 void DiagnosticsClass::VeUartOverrun()    { if (!_vePaused) _rtc.ve.uartOverruns++; }
 
 const DiagVeCounters& DiagnosticsClass::VeCounters() const { return _rtc.ve; }
+// This run's deepest dip - held in RTC so the next boot can report it too
+uint32_t    DiagnosticsClass::LowCtxFree() const { return _rtc.lowCtxFree; }
+uint32_t    DiagnosticsClass::LowCtxSecs() const { return _rtc.lowCtxSecs; }
+const char* DiagnosticsClass::LowCtx() const     { return _rtc.lowCtx; }
 const DiagAllocFail&  DiagnosticsClass::AllocFail() const  { return _rtc.allocFail; }
 
 /* The last thing that runs before the board aborts - see DiagAllocFail.
@@ -191,12 +200,18 @@ void DiagnosticsClass::Begin()
     _prevBlockMin = _rtc.blockMin;
     _prevVe       = _rtc.ve;
     _prevAllocFail = _rtc.allocFail;
+    _prevLowCtxFree = _rtc.lowCtxFree;
+    _prevLowCtxSecs = _rtc.lowCtxSecs;
+    strlcpy(_prevLowCtx, _rtc.lowCtx, sizeof(_prevLowCtx));
   }
   /* Unconditionally, and after the copy above: on a cold start these bytes are
      whatever the RTC domain powered up holding, so they are not zero until
      something makes them zero. */
   memset(&_rtc.ve, 0, sizeof(_rtc.ve));
   memset(&_rtc.allocFail, 0, sizeof(_rtc.allocFail));
+  _rtc.lowCtxFree = 0;
+  _rtc.lowCtxSecs = 0;
+  _rtc.lowCtx[0] = '\0';
   /* Registered here, before anything else in setup() can allocate. A failure
      during the boot that follows is reported by the boot after it. */
   heap_caps_register_failed_alloc_callback(diagAllocFailed);
@@ -302,6 +317,16 @@ void DiagnosticsClass::Begin()
       WS_LOG_E("Previous run failed to allocate %u B (caps 0x%X) on task '%s'",
                (unsigned)_prevAllocFail.size, (unsigned)_prevAllocFail.caps,
                _prevAllocFail.task[0] ? _prevAllocFail.task : "an interrupt");
+    }
+
+    /* The deepest dip of the run that ended, and what it landed beside. On a
+       board that died of the heap this is the nearest thing to a scene of the
+       crime: the figure above says how close it came, this says to what. */
+    if (_prevLowCtxFree) {
+      Serial.printf("[boot] previous run's deepest dip: %u B free at %us, beside %s\r\n",
+                    (unsigned)_prevLowCtxFree, (unsigned)_prevLowCtxSecs, _prevLowCtx);
+      WS_LOG_W("Previous run dipped to %u B free after %um, beside %s",
+               (unsigned)_prevLowCtxFree, (unsigned)(_prevLowCtxSecs / 60), _prevLowCtx);
     }
 
     // Its own line - the web log's 143 characters will not take it on the above
@@ -460,6 +485,18 @@ void DiagnosticsClass::ReportLowWaterContext()
     if (len >= sizeof(line)) len = sizeof(line) - 1;
   }
   line[len] = '\0';
+
+  /* Kept, not just logged. This line is the whole diagnosis of a dip, and it
+     was being written to a 60-line ring buffer that a busy minute empties and
+     a reboot loses entirely - so by the time anyone looked at a board that had
+     nearly died, the one sentence saying what it was doing had gone. The
+     deepest dip of the run is held here instead, in RTC memory beside the rest,
+     and the next boot can report the one from the run that did not survive. */
+  if (_rtc.lowCtxFree == 0 || InternalMin() < _rtc.lowCtxFree) {
+    _rtc.lowCtxFree = InternalMin();
+    _rtc.lowCtxSecs = UptimeSecs();
+    strlcpy(_rtc.lowCtx, line, sizeof(_rtc.lowCtx));
+  }
 
   Serial.printf("[heap] low water beside: %s\r\n", line);
   WS_LOG_W("Low water beside: %s", line);

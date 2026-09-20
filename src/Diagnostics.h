@@ -209,6 +209,17 @@ public:
   const DiagAllocFail& PrevAllocFail() const { return _prevAllocFail; }
   const DiagAllocFail& AllocFail() const;
 
+  /* The deepest dip this run and what it arrived beside, and the same pair
+     from the run before. The sentence is the one the log line carries, kept
+     because that log is a 60-line ring buffer: on a busy board the line naming
+     the cause is gone within the minute, and a reboot takes the lot. */
+  uint32_t    LowCtxFree() const;
+  uint32_t    LowCtxSecs() const;
+  const char* LowCtx() const;
+  uint32_t    PrevLowCtxFree() const { return _prevLowCtxFree; }
+  uint32_t    PrevLowCtxSecs() const { return _prevLowCtxSecs; }
+  const char* PrevLowCtx() const     { return _prevLowCtx; }
+
   // Zero when there is no history - a cold start, or a first boot on firmware
   // that did not keep any.
   uint32_t PrevUptimeSecs() const { return _prevUptime; }
@@ -227,6 +238,9 @@ private:
   uint32_t _prevBlockMin  = 0;
   DiagVeCounters _prevVe  = {};
   DiagAllocFail  _prevAllocFail = {};
+  uint32_t _prevLowCtxFree = 0;      // see PrevLowCtx()
+  uint32_t _prevLowCtxSecs = 0;
+  char     _prevLowCtx[144] = {};
   uint32_t _lastTickMs    = 0;
   uint32_t _lastWarnedHeap = 0;   // 0 = nothing reported yet
   uint32_t _lastMilestoneFree = 0;
