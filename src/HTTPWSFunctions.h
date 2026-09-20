@@ -2478,6 +2478,14 @@ void onEvent(AsyncWebSocket * wsserver, AsyncWebSocketClient * wsclient, AwsEven
     //client connected
     log_i("ws[%s][%u] connected", wsserver->url(), wsclient->id());
     const IPAddress ip = wsclient->remoteIP();
+    /* A client whose queue fills is dropped rather than left holding it. The
+       library's default is to discard the new message and keep the queue, so a
+       client that has stopped reading goes on pinning WS_MAX_QUEUED_MESSAGES
+       payloads - 4KB each - for as long as it stays connected, which on a
+       stalled one is until TCP gives up. Closing costs a browser a reconnect,
+       which the page does by itself, and returns the memory now. Set per
+       client because that is where the library keeps the flag. */
+    wsclient->setCloseClientOnQueueFull(true);
     wsTrackConnect(wsclient->id(), (uint32_t)ip);
     WS_LOG_I("WebSocket Client %u connected from %s", wsclient->id(), ip.toString().c_str());
     // No ping and no push: the client asks for the state with GetAll() - see
