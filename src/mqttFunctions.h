@@ -268,6 +268,18 @@ void publishBootDiagnostics() {
   pub("PrevVeBlocksDiscarded", buf);
   snprintf(buf, sizeof(buf), "%u", (unsigned)(pv.recordsDropped + pv.nameOverflows));
   pub("PrevVeBoundHits", buf);
+
+  /* The allocation that ended the previous run, or "none". Retained like the
+     rest: a board that is crash-looping needs this waiting on the broker, not
+     dependent on a later update that may never come. */
+  const DiagAllocFail& af = Diag.PrevAllocFail();
+  char fail[64];
+  if (af.size)
+    snprintf(fail, sizeof(fail), "%u B, caps 0x%X, task %s", (unsigned)af.size,
+             (unsigned)af.caps, af.task[0] ? af.task : "(interrupt)");
+  else
+    snprintf(fail, sizeof(fail), "none");
+  pub("PrevAllocFail", fail);
 }
 
 /* Keeps the station watchdog's clock fresh while the session is up.
@@ -308,8 +320,48 @@ bool sendUpdateMQTTData()
   return true;
 }
 
+/* Telemetry rounds skipped because internal RAM was too low to risk one.
+   Published, so a board that is quietly dropping updates says so rather than
+   just looking slow. */
+uint32_t mqttSkippedLowHeap = 0;
+
+/* Below this much internal RAM free, a telemetry round is skipped.
+
+   The publish path is asynchronous: esp-mqtt copies each message into its
+   outbox and sends it from its own task, so a broker that is slow to accept
+   turns a round of updates into a backlog held in internal RAM - the /Data
+   JSON alone is a couple of kilobytes, and on the PowerPilot build twice that.
+   A board that has been publishing happily for hours then meets a broker
+   pause, and the memory that was keeping WiFi alive goes into a queue of
+   messages describing a battery that has not changed much.
+
+   So the same bargain buildWSPayload() makes: refuse rather than abort. A
+   skipped round costs one update that the next one supersedes anyway; the
+   alternative is an allocation failure somewhere else entirely, moments later,
+   which with exceptions off takes the board down. The floor is above the
+   warning floor in Diagnostics, because by the time that one is tripping the
+   decision has already been made for us. */
+#define MQTT_PUBLISH_HEAP_FLOOR 45000
+
 bool sendVE2MQTT() {
   if (otaInProgress) return false;
+
+  if (Diag.InternalFree() < MQTT_PUBLISH_HEAP_FLOOR) {
+    mqttSkippedLowHeap++;
+    // Serial only, and rate limited: the web log allocates, which is the thing
+    // there is not enough of - same reasoning as the web socket's gate.
+    static uint32_t lastMoan = 0;
+    if ((uint32_t)(millis() - lastMoan) > 5000) {
+      lastMoan = millis();
+      Serial.printf("[heap] skipped an MQTT telemetry round, %u B internal free (%u skipped)\r\n",
+                    (unsigned)Diag.InternalFree(), (unsigned)mqttSkippedLowHeap);
+    }
+    return false;
+  }
+
+  /* Stamped so a new low-water mark can say it arrived beside a publish -
+     which is what would implicate the outbox above. */
+  Diag.Note(DiagEvent::MqttPublish);
   const char* t = sTopic.c_str();
   auto pub = [&](const char* suffix, const char* val) {
     snprintf(_mqTopicBuf, sizeof(_mqTopicBuf), "%s/%s", t, suffix);
@@ -779,6 +831,11 @@ static void haChunk3(HaCtx& c) {
   haSensor("Firmware", "firmware", "{{ value }}",
     ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:chip\"",
     base, node, diagTopic, deviceJson);
+  // Reads "none" on a run that ended any other way - see publishBootDiagnostics()
+  snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/PrevAllocFail", st);
+  haSensor("Previous Run Allocation Failure", "prevallocfail", "{{ value }}",
+    ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:memory-arrow-down\"",
+    base, node, diagTopic, deviceJson);
   snprintf(diagTopic, sizeof(diagTopic), "%s/Diag/BootCount", st);
   haSensor("Boot Count", "bootcount", "{{ value }}",
     ",\"state_class\":\"total_increasing\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:restart\"",
@@ -819,6 +876,10 @@ static void haChunk3(HaCtx& c) {
     haBinary("VE.Direct Link Trusted", "velinkok", "velinkok",
       ",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:serial-port\"",
       base, node, dataTopic, deviceJson);
+  // Should stay at 0. Anything else means the board is shedding updates to stay up
+  haSensor("MQTT Rounds Skipped", "mqttskipped", "{{ value_json.mqttskipped }}",
+    ",\"state_class\":\"total_increasing\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:tray-remove\"",
+    base, node, dataTopic, deviceJson);
   haSensor("CAN Failures", "cantotalfails", "{{ value_json.cantotalfails }}",
     ",\"state_class\":\"total_increasing\",\"entity_category\":\"diagnostic\",\"icon\":\"mdi:alert-circle-outline\"",
     base, node, dataTopic, deviceJson);

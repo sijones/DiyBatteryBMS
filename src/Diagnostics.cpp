@@ -5,6 +5,9 @@
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
 #include <esp_idf_version.h>
+// pcTaskGetName() and xPortInIsrContext(), for the failed-allocation hook
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 DiagnosticsClass Diag;
 
@@ -28,7 +31,7 @@ DiagnosticsClass Diag;
    that would match the magic word and read the new fields out of whatever the
    old layout had in those bytes. Changing the word costs one boot reported as
    having no history, which is the correct answer. */
-#define DIAG_RTC_MAGIC 0x424D5347u   // 'BMSG' - UART error counts joined DiagVeCounters
+#define DIAG_RTC_MAGIC 0x424D5348u   // 'BMSH' - the failed allocation joined the state
 
 struct DiagRtcState {
   uint32_t magic;
@@ -37,6 +40,7 @@ struct DiagRtcState {
   uint32_t heapMin;      // and its lowest free heap
   uint32_t blockMin;     // and its smallest largest-free-block
   DiagVeCounters ve;     // and what its VE.Direct parser had been coping with
+  DiagAllocFail  allocFail;  // and the allocation it could not satisfy
 };
 
 static RTC_NOINIT_ATTR DiagRtcState _rtc;
@@ -137,6 +141,39 @@ void DiagnosticsClass::VeUartLineError()  { if (!_vePaused) _rtc.ve.uartLineErro
 void DiagnosticsClass::VeUartOverrun()    { if (!_vePaused) _rtc.ve.uartOverruns++; }
 
 const DiagVeCounters& DiagnosticsClass::VeCounters() const { return _rtc.ve; }
+const DiagAllocFail&  DiagnosticsClass::AllocFail() const  { return _rtc.allocFail; }
+
+/* The last thing that runs before the board aborts - see DiagAllocFail.
+
+   Deliberately tiny and allocation-free: it is called from inside the
+   allocator, on whatever task or interrupt was unlucky, with the heap already
+   unable to give out what was asked for. Writing straight to RTC memory is
+   both the cheapest thing available and the only one that survives what
+   happens next.
+
+   The last failure wins rather than the first. A failure that was survived -
+   an allocation somewhere that is allowed to fail and fall back, like the one
+   that tries PSRAM first - would otherwise stand in the record in place of the
+   one that actually ended the run. */
+static void diagAllocFailed(size_t size, uint32_t caps, const char* fn)
+{
+  (void)fn;   // the IDF's own caller name, not ours, and often a wrapper
+  _rtc.allocFail.size = (uint32_t)size;
+  _rtc.allocFail.caps = caps;
+  /* pcTaskGetName(NULL) reads the current TCB, which does not exist in an
+     interrupt - hence the check rather than an unconditional call. An empty
+     name is itself informative: it says the failure was in an ISR. */
+  if (xPortInIsrContext()) {
+    _rtc.allocFail.task[0] = '\0';
+    return;
+  }
+  const char* name = pcTaskGetName(NULL);
+  if (!name) name = "";
+  size_t i = 0;
+  for (; i < sizeof(_rtc.allocFail.task) - 1 && name[i]; i++)
+    _rtc.allocFail.task[i] = name[i];
+  _rtc.allocFail.task[i] = '\0';
+}
 
 void DiagnosticsClass::Begin()
 {
@@ -153,11 +190,16 @@ void DiagnosticsClass::Begin()
     _prevHeapMin  = _rtc.heapMin;
     _prevBlockMin = _rtc.blockMin;
     _prevVe       = _rtc.ve;
+    _prevAllocFail = _rtc.allocFail;
   }
   /* Unconditionally, and after the copy above: on a cold start these bytes are
      whatever the RTC domain powered up holding, so they are not zero until
      something makes them zero. */
   memset(&_rtc.ve, 0, sizeof(_rtc.ve));
+  memset(&_rtc.allocFail, 0, sizeof(_rtc.allocFail));
+  /* Registered here, before anything else in setup() can allocate. A failure
+     during the boot that follows is reported by the boot after it. */
+  heap_caps_register_failed_alloc_callback(diagAllocFailed);
 
   const uint32_t freeNow  = (uint32_t)esp_get_free_heap_size();
   const uint32_t blockNow = InternalBlock();
@@ -248,6 +290,20 @@ void DiagnosticsClass::Begin()
       WS_LOG_W("Previous run VE.Direct: %u hex msgs (%u mid-frame), %u blocks discarded",
                (unsigned)_prevVe.hexMessages, (unsigned)_prevVe.hexMidFrame,
                (unsigned)_prevVe.blocksDiscarded);
+    /* The answer to "what was it doing when it died", when the previous run
+       ended on a failed allocation. Reported as an error and before the VE
+       lines, because on a board that keeps crashing this is the line to read
+       first: the size says how big a piece it wanted and the task says which
+       subsystem wanted it. */
+    if (_prevAllocFail.size) {
+      Serial.printf("[boot] previous run failed to allocate %u B (caps 0x%X) on task '%s'\r\n",
+                    (unsigned)_prevAllocFail.size, (unsigned)_prevAllocFail.caps,
+                    _prevAllocFail.task);
+      WS_LOG_E("Previous run failed to allocate %u B (caps 0x%X) on task '%s'",
+               (unsigned)_prevAllocFail.size, (unsigned)_prevAllocFail.caps,
+               _prevAllocFail.task[0] ? _prevAllocFail.task : "an interrupt");
+    }
+
     // Its own line - the web log's 143 characters will not take it on the above
     if (_prevVe.uartLineErrors || _prevVe.uartOverruns)
       WS_LOG_W("Previous run VE.Direct UART: %u line errors (wiring), %u overruns (not read in time)",
@@ -377,7 +433,8 @@ void DiagnosticsClass::ReportLowWaterContext()
   // once a second, so a real culprit is at most a couple of seconds stale.
   static const uint32_t WINDOW_MS = 10000;
   static const char* const NAMES[(size_t)DiagEvent::Count] = {
-    "HA discovery", "WS connect", "full sync", "log replay", "page serve"
+    "HA discovery", "WS connect", "full sync", "log replay", "page serve",
+    "MQTT publish"
   };
 
   const uint32_t now = millis();

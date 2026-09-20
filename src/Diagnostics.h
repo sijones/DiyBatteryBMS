@@ -72,7 +72,25 @@ enum class DiagEvent : uint8_t {
   WsFullSync,    // the full settings payload was broadcast
   WsLogReplay,   // a Logs tab pulled the backlog
   PageServe,     // the web page itself was queued for sending
+  MqttPublish,   // a telemetry round went to the broker
   Count
+};
+
+/* What the allocation that killed the previous run was asking for.
+
+   With exceptions off a failed allocation calls abort(), and the board is gone
+   before anything of ours could log it. The IDF offers a hook that runs first,
+   while the failure is still in hand: the size, the capabilities wanted, and -
+   from the task it happened on - which subsystem was asking. "4,096 bytes of
+   internal RAM on mqtt_task" and "1,600 bytes on wifi" are different faults
+   with different fixes, and neither can be inferred from a low-water figure.
+
+   Kept in RTC memory with the rest, so the next boot reports it. size 0 means
+   no allocation failed in the run being reported. */
+struct DiagAllocFail {
+  uint32_t size;      // bytes the failed allocation asked for
+  uint32_t caps;      // MALLOC_CAP_* bitmask it asked for
+  char     task[16];  // the task it happened on, "" if it happened in an ISR
 };
 
 class DiagnosticsClass
@@ -166,6 +184,13 @@ public:
   // And as the previous run left them. All zero when there is no history.
   const DiagVeCounters& PrevVeCounters() const { return _prevVe; }
 
+  /* The allocation failure that ended the previous run, if one did - see
+     DiagAllocFail. Also the live one, which is the same record for this run
+     and is only non-zero if a failure was survived (a guarded allocation that
+     was allowed to fail, or one in a library that checks). */
+  const DiagAllocFail& PrevAllocFail() const { return _prevAllocFail; }
+  const DiagAllocFail& AllocFail() const;
+
   // Zero when there is no history - a cold start, or a first boot on firmware
   // that did not keep any.
   uint32_t PrevUptimeSecs() const { return _prevUptime; }
@@ -183,6 +208,7 @@ private:
   uint32_t _prevHeapMin   = 0;
   uint32_t _prevBlockMin  = 0;
   DiagVeCounters _prevVe  = {};
+  DiagAllocFail  _prevAllocFail = {};
   uint32_t _lastTickMs    = 0;
   uint32_t _lastWarnedHeap = 0;   // 0 = nothing reported yet
   uint32_t _lastMilestoneFree = 0;

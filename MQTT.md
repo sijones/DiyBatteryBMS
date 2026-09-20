@@ -138,6 +138,7 @@ accepted" from "my request was capped":
 | `shuntrole` | `primary`, `fallback` or `none` — whether that link is the configured source or the fallback covering for it. `none` while no source is fresh |
 | `velinkok` | VE.Direct serial is trusted to feed the charge logic. Goes `false` at 2 failed checksums in the last 32 blocks, and back after 32 clean ones in a row |
 | `velineerr` / `veoverrun` | VE.Direct UART error events this run: framing/break errors (the wiring) and overruns (the port not read in time) |
+| `mqttskipped` | Telemetry rounds skipped because internal RAM was low. Publishing is asynchronous, so a slow broker turns updates into a backlog held in RAM; the board drops a round rather than risk an allocation failure. Should stay `0` |
 | `mqttconnected` | Self-evidently true if you are reading it |
 | `cantotalfails` | Cumulative CAN send failures |
 | `mqttinvertertemp` / `mqttbatttemp` | Temperatures taken from external MQTT topics; `-127` means not set |
@@ -226,6 +227,7 @@ board that keeps restarting is exactly the one whose answer needs to be on the b
 | `<topic>/Diag/PrevVeHexMidFrame` | VE.Direct hex messages that interrupted a text block, previous run |
 | `<topic>/Diag/PrevVeBlocksDiscarded` | VE.Direct blocks dropped on a failed checksum, previous run |
 | `<topic>/Diag/PrevVeBoundHits` | VE.Direct parser bounds reached, previous run — damaged bytes on the wire, or a finding |
+| `<topic>/Diag/PrevAllocFail` | What the previous run could not allocate, e.g. `4096 B, caps 0x404, task mqtt_task`, or `none`. With exceptions off a failed allocation aborts the board, so on a run that ended in a panic this names the size and the subsystem that asked for it |
 
 All the `Prev*` values are `0` when there is no history: after a power cut, or on the first boot of
 a build whose diagnostics layout changed.

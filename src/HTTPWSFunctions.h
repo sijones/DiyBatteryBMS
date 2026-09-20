@@ -77,6 +77,9 @@ volatile bool otaInProgress = false;
 // Broadcasts skipped for want of a big enough contiguous block. Non-zero means
 // the board is running too close to the edge - see notifyWSClients().
 static uint32_t wsSkippedLowHeap = 0;
+/* The same thing for MQTT, defined in mqttFunctions.h, which main.cpp includes
+   after this file - the status payload built here reports both. */
+extern uint32_t mqttSkippedLowHeap;
 
 /* Two settings the full status payload reports, held in RAM rather than read
    back out of NVS every time it is built.
@@ -818,6 +821,12 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["prevvenameovf"]   = pv.nameOverflows;
     doc["prevvelineerr"]   = pv.uartLineErrors;
     doc["prevveoverrun"]   = pv.uartOverruns;
+    /* What the previous run could not allocate, if that is what ended it.
+       Size 0 means it did not - see DiagAllocFail. */
+    const DiagAllocFail& af = Diag.PrevAllocFail();
+    doc["prevallocsize"]   = af.size;
+    doc["prevalloccaps"]   = af.caps;
+    doc["prevalloctask"]   = af.task;
   }
 
   doc["RealTime"] = true;
@@ -1014,6 +1023,8 @@ static void buildDataDoc(JsonDocument& doc, bool All)
   doc["vediscarded"] = ve.blocksDiscarded;
   doc["vedropped"]   = ve.recordsDropped;
   doc["venameovf"]   = ve.nameOverflows;
+  // Telemetry rounds dropped rather than risk the heap - see sendVE2MQTT()
+  doc["mqttskipped"] = mqttSkippedLowHeap;
   doc["velineerr"]   = ve.uartLineErrors;
   doc["veoverrun"]   = ve.uartOverruns;
   // Whether serial is allowed to feed the charge logic - see LinkTrusted()
