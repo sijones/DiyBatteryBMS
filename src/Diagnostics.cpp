@@ -459,7 +459,7 @@ void DiagnosticsClass::ReportLowWaterContext()
   static const uint32_t WINDOW_MS = 10000;
   static const char* const NAMES[(size_t)DiagEvent::Count] = {
     "HA discovery", "WS connect", "full sync", "log replay", "page serve",
-    "MQTT publish"
+    "MQTT publish", "MQTT inbound", "feature work"
   };
 
   const uint32_t now = millis();

@@ -73,6 +73,13 @@ enum class DiagEvent : uint8_t {
   WsLogReplay,   // a Logs tab pulled the backlog
   PageServe,     // the web page itself was queued for sending
   MqttPublish,   // a telemetry round went to the broker
+  MqttInbound,   // a subscribed topic arrived and was handled
+  /* Whatever an optional feature stamps - the Modbus gateway handling a
+     request, an inverter link polling. Deliberately one slot for all of them
+     and named after none: this is the public seam, and which features a build
+     carries is not its business. When a dip lands beside this, the feature
+     list in the boot log says which ones could have been asking. */
+  FeatureWork,
   Count
 };
 

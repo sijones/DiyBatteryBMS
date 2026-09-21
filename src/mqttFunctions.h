@@ -1317,6 +1317,11 @@ static void mqttShuntReject(const char* what, const String& payload) {
 
 void onMqttMessage(char* topic, char* payload, int retain, int qos, bool dup) {
 
+/* Stamped like the outgoing round is. An arriving message is two Strings and
+   whatever the handler below does with them, on the MQTT task - small, but a
+   dip landing beside one is a different story from a dip beside a publish, and
+   until now nothing could tell them apart. */
+Diag.Note(DiagEvent::MqttInbound);
 String _Topic = String(topic);
 String message = String(payload);
 /* log_d, not log_i. With the shunt source on MQTT this fires for every reading

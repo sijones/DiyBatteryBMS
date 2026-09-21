@@ -877,6 +877,14 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["prevlowctxfree"]  = Diag.PrevLowCtxFree();
     doc["prevlowctxsecs"]  = Diag.PrevLowCtxSecs();
     doc["prevlowctx"]      = Diag.PrevLowCtx();
+    /* This run's failure record too, not just the previous run's. One that was
+       survived - a guarded allocation allowed to fail, or a library that
+       checks its own - never reaches a boot line, and is the clearest sign
+       there is that the heap is at its limit right now. */
+    const DiagAllocFail& live = Diag.AllocFail();
+    doc["allocsize"]       = live.size;
+    doc["alloccaps"]       = live.caps;
+    doc["alloctask"]       = live.task;
     doc["prevallocsize"]   = af.size;
     doc["prevalloccaps"]   = af.caps;
     doc["prevalloctask"]   = af.task;
