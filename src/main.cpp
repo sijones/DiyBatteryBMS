@@ -115,6 +115,11 @@ uint8_t  activeShuntLink = 255;
    meaning the dashboard's identity panel and link badge are built on. Always a
    string literal, so the pointer is all that is ever written. */
 const char* shuntRole = "none";
+/* millis() when the MQTT half of an update round went out, 0 when the web
+   socket half that follows it has already been sent - see the loop. */
+uint32_t wsBroadcastDueMs = 0;
+// How long after it the web socket half goes - see where it is sent
+#define WS_BROADCAST_OFFSET_MS 500
 
 //create an object from the UpdateServer
 ESPAsyncHTTPUpdateServer updateServer;
@@ -925,12 +930,35 @@ void loop()
       sendVE2MQTT();
       sendUpdateMQTTData();
       const uint32_t afterMqtt = Diag.InternalFree();
+      Diag.NotePublishCost(beforeMqtt > afterMqtt ? beforeMqtt - afterMqtt : 0, 0);
+
+      /* The web socket half goes out a moment later, not here - see
+         WS_BROADCAST_OFFSET_MS. */
+      wsBroadcastDueMs = millis() ? millis() : 1;
+    }
+  }
+
+  /* The other half of the round, held back so the two bursts do not overlap.
+
+     Sent together, they were about 68KB of internal RAM at the peak on the
+     field board - deeper than the ~35KB the two of them are still holding when
+     they finish, because a burst of outgoing packets takes WiFi transmit
+     buffers from the same pool and gives them back as the radio drains them.
+     Two bursts half a second apart need that headroom once each instead of
+     once between them, and the readings are no more stale for it: half a
+     second against an update every five seconds.
+
+     Not a delay() - this is the loop that feeds the CAN and VE.Direct paths,
+     and it does not get to stop for half a second. */
+  if (wsBroadcastDueMs && (uint32_t)(millis() - wsBroadcastDueMs) >= WS_BROADCAST_OFFSET_MS) {
+    wsBroadcastDueMs = 0;
+    if (Conn.isWiFiConnected()) {
+      const uint32_t beforeWs = Diag.InternalFree();
       ws.cleanupClients();
       notifyWSClients(false);
       const uint32_t afterWs = Diag.InternalFree();
-      // Saturating: either half can end with more free than it started with
-      Diag.NotePublishCost(beforeMqtt > afterMqtt ? beforeMqtt - afterMqtt : 0,
-                           afterMqtt > afterWs   ? afterMqtt - afterWs   : 0);
+      // Saturating: a round can end with more free than it started with
+      Diag.NotePublishCost(0, beforeWs > afterWs ? beforeWs - afterWs : 0);
     }
   }
 
