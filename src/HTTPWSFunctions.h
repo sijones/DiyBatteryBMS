@@ -472,25 +472,36 @@ void TaskSetClock(void * pointer) {
   while (!WiFi.isConnected())
     vTaskDelay(1000 / portTICK_PERIOD_MS);
      
-  bool secondserver = false;
-  String ServerArray[2];
+  /* Static, not locals: sntp_setservername() keeps the pointer rather than a
+     copy, and the timeout path below ends this task with vTaskDelete(), which
+     frees the stack without running destructors. SNTP carries on retrying in
+     the background, and with the strings on the stack it was then resolving
+     whatever had reused that memory - so a server that was down for the first
+     two minutes never got another chance. */
+  static String ServerArray[2];
+  ServerArray[0] = "";
+  ServerArray[1] = "";
 
-  // A single server has no comma to split on. The old code only populated
-  // ServerArray[0] inside the "comma found" branch, so one server meant
-  // configTime() was handed an empty string and the clock never synced -
-  // while the log below still printed the configured address, which made it
-  // look like it was working.
-  int CommaLoc = Servers.indexOf(',');
-  if (CommaLoc == -1) {
-    ServerArray[0] = Servers;
-    ServerArray[0].trim();
-  } else {
-    ServerArray[0] = Servers.substring(0, CommaLoc);
-    ServerArray[0].trim();
-    ServerArray[1] = Servers.substring(CommaLoc + 1);
-    ServerArray[1].trim();
-    secondserver = (ServerArray[1].length() > 0);
+  // Split on commas, trimming each entry and skipping empty ones, so "a, b",
+  // "a," and ",a" all work. Two slots is all there is room for alongside DHCP;
+  // anything after that used to end up glued to the second entry as "b,c",
+  // which resolves to nothing.
+  int found = 0;
+  int start = 0;
+  while (start <= (int)Servers.length()) {
+    int comma = Servers.indexOf(',', start);
+    if (comma == -1) comma = Servers.length();
+    String entry = Servers.substring(start, comma);
+    entry.trim();
+    if (entry.length()) {
+      if (found < 2) ServerArray[found] = entry;
+      found++;
+    }
+    start = comma + 1;
   }
+  if (found > 2)
+    WS_LOG_W("NTP: only the first two of %d servers are used", found);
+  const bool secondserver = (ServerArray[1].length() > 0);
 
   if (ServerArray[0].length() == 0 && !dhcpNtp) {
     WS_LOG_W("NTP server setting is not a usable address, clock will not be set");
@@ -1872,6 +1883,8 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
       String value = doc["ntpserver"];
       handled = true;
       pref.putString(ccNTPServer,value);
+      // Same as the DHCP switch below: SNTP is configured once, at boot
+      WS_LOG_I("NTP server set to '%s' (reboot to apply)", value.c_str());
       notifyWSClients();}
 
       if (!doc["ntpfromdhcp"].isNull()) {
