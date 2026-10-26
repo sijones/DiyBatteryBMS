@@ -29,7 +29,7 @@
 
 #define SYSLOG 1
 
-#define FW_VERSION "3.0.0-BETA12"
+#define FW_VERSION "3.0.0-BETA13"
 
 /* What this firmware calls itself on MQTT, in Home Assistant's device entry and
    in the boot banner. A build that is a different product on the same code
