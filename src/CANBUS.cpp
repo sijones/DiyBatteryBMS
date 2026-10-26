@@ -882,7 +882,7 @@ void inline CANBUS_BuildSOC(uint8_t* msg, uint8_t battSOC, bool enableSOCTrick, 
 bool CANBUS::SendCANData_Pylontech(){
   CAN_SEND_BEGIN();
 
-  // Pylontech units: voltage in 0.01V (centivolts), current in 0.1A (deciamps)
+  // Pylontech units: 0x351 voltages in 0.1V from mV, current in 0.1A (deciamps)
   uint16_t _tempChargeVolt = (ActiveChargeVoltage() * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
@@ -1022,9 +1022,12 @@ bool CANBUS::SendCANData_Pylontech(){
 bool CANBUS::SendCANData_SMA(){
   CAN_SEND_BEGIN();
 
-  // SMA units: voltage in 0.1V (decivolts), current in 0.1A (deciamps)
-  uint16_t _tempChargeVolt = (ActiveChargeVoltage() * 0.1);
-  uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.1);
+  // SMA units: voltage in 0.1V (decivolts), current in 0.1A (deciamps).
+  // The stored voltages are mV, so 0.01 gets decivolts - the same as Pylontech.
+  // This was 0.1, which sent centivolts: a 48.0V floor read as 480.0V on the
+  // Sunny Island, so it raised battery-too-low the moment it was used.
+  uint16_t _tempChargeVolt = (ActiveChargeVoltage() * 0.01);
+  uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
   // Already min(live, configured max, controller request) - see CANBUS.h
   uint16_t _tempDisChargeCurr = (EffectiveDischargeCurrent() * 0.01);
@@ -1078,7 +1081,7 @@ bool CANBUS::SendCANData_SMA(){
 bool CANBUS::SendCANData_Victron(){
   CAN_SEND_BEGIN();
 
-  // Victron units: same as Pylontech (voltage 0.01V, current 0.1A)
+  // Victron units: same as Pylontech (0x351 voltages 0.1V, current 0.1A)
   uint16_t _tempChargeVolt = (ActiveChargeVoltage() * 0.01);
   uint16_t _tempDisCharVolt = (_dischargeVoltage * 0.01);
   uint16_t _tempChargeCurr = (_chargeCurrentmA * 0.01);
