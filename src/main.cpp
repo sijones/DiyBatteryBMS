@@ -497,6 +497,11 @@ void setup()
   } else if (vrx || vtx) {
     log_e("Forbidden or missing GPIO for VE.Direct pins: RX=%u TX=%u", vrx, vtx);
   }
+  /* The rest of setup used to be one 100KB step in the heap trail with four
+     consumers inside it, so nothing said which to cut. One checkpoint each.
+     The web server is not among them: its task waits for WiFi, which arrives
+     after setup, so its bill lands in "WiFi associated". */
+  Diag.Milestone("VE.Direct up");
 
   /* Optional features, after the web server and the shunt/CAN hardware so one
      may use any of them. Which are compiled in is decided by the env rather
@@ -506,6 +511,7 @@ void setup()
     log_i("Starting %u optional feature(s)", Feature::Count());
     Feature::SetupAll();
   }
+  Diag.Milestone("features up");
 
   /* Victron BLE. Only brought up when it is in play in one role or the other -
      the radio and its stack cost RAM that an install reading the shunt over the
@@ -526,6 +532,7 @@ void setup()
             shuntSource == SHUNT_SRC_BLE ? "primary" : "fallback");
     }
   }
+  Diag.Milestone("Victron BLE up");
   // Start NTP Clock Set Task
 #if defined(BMS_S3)
   // ESP32-S3 requires more stack space for String operations and NTP

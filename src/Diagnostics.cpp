@@ -50,6 +50,23 @@ struct DiagRtcState {
 
 static RTC_NOINIT_ATTR DiagRtcState _rtc;
 
+/* A low water context is "<stamps>; <board state>", and the two together run
+   past the 143 characters a web log entry holds - the board state, which is
+   the part that says whether discovery or a second browser was in play, was
+   the part being cut. So the web log gets it as two lines, split where the
+   stamps end (no stamp name contains a ';'). Serial and the RTC copy keep the
+   single line, which neither of them truncates. */
+static void webLogContext(const char* stampsLabel, const char* stateLabel, const char* ctx)
+{
+  const char* split = strstr(ctx, "; ");
+  if (!split) {
+    WS_LOG_W("%s: %s", stampsLabel, ctx);
+    return;
+  }
+  WS_LOG_W("%s: %.*s", stampsLabel, (int)(split - ctx), ctx);
+  WS_LOG_W("%s: %s", stateLabel, split + 2);
+}
+
 static const char* reasonName(esp_reset_reason_t r, bool& isCrash)
 {
   // Static, not a local: the caller holds this pointer for the life of the
@@ -325,8 +342,11 @@ void DiagnosticsClass::Begin()
     if (_prevLowCtxFree) {
       Serial.printf("[boot] previous run's deepest dip: %u B free at %us, beside %s\r\n",
                     (unsigned)_prevLowCtxFree, (unsigned)_prevLowCtxSecs, _prevLowCtx);
-      WS_LOG_W("Previous run dipped to %u B free after %um, beside %s",
-               (unsigned)_prevLowCtxFree, (unsigned)(_prevLowCtxSecs / 60), _prevLowCtx);
+      // Figures on their own line: in front of the stamps they pushed the
+      // board state out of the 143 characters a web log entry holds.
+      WS_LOG_W("Previous run dipped to %u B free after %um",
+               (unsigned)_prevLowCtxFree, (unsigned)(_prevLowCtxSecs / 60));
+      webLogContext("Previous run dip beside", "Previous run dip state", _prevLowCtx);
     }
 
     // Its own line - the web log's 143 characters will not take it on the above
@@ -499,7 +519,7 @@ void DiagnosticsClass::ReportLowWaterContext()
   }
 
   Serial.printf("[heap] low water beside: %s\r\n", line);
-  WS_LOG_W("Low water beside: %s", line);
+  webLogContext("Low water beside", "Low water state", line);
 }
 
 /* Where the heap actually went.
