@@ -718,6 +718,8 @@ void loop()
      was stamped this pass rather than one pass stale. */
   mqttNoteServiceAlive();
   Conn.loop();
+  // Restart the MQTT client if esp-mqtt's own retrying has stalled
+  mqttReconnectWatch();
   // Reboot if WiFi/MQTT has been down past the user's limit. Off by default.
   networkRebootCheck();
   // Heap low-water marks, and the trail they leave on the way down. Ticks once

@@ -16,7 +16,7 @@ const unsigned long MQTT_TIMEOUT_MS = 5000;
 
 PsychicMqttClient mqttClient;
 
-TimerHandle_t mqttReconnectTimer;
+
 //mEEPROM pref;
 bool mqttEnabled = false;
 bool haDiscoveryEnabled = true;  // Enable Home Assistant MQTT Discovery
@@ -1144,26 +1144,85 @@ void haDiscoveryLoop() {
   }
 }
 
-void mqttReconnectTimerCallback(TimerHandle_t xTimer) {
-    if (!mqttEnabled) return;
-    
-    // Only attempt reconnect if WiFi is connected
-    if (!Conn.isWiFiConnected()) {
-        log_w("Cannot reconnect to MQTT: WiFi not connected");
-        WS_LOG_W("Cannot reconnect to MQTT: WiFi not connected");
-        return;
-    }
-    
-    if (!mqttClient.connected()) {
-        log_i("MQTT reconnect timer triggered, attempting connection...");
-        WS_LOG_I("MQTT reconnect timer triggered, attempting connection...");
-        mqttClient.connect();
-    }
+/* Who reconnects MQTT, and why it is not a timer any more.
+
+   esp-mqtt reconnects by itself: auto-reconnect is on by default, and every
+   ten seconds after a drop its own task tears the transport down and tries
+   again, indefinitely. There used to be a FreeRTOS timer here as well, firing
+   ten seconds after each drop and calling connect() - which in PsychicMqttClient
+   is esp_mqtt_set_config() plus esp_mqtt_client_start() on a client that is
+   still running. That did nothing useful (start() refuses a started client) and
+   two harmful things:
+     - set_config() frees and re-allocates the client's 2 KB in/out buffers
+       under the running task, and if any of those allocations fails it frees
+       the whole config - which the task then dereferences on its next pass.
+     - both ten-second clocks start on the same disconnect, so they line up,
+       and start() run in the instant esp-mqtt's task sits in INIT spawns a
+       second task driving the same client.
+
+   And the case that does need help it never covered. esp-mqtt rebuilds its
+   transport list on every attempt; when that allocation fails - internal RAM
+   short, the condition this board has been seen in - the task logs one line
+   and exits, with no event to say so. Nothing restarted it, because the timer
+   only fired once, ten seconds after the drop: MQTT stayed down until a reboot.
+
+   So now: leave esp-mqtt to do the retrying it already does, and watch from
+   the main loop. If the session stays down with WiFi up for longer than its
+   own retries can explain, stop the client and start it fresh, which works
+   whether its task is alive or quietly gone. Waits double up to the cap, so a
+   broker that is simply switched off costs a restart every ten minutes, not a
+   storm; a session coming up resets the ladder. */
+#define MQTT_KICK_WAIT_MS 60000UL    // ~6 of esp-mqtt's own attempts
+#define MQTT_KICK_WAIT_MAX 600000UL  // 10 min
+
+static volatile bool mqttKickBusy = false;
+static uint32_t mqttKickCount = 0;
+static bool mqttStarted = false;     // connectToMqtt() has been called once
+
+/* Stop and restart on a task of its own: esp_mqtt_client_stop() waits for the
+   client's task to finish whatever it is doing, which can be a TCP connect with
+   a ten-second timeout, and the main loop is where VE.Direct is read. */
+static void mqttKickTask(void*)
+{
+  mqttClient.forceStop();   // harmless when the task has already gone
+  vTaskDelay(pdMS_TO_TICKS(100));
+  mqttClient.connect();
+  mqttKickBusy = false;
+  vTaskDelete(NULL);
+}
+
+void mqttReconnectWatch()
+{
+  static uint32_t downSinceMs = 0;
+  static uint32_t waitMs = MQTT_KICK_WAIT_MS;
+
+  if (!mqttEnabled || !mqttStarted || otaBusy()) { downSinceMs = 0; return; }
+  if (mqttClient.connected()) { downSinceMs = 0; waitMs = MQTT_KICK_WAIT_MS; return; }
+  /* Without WiFi no attempt can succeed, so the time is not esp-mqtt's to
+     answer for - the station side has its own recovery in ConnectionManager. */
+  if (!WiFi.isConnected() || mqttKickBusy) { downSinceMs = 0; return; }
+
+  const uint32_t now = millis();
+  if (!downSinceMs) { downSinceMs = now ? now : 1; return; }
+  if ((uint32_t)(now - downSinceMs) < waitMs) return;
+
+  mqttKickCount++;
+  WS_LOG_W("MQTT down %lus with WiFi up - restarting the MQTT client (#%lu)",
+           (unsigned long)((now - downSinceMs) / 1000UL), (unsigned long)mqttKickCount);
+  mqttKickBusy = true;
+  if (xTaskCreate(mqttKickTask, "mqttKick", 4096, NULL, 2, NULL) != pdPASS) {
+    mqttKickBusy = false;
+    WS_LOG_E("MQTT client restart: could not create task (internal RAM %u B free)",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+  }
+  downSinceMs = now ? now : 1;
+  waitMs = (waitMs * 2 > MQTT_KICK_WAIT_MAX) ? MQTT_KICK_WAIT_MAX : waitMs * 2;
 }
 
 void connectToMqtt() {
     if (!mqttEnabled) return;
     log_i("Connecting to MQTT...");
+    mqttStarted = true;
     mqttClient.connect();
 }
 
@@ -1301,7 +1360,7 @@ void onMqttConnect(bool sessionPresent) {
 
 void onMqttDisconnect(bool sessionPresent) {
   log_d("Disconnected from MQTT, sessionPresent: %d", sessionPresent);
-  WS_LOG_W("MQTT disconnected, scheduling reconnect...");
+  WS_LOG_W("MQTT disconnected, client will retry");
   Lcd.Data.MQTTConnected.setValue(false);
   // The subscriptions went with the connection, so stop claiming to hold them
   mqttClearSubTracking();
@@ -1317,14 +1376,8 @@ void onMqttDisconnect(bool sessionPresent) {
     }
   }
 #endif
-
-  // Schedule reconnection attempt after delay
-  if (mqttEnabled && mqttReconnectTimer != NULL) {
-    log_i("Scheduling MQTT reconnect in 10 seconds...");
-    WS_LOG_I("Scheduling MQTT reconnect in 10 seconds...");
-    xTimerChangePeriod(mqttReconnectTimer, pdMS_TO_TICKS(10000), pdMS_TO_TICKS(100));
-    xTimerStart(mqttReconnectTimer, pdMS_TO_TICKS(100));
-  }
+  /* Nothing to schedule: esp-mqtt retries by itself, and mqttReconnectWatch()
+     restarts the client if that stalls. */
 }
 
 void onMqttSubscribe(uint16_t msg_id) {
@@ -1847,14 +1900,5 @@ void mqttsetup() {
     mqttClient.onSubscribe(onMqttSubscribe);
   //  mqttClient.onUnsubscribe(onMqttUnsubscribe);
     mqttClient.onMessage(onMqttMessage);
-    
-    // Create timer for MQTT reconnection (10 second intervals)
-    if (mqttReconnectTimer == NULL) {
-      mqttReconnectTimer = xTimerCreate("mqttReconnectTimer", pdMS_TO_TICKS(10000), pdFALSE, (void*)0, mqttReconnectTimerCallback);
-      if (mqttReconnectTimer == NULL) {
-        log_e("Failed to create MQTT reconnect timer");
-      } else {
-        log_d("MQTT reconnect timer created successfully");
-      }
-    }
+    // Reconnecting is esp-mqtt's own job - see mqttReconnectWatch()
 }
