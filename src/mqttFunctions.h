@@ -1898,6 +1898,11 @@ void mqttsetup() {
     mqttClient.onConnect(onMqttConnect);
     mqttClient.onDisconnect(onMqttDisconnect);
     mqttClient.onSubscribe(onMqttSubscribe);
+    /* Was written but never registered, so a dropped connection said only
+       "disconnected" and never why. The library calls it for transport errors,
+       which is where the socket errno - reset by the broker, timed out, host
+       unreachable - tells a broker problem from a board one. */
+    mqttClient.onError(onMqttError);
   //  mqttClient.onUnsubscribe(onMqttUnsubscribe);
     mqttClient.onMessage(onMqttMessage);
     // Reconnecting is esp-mqtt's own job - see mqttReconnectWatch()

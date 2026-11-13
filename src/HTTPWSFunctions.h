@@ -469,6 +469,22 @@ void applyTimeZone() {
   tzset();
 }
 
+/* Which server the last sync came from. Slot 0 alone was named before, and on a
+   DHCP setup whose router offered nothing slot 0 is empty, so every sync was
+   credited to "NTP" while a configured fallback in slot 1 did the work. The
+   reachability register's low bit says whether a slot's last poll answered;
+   DHCP-supplied servers have an address but no name. */
+static void ntpAnsweringServer(char* out, size_t len) {
+  for (uint8_t i = 0; i < CONFIG_LWIP_SNTP_MAX_SERVERS; i++) {
+    if (!(esp_sntp_getreachability(i) & 1)) continue;
+    const char* name = esp_sntp_getservername(i);
+    if (name && *name) { strlcpy(out, name, len); return; }
+    const ip_addr_t* addr = esp_sntp_getserver(i);
+    if (addr && !ip_addr_isany(addr)) { strlcpy(out, ipaddr_ntoa(addr), len); return; }
+  }
+  strlcpy(out, "NTP", len);
+}
+
 void TaskSetClock(void * pointer) {
 
   log_d("Entering TaskSetClock");
@@ -611,8 +627,9 @@ void TaskSetClock(void * pointer) {
       // strftime, not asctime: asctime appends a trailing newline, which
       // sendLogToWS escapes and turns into a mangled log line. %Z gives GMT/BST.
       strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S %Z", &timeinfo);
-      const char* srv = esp_sntp_getservername(0);
-      WS_LOG_I("Clock synced from %s: %s", srv ? srv : "NTP", stamp);
+      char srv[64];
+      ntpAnsweringServer(srv, sizeof(srv));
+      WS_LOG_I("Clock synced from %s: %s", srv, stamp);
     }
     vTaskDelay(5000 / portTICK_PERIOD_MS);
   }
