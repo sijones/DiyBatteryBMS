@@ -298,6 +298,51 @@ void mqttNoteServiceAlive()
   if (mqttEnabled && mqttClient.connected()) Conn.NoteServiceOk();
 }
 
+/* The last resort: reboot when the network has been down for netRebootMinutes.
+
+   ConnectionManager already reconnects and, failing that, cycles the station -
+   but only the station. Some faults survive both (a wedged lwIP, a TLS/TCP
+   state the MQTT client never recovers from, heap fragmented past use), and on
+   an unattended board the only cure is the one a person would apply: power it
+   round. This is that, with a timer the user chose.
+
+   "Down" is WiFi not associated, or - only when a broker is configured - no
+   MQTT session. A board with no broker is judged on WiFi alone, so it is not
+   rebooted forever for lacking something it was never given. Never in AP
+   (setup) mode: that board is waiting for a person, and a reboot would throw
+   them off the access point they are typing into.
+
+   The clock starts on the first pass that finds it down, including straight
+   after boot, so a board that never gets a connection at all is covered too -
+   which also means it will keep rebooting every netRebootMinutes for as long as
+   the router is away. That is what was asked for; it is why the minimum is
+   five minutes and the default is off. */
+void networkRebootCheck()
+{
+  static uint32_t downSinceMs = 0;   // 0 = up (or not being watched)
+
+  if (!netRebootMinutes || Conn.WifiConfig()) { downSinceMs = 0; return; }
+  /* One request is enough, and requestRestart() logs a refusal every time it
+     is called mid-update - so neither case should reach it again each pass. */
+  if (restartRequestMs || otaBusy()) return;
+
+  const bool wifiUp = WiFi.isConnected();
+  const bool mqttUp = !mqttEnabled || mqttClient.connected();
+  const uint32_t now = millis();
+
+  if (wifiUp && mqttUp) { downSinceMs = 0; return; }
+  if (!downSinceMs) { downSinceMs = now ? now : 1; return; }
+
+  const uint32_t downMs = now - downSinceMs;
+  if (downMs < (uint32_t)netRebootMinutes * 60000UL) return;
+
+  WS_LOG_E("Network down %lu min (WiFi %s, MQTT %s) - rebooting",
+           (unsigned long)(downMs / 60000UL),
+           wifiUp ? "up" : "down",
+           !mqttEnabled ? "not configured" : (mqttUp ? "up" : "down"));
+  requestRestart("the network watchdog (WiFi/MQTT down too long)");
+}
+
 bool sendUpdateMQTTData()
 {
   if (otaInProgress) return false;

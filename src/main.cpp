@@ -257,6 +257,7 @@ void setup()
     pref.putString(ccNTPServer,"");
     pref.putString(ccTimeZone, initTimeZone);
     pref.putUInt16(ccOverrideTime, initOverrideTimeout);
+    pref.putUInt16(ccNetReboot, initNetRebootMinutes);
     pref.putString(ccSyslogServer,"");
     pref.putUInt16(ccSyslogPort, 514);
     pref.putBool(ccSyslogEnabled, false);
@@ -433,6 +434,7 @@ void setup()
   // clock display both use localtime_r().
   applyTimeZone();
   applySyslogConfig();
+  netRebootMinutes = clampNetReboot(pref.getUInt16(ccNetReboot, initNetRebootMinutes));
 #ifndef DISABLE_SCHEDULER
   loadUiSchedule();
   // Nothing is latched at boot, so control starts with the schedule. Deliberate:
@@ -716,6 +718,8 @@ void loop()
      was stamped this pass rather than one pass stale. */
   mqttNoteServiceAlive();
   Conn.loop();
+  // Reboot if WiFi/MQTT has been down past the user's limit. Off by default.
+  networkRebootCheck();
   // Heap low-water marks, and the trail they leave on the way down. Ticks once
   // a second; returns immediately the rest of the time.
   Diag.Loop();

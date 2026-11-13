@@ -227,6 +227,7 @@ const char* const ccReqTimeout = "ReqTimeout";     // live current request stale
 const char* const ccSyslogServer = "SyslogSrv";
 const char* const ccSyslogPort = "SyslogPort";
 const char* const ccSyslogEnabled = "SyslogEn";
+const char* const ccNetReboot = "NetReboot";      // network-down reboot, minutes. 0 = off
 const char* const PREF_NAME = "smartbms";
 
 

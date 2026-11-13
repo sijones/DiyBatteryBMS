@@ -2137,6 +2137,10 @@
             <label for="velooptime"><span class="tip" data-tip="How often battery data is published to MQTT and the web UI is refreshed.">MQTT Refresh Rate (seconds):</span></label>
             <input type="number" id="velooptime" onchange="EnqueueUpdate('velooptime')" onkeypress="HandleEnter(event, 'velooptime')">
           </div>
+          <div class="form-group">
+            <label for="netreboot"><span class="tip" data-tip="Reboot the device if WiFi is down - or MQTT, when a broker is set - for this many minutes in a row. A last resort for when reconnecting has not worked; charging control pauses for the few seconds a reboot takes, and the device will keep rebooting at this interval for as long as the network stays away. Minimum 5. 0 turns it off.">Reboot if Network Down (minutes):</span></label>
+            <input type="number" id="netreboot" min="0" max="1440" step="1" placeholder="0 = off" onchange="EnqueueUpdate('netreboot')" onkeypress="HandleEnter(event, 'netreboot')">
+          </div>
         </div>
         
         <div class="button-group">
@@ -2371,6 +2375,7 @@
                                                    whole taper on `> 0`
          lowsoclimit                               documented "Set 0 to disable"
          adjuststep                                CANBUS.cpp:554 `_adjustStep > 0`
+         netreboot                                 0 = never reboot
          floatvoltage                              0 = derive it from the charge
                                                    voltage (see config.h)
 
@@ -2385,7 +2390,7 @@
            an optional extra. */
     const OPTIONAL_ZERO_FIELDS = ['slowchargesoc1','slowchargesoc1div',
                                   'slowchargesoc2','slowchargesoc2div',
-                                  'lowsoclimit','adjuststep','floatvoltage'];
+                                  'lowsoclimit','adjuststep','floatvoltage','netreboot'];
     /* Sent to the device but never written to NVS, so they must not raise the
        unsaved-changes bar - there is nothing to save. Controls on the Logs tab
        are covered separately by where they sit, not by name. */
@@ -3443,7 +3448,7 @@
        'chargehightemp','chargelowtemp','dischargehightemp','dischargelowtemp',
        'mqttbatttopic','mqttinvtopic','fanofftemp','fanfulltemp',
        'mqttshuntsoc','mqttshuntvolt','mqttshuntcurr','mqttshunttemp',
-       'ntpserver','timezone','syslogserver','syslogport','overridetimeout','requesttimeout',
+       'ntpserver','timezone','syslogserver','syslogport','overridetimeout','requesttimeout','netreboot',
        'tailcurrent','rechargevoltageoffset'].forEach(function(f) {
         if(obj[f] !== undefined) { SetFieldValue(f, obj[f]); configDirty = true; }
       });
@@ -3872,7 +3877,7 @@
                 'maxabsorptiontime','rechargesoc','chargehightemp','chargelowtemp',
                 'dischargehightemp','dischargelowtemp','fanofftemp','fanfulltemp',
                 'slowchargesoc1','slowchargesoc2','slowchargesoc1div','slowchargesoc2div',
-                'velooptime','mqttport','syslogport','overridetimeout','requesttimeout'],
+                'velooptime','mqttport','syslogport','overridetimeout','requesttimeout','netreboot'],
       // Exported in display units (V/A/Ah); import re-scales on send
       converted: UNIT_CONVERT_FIELDS,
       /* blekey is deliberately absent. The firmware never sends it back to the

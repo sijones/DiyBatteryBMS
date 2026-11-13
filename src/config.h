@@ -107,6 +107,16 @@
 // scheduler always wins. See RemoteOverride.h.
 #define initOverrideTimeout 300           // seconds
 
+/* Reboot the board when the network has been down this long: WiFi not
+   associated, or - with a broker configured - no MQTT session. Minutes, and
+   0 (the default) leaves it off. A reboot drops CAN to the inverter for the few
+   seconds it takes, so it is opt-in, and anything shorter than NET_REBOOT_MIN is
+   raised to it so the station re-init in ConnectionManager (3 min) always gets
+   its turn first. */
+#define initNetRebootMinutes 0
+#define NET_REBOOT_MIN   5
+#define NET_REBOOT_MAX   1440             // a day
+
 // How long a charge/discharge current request from an external controller stays
 // in force before it goes stale and the configured ceiling returns. Unlike the
 // override latch this cannot be disabled - a request that never expires is the

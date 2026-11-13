@@ -113,6 +113,20 @@ inline void requestRestart(const char* why)
   restartRequestMs = millis() ? millis() : 1;
 }
 
+/* Minutes the network may stay down before the board reboots itself - see
+   networkRebootCheck() in mqttFunctions.h. 0 = off. Held here rather than there
+   because the status payload below reports it and this file is included first. */
+uint16_t netRebootMinutes = initNetRebootMinutes;
+
+// 0 (or less) is off; anything else is held to the range config.h allows
+inline uint16_t clampNetReboot(int32_t mins)
+{
+  if (mins <= 0) return 0;
+  if (mins < NET_REBOOT_MIN) return NET_REBOOT_MIN;
+  if (mins > NET_REBOOT_MAX) return NET_REBOOT_MAX;
+  return (uint16_t)mins;
+}
+
 // Broadcasts skipped for want of a big enough contiguous block. Non-zero means
 // the board is running too close to the edge - see notifyWSClients().
 static uint32_t wsSkippedLowHeap = 0;
@@ -674,6 +688,7 @@ static void buildDataDoc(JsonDocument& doc, bool All)
     doc["syslogserver"] = g_syslogServerCached;
     doc["syslogport"] = pref.getUInt16(ccSyslogPort, 514);
     doc["syslogenabled"] = pref.getBool(ccSyslogEnabled, false);
+    doc["netreboot"] = netRebootMinutes;
     doc["cansniffer"] = Inverter.CANSniffer();   // runtime only, never persisted
     doc["blesniffer"] = VictronBle.Sniffer();    // ditto
     doc["shuntsource"] = shuntSource;   // cached at boot, not re-read per call
@@ -1877,6 +1892,18 @@ void handleWSRequest(AsyncWebSocketClient * wsclient,const char * data, int len)
         handled = true;
         VE_LOOP_TIME = value;
         pref.putUInt8(ccVELOOPTIME,VE_LOOP_TIME);
+        notifyWSClients();}
+
+      // Network-down reboot. Applies at once; an outage already under way is
+      // timed against the new value.
+      if (!doc["netreboot"].isNull()) {
+        netRebootMinutes = clampNetReboot((int32_t) doc["netreboot"]);
+        handled = true;
+        pref.putUInt16(ccNetReboot, netRebootMinutes);
+        if (netRebootMinutes)
+          WS_LOG_I("Reboot after %u min with WiFi/MQTT down", netRebootMinutes);
+        else
+          WS_LOG_I("Network-down reboot disabled");
         notifyWSClients();}
       
       if (!doc["ntpserver"].isNull()) {
